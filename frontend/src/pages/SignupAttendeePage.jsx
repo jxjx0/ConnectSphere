@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
+import SplitLayout from '../components/SplitLayout'
 import { useAuth } from '../context/AuthContext'
 
 export default function SignupAttendeePage() {
@@ -10,6 +11,7 @@ export default function SignupAttendeePage() {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -29,53 +31,94 @@ export default function SignupAttendeePage() {
   }
 
   return (
-    <main>
-      <h1>Sign up as an Attendee</h1>
+    <SplitLayout foot="One email can hold one account. If you already have an Organiser account, use a different email.">
+      <div className="content__header">
+        <h1>Sign up as an Attendee</h1>
+        <p className="lead">
+          Browse events and register to attend.
+        </p>
+      </div>
 
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label htmlFor="fullName">Full name</label>
-          <input
-            id="fullName"
-            value={fullName}
-            onChange={(event) => setFullName(event.target.value)}
-            required
-          />
-        </div>
+      <section className="stack stack--tight">
+        <h2 className="section-title">Your details</h2>
 
-        <div>
-          <label htmlFor="email">Email</label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
-          />
-        </div>
+        <form className="form" onSubmit={handleSubmit}>
+          <div className="field">
+            <label htmlFor="fullName">Full name</label>
+            <input
+              id="fullName"
+              name="fullName"
+              autoComplete="name"
+              autoFocus
+              value={fullName}
+              onChange={(event) => setFullName(event.target.value)}
+              required
+            />
+          </div>
 
-        <div>
-          <label htmlFor="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            minLength={8}
-            required
-          />
-        </div>
+          <div className="field">
+            <label htmlFor="email">Email</label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
+          </div>
 
-        {error && <p role="alert">{error}</p>}
+          <div className="field">
+            <label htmlFor="password">Password</label>
+            <div className="password">
+              <input
+                id="password"
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                minLength={8}
+                aria-describedby="password-hint"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+              />
+              <button
+                type="button"
+                className="password__toggle"
+                onClick={() => setShowPassword((shown) => !shown)}
+              >
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            <p className="field__hint" id="password-hint">
+              At least 8 characters.
+            </p>
+          </div>
 
-        <button type="submit" disabled={submitting}>
-          {submitting ? 'Creating account...' : 'Create account'}
-        </button>
-      </form>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
 
-      <p>
-        Already have an account? <Link to="/login">Log in</Link>
-      </p>
-    </main>
+          <div className="form-actions">
+            <button type="submit" className="button" disabled={submitting}>
+              {submitting ? 'Creating account…' : 'Create account'}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <div className="form-footer">
+        <p>
+          Running events yourself instead?{' '}
+          <Link to="/signup/organiser">Create an Organiser account</Link>
+        </p>
+        <p>
+          Already have an account? <Link to="/login">Log in</Link>
+        </p>
+      </div>
+    </SplitLayout>
   )
 }

@@ -1,4 +1,4 @@
-import { Route, Routes } from 'react-router-dom'
+import { Link, Route, Routes } from 'react-router-dom'
 
 import AuthGuard from './components/AuthGuard'
 import DashboardPage from './pages/DashboardPage'
@@ -24,7 +24,15 @@ export default function App() {
         }
       />
 
-      <Route path="*" element={<p>Page not found.</p>} />
+      <Route
+        path="*"
+        element={
+          <div className="page-state">
+            <p>That page does not exist.</p>
+            <Link to="/">Back to ConnectSphere</Link>
+          </div>
+        }
+      />
     </Routes>
   )
 }

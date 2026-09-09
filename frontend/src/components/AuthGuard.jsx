@@ -12,7 +12,7 @@ export default function AuthGuard({ children, allowedRoles }) {
   const { user, loading } = useAuth()
 
   if (loading) {
-    return <p>Loading...</p>
+    return <p className="page-state">Checking your session…</p>
   }
 
   if (!user) {
@@ -20,7 +20,11 @@ export default function AuthGuard({ children, allowedRoles }) {
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return <p>You do not have access to this page.</p>
+    return (
+      <p className="page-state">
+        You do not have access to this page.
+      </p>
+    )
   }
 
   return children

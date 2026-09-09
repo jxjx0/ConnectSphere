@@ -1,0 +1,621 @@
+/* ConnectSphere — global styles.
+ *
+ * One stylesheet for the whole app: tokens first, then base elements, then
+ * shared components. Every page uses these same classes, so the five pages
+ * stay consistent and nothing gets restyled per page.
+ *
+ * Two layouts. Signed out (landing, signup, login) is a two-column split:
+ * a left rail for the product and its context, a right column for the
+ * task. Signed in is a top bar over a full-width column -- the shape the
+ * rest of the app will grow into.
+ *
+ * The app is light by design, but on a dimmed grey ground rather than
+ * white -- easier to look at for a full shift. One warm accent. There is
+ * no dark theme and no toggle.
+ */
+
+/* --- Tokens ---------------------------------------------------------- */
+
+:root {
+  /* Layered light neutrals on a dimmed grey ground -- deliberately not
+   * white. Darkest is the rail, lightest is a raised surface. */
+  --rail: #d9dee3;
+  --bg: #e9ecef;
+  --surface: #f6f8f9;
+  --sunken: #e0e5e9;
+
+  --ink: #171c22;
+  --ink-muted: #545e6a;
+  --ink-faint: #7b8592;
+  --rule: #c8cfd6;
+  --rule-strong: #a9b3bd;
+
+  /* One accent, a burnt amber. Primary actions and links only -- if it
+   * carries the accent, it does something. */
+  --accent: #a8551c;
+  --accent-hover: #8b4515;
+  --accent-press: #703710;
+  --accent-faint: rgba(168, 85, 28, 0.09);
+  --accent-ring: rgba(168, 85, 28, 0.24);
+  /* Text that sits on top of a filled accent button. */
+  --on-accent: #ffffff;
+
+  --danger: #9c2f21;
+  --danger-faint: rgba(156, 47, 33, 0.09);
+  --danger-ring: rgba(156, 47, 33, 0.22);
+
+  /* Spacing scale. Use these, not arbitrary pixel values. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  --radius: 4px;
+  --measure: 26rem; /* form width */
+
+  /* One family for the interface, mono for labels and data. */
+  --font-body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto,
+    Helvetica, Arial, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* One transition speed everywhere, so the whole UI feels the same. */
+  --ease: 130ms ease;
+
+  color-scheme: light;
+}
+
+/* --- Base ------------------------------------------------------------ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: -0.017em;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: 1.75rem;
+}
+
+h3 {
+  font-size: 1.0625rem;
+  letter-spacing: -0.01em;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--accent);
+  text-underline-offset: 2px;
+  transition: color var(--ease);
+}
+
+a:hover {
+  color: var(--accent-hover);
+}
+
+/* Keyboard focus is visible on every interactive element, always. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
+
+/* Full-page message: loading, or a route that does not exist. */
+.page-state {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--ink-muted);
+}
+
+/* --- Split layout ---------------------------------------------------- */
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 100vh;
+}
+
+@media (min-width: 60rem) {
+  .split {
+    grid-template-columns: 22rem 1fr;
+  }
+}
+
+/* Left rail: who this is and what it does. Same on every auth page. */
+.rail {
+  background: var(--rail);
+  border-bottom: 1px solid var(--rule);
+  padding: var(--space-6) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+@media (min-width: 60rem) {
+  .rail {
+    border-bottom: 0;
+    border-right: 1px solid var(--rule);
+    padding: var(--space-7) var(--space-6);
+  }
+}
+
+.rail__top {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.wordmark {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.wordmark:hover {
+  color: var(--ink);
+}
+
+.rail__blurb {
+  color: var(--ink-muted);
+  font-size: 0.875rem;
+  max-width: 20rem;
+}
+
+/* Pushed to the bottom of the rail on wide screens. */
+.rail__foot {
+  margin-top: auto;
+  color: var(--ink-faint);
+  font-size: 0.8125rem;
+  max-width: 20rem;
+}
+
+/* Right column: the task. */
+.content {
+  padding: var(--space-7) var(--space-6) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+}
+
+@media (min-width: 60rem) {
+  .content {
+    padding: var(--space-8) var(--space-8) var(--space-8);
+    max-width: 44rem;
+  }
+}
+
+.content__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.lead {
+  color: var(--ink-muted);
+  font-size: 0.9375rem;
+  max-width: 32rem;
+}
+
+.note {
+  color: var(--ink-muted);
+  font-size: 0.8125rem;
+}
+
+/* Mono micro-label that opens a section. Reads as a field name, not a
+ * heading -- which is what it is. */
+.section-title {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--rule);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.stack--tight {
+  gap: var(--space-3);
+}
+
+.stack--default {
+  gap: var(--space-5);
+}
+
+.stack--loose {
+  gap: var(--space-7);
+}
+
+/* --- Choices: the account types on the landing page ------------------- */
+
+.choices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* A full-width row. Hover fills it faintly and slides the arrow -- the
+ * whole row is the target, not just the words. */
+.choice {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-3);
+  margin: 0 calc(var(--space-3) * -1);
+  border-bottom: 1px solid var(--rule);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: inherit;
+  transition: background-color var(--ease);
+}
+
+.choice:hover {
+  background: var(--surface);
+  color: inherit;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.choice__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.choice__title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.008em;
+  color: var(--ink);
+  transition: color var(--ease);
+}
+
+.choice:hover .choice__title {
+  color: var(--accent);
+}
+
+.choice__description {
+  color: var(--ink-muted);
+  font-size: 0.8125rem;
+}
+
+.choice__arrow {
+  color: var(--ink-faint);
+  font-size: 0.9375rem;
+  transition: transform var(--ease), color var(--ease);
+}
+
+.choice:hover .choice__arrow {
+  color: var(--accent);
+  transform: translateX(3px);
+}
+
+/* --- App shell (signed in) ------------------------------------------- */
+
+.topbar {
+  background: var(--rail);
+  border-bottom: 1px solid var(--rule);
+  padding: var(--space-4) var(--space-5);
+}
+
+.topbar__inner {
+  max-width: 64rem;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.topbar__user {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+}
+
+/* Hidden on narrow screens: the dashboard already names the user. */
+.topbar__name {
+  display: none;
+}
+
+@media (min-width: 34rem) {
+  .topbar__name {
+    display: inline;
+  }
+}
+
+.app-main {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: var(--space-7) var(--space-5) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+}
+
+/* --- Forms ----------------------------------------------------------- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: var(--measure);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.field label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.field input {
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  padding: 10px var(--space-3);
+  width: 100%;
+  transition: border-color var(--ease), box-shadow var(--ease);
+}
+
+.field input::placeholder {
+  color: var(--ink-faint);
+}
+
+.field input:hover {
+  border-color: var(--ink-faint);
+}
+
+.field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+/* Marks the specific input that failed, not just the form. */
+.field input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.field input[aria-invalid='true']:focus {
+  box-shadow: 0 0 0 3px var(--danger-ring);
+}
+
+.field__hint {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+/* A password input with a reveal toggle sitting inside it. */
+.password {
+  position: relative;
+  display: flex;
+}
+
+.password input {
+  padding-right: 4.25rem;
+}
+
+.password__toggle {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  transform: translateY(-50%);
+  border: 0;
+  background: transparent;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius);
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: color var(--ease), background-color var(--ease);
+}
+
+.password__toggle:hover {
+  color: var(--accent);
+  background: var(--accent-faint);
+}
+
+/* Submit row: the action, then anything that sits beside it. */
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
+/* Quiet trailing links under a form or page. */
+.form-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--rule);
+  max-width: var(--measure);
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+}
+
+/* --- Buttons --------------------------------------------------------- */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--on-accent);
+  padding: 10px var(--space-5);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color var(--ease), border-color var(--ease),
+    transform var(--ease);
+}
+
+.button:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--on-accent);
+}
+
+.button:active {
+  background: var(--accent-press);
+  border-color: var(--accent-press);
+  transform: translateY(1px);
+}
+
+.button:disabled {
+  background: var(--rule-strong);
+  border-color: var(--rule-strong);
+  color: var(--surface);
+  cursor: not-allowed;
+  transform: none;
+}
+
+.button--full {
+  width: 100%;
+}
+
+/* Sits in a dense row, such as the top bar. */
+.button--small {
+  font-size: 0.8125rem;
+  padding: 6px var(--space-3);
+}
+
+/* Quiet outline, for anything that is not the page's primary action. */
+.button--secondary {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--rule-strong);
+}
+
+.button--secondary:hover {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--ink-faint);
+}
+
+.button--secondary:active {
+  background: var(--sunken);
+  border-color: var(--ink-faint);
+}
+
+/* --- Errors ---------------------------------------------------------- */
+
+.form-error {
+  border-left: 2px solid var(--danger);
+  background: var(--danger-faint);
+  color: var(--danger);
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.875rem;
+  max-width: var(--measure);
+}
+
+/* --- Key/value rows (dashboard) -------------------------------------- */
+
+.detail-list {
+  margin: 0;
+  max-width: 32rem;
+  border-top: 1px solid var(--rule);
+}
+
+.detail-list__row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.detail-list__row dt {
+  flex: 0 0 8rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+
+.detail-list__row dd {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+/* Role, shown as a quiet tag rather than plain text. */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--ink-muted);
+}

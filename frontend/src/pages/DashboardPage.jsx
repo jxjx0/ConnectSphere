@@ -2,29 +2,44 @@
 // the user signed in, the token survived, and the backend told us who they
 // are. Real dashboard content arrives in Sprint 1.
 
-import { useNavigate } from 'react-router-dom'
-
+import AppShell from '../components/AppShell'
 import { useAuth } from '../context/AuthContext'
 
-export default function DashboardPage() {
-  const { user, logout } = useAuth()
-  const navigate = useNavigate()
+// Roles arrive as 'venue_staff'; people read "Venue staff".
+function readableRole(role) {
+  const words = role.replace(/_/g, ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
 
-  function handleLogout() {
-    logout()
-    navigate('/')
-  }
+export default function DashboardPage() {
+  const { user } = useAuth()
 
   return (
-    <main>
-      <h1>Dashboard</h1>
+    <AppShell>
+      <div className="content__header">
+        <h1>Dashboard</h1>
+        <p className="lead">
+          You are signed in. Events, venues and bookings arrive in the next
+          release.
+        </p>
+      </div>
 
-      <p>Signed in as {user.full_name}</p>
-      <p>Role: {user.role}</p>
+      <section className="stack stack--tight">
+        <h2 className="section-title">Your account</h2>
 
-      <button type="button" onClick={handleLogout}>
-        Log out
-      </button>
-    </main>
+        <dl className="detail-list">
+          <div className="detail-list__row">
+            <dt>Name</dt>
+            <dd>{user.full_name}</dd>
+          </div>
+          <div className="detail-list__row">
+            <dt>Role</dt>
+            <dd>
+              <span className="tag">{readableRole(user.role)}</span>
+            </dd>
+          </div>
+        </dl>
+      </section>
+    </AppShell>
   )
 }
