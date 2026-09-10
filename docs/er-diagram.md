@@ -1,4 +1,4 @@
-Paste this code into https://mermaid.live to view/edit the diagram.
+This is Mermaid code: renders automatically as a diagram wherever Mermaid is supported (e.g. GitHub, this Markdown viewer).
 
 ```mermaid
 erDiagram
