@@ -18,6 +18,7 @@ VALID_SIGNUP = {
 # --- models/profile.py: who may self-register ---------------------------
 
 
+# Organiser and attendee are the two external roles, so both must be accepted.
 @pytest.mark.parametrize("role", ["organiser", "attendee"])
 def test_external_roles_may_self_register(role):
     request = SignupRequest(**{**VALID_SIGNUP, "role": role})
@@ -25,6 +26,8 @@ def test_external_roles_may_self_register(role):
     assert request.role == Role(role)
 
 
+# The three internal roles are created by the team in Supabase, never through
+# signup, so each one must be refused with our own message.
 @pytest.mark.parametrize("role", ["coordinator", "venue_staff", "tech_support"])
 def test_internal_roles_may_not_self_register(role):
     with pytest.raises(ValidationError) as caught:
@@ -33,26 +36,31 @@ def test_internal_roles_may_not_self_register(role):
     assert "cannot be self-registered" in str(caught.value)
 
 
+# A role that is not in the Role enum at all is refused, not stored as-is.
 def test_unknown_role_is_rejected():
     with pytest.raises(ValidationError):
         SignupRequest(**{**VALID_SIGNUP, "role": "administrator"})
 
 
+# Passwords must be at least 8 characters.
 def test_short_password_is_rejected():
     with pytest.raises(ValidationError):
         SignupRequest(**{**VALID_SIGNUP, "password": "short"})
 
 
+# The email field has to actually look like an email address.
 def test_malformed_email_is_rejected():
     with pytest.raises(ValidationError):
         SignupRequest(**{**VALID_SIGNUP, "email": "not-an-email"})
 
 
+# A name of only spaces counts as blank, even though it is not an empty string.
 def test_blank_full_name_is_rejected():
     with pytest.raises(ValidationError):
         SignupRequest(**{**VALID_SIGNUP, "full_name": "   "})
 
 
+# Surrounding spaces are trimmed, so we never store " Ada Tan ".
 def test_full_name_is_stripped():
     request = SignupRequest(**{**VALID_SIGNUP, "full_name": "  Ada Tan  "})
 
@@ -62,6 +70,11 @@ def test_full_name_is_stripped():
 # --- POST /signup -------------------------------------------------------
 
 
+# The happy path: a valid signup returns 201 with the token and profile in the
+# shape the frontend expects.
+#
+# `monkeypatch` replaces auth_service.signup for this one test, so no Supabase
+# call happens -- we are checking the route's own wiring, not the database.
 def test_signup_returns_token_and_profile(client, monkeypatch, organiser_profile):
     monkeypatch.setattr(
         auth_service,
@@ -78,6 +91,8 @@ def test_signup_returns_token_and_profile(client, monkeypatch, organiser_profile
     assert body["profile"]["full_name"] == "Ada Tan"
 
 
+# The stand-in raises if it is called, which proves the request was stopped by
+# validation before it reached the service -- no account could be created.
 def test_signup_as_internal_role_is_rejected_by_the_backend(client, monkeypatch):
     """The frontend has no coordinator signup page, but the server does not
     rely on that -- it refuses the request on its own."""
@@ -93,6 +108,7 @@ def test_signup_as_internal_role_is_rejected_by_the_backend(client, monkeypatch)
     assert "cannot be self-registered" in " ".join(response.get_json()["errors"])
 
 
+# A body missing most fields gives a 400 with a list of reasons, not a crash.
 def test_signup_with_missing_fields_is_rejected(client):
     response = client.post("/signup", json={"email": "ada@example.com"})
 
@@ -100,12 +116,15 @@ def test_signup_with_missing_fields_is_rejected(client):
     assert response.get_json()["errors"]
 
 
+# No body at all is still a clean 400 -- this is what stops it being a 500.
 def test_signup_with_no_body_is_rejected(client):
     response = client.post("/signup")
 
     assert response.status_code == 400
 
 
+# When Supabase rejects a repeat email, that error reaches the caller intact
+# instead of surfacing as a generic server error.
 def test_signup_reports_a_duplicate_email(client, monkeypatch):
     def already_registered(request):
         raise AuthError("User already registered", status_code=400)
@@ -121,6 +140,7 @@ def test_signup_reports_a_duplicate_email(client, monkeypatch):
 # --- POST /login --------------------------------------------------------
 
 
+# The happy path: correct credentials give 200 and an access token.
 def test_login_returns_token_and_profile(client, monkeypatch, organiser_profile):
     monkeypatch.setattr(
         auth_service,
@@ -136,6 +156,8 @@ def test_login_returns_token_and_profile(client, monkeypatch, organiser_profile)
     assert response.get_json()["access_token"] == "token-123"
 
 
+# A wrong password gives 401, and the message stays vague on purpose: it must
+# not reveal whether the email exists.
 def test_login_with_bad_credentials_is_unauthorised(client, monkeypatch):
     def rejected(request):
         raise AuthError("Invalid email or password.", status_code=401)
@@ -150,6 +172,7 @@ def test_login_with_bad_credentials_is_unauthorised(client, monkeypatch):
     assert response.get_json()["error"] == "Invalid email or password."
 
 
+# A login attempt with no password is a bad request (400), not a failed login.
 def test_login_with_missing_password_is_rejected(client):
     response = client.post("/login", json={"email": "ada@example.com"})
 
@@ -159,6 +182,7 @@ def test_login_with_missing_password_is_rejected(client):
 # --- GET /me ------------------------------------------------------------
 
 
+# The happy path: a valid token returns that user's own profile.
 def test_me_returns_the_current_profile(client, monkeypatch, organiser_profile):
     monkeypatch.setattr(auth_service, "get_user_id", lambda token: organiser_profile.id)
     monkeypatch.setattr(
@@ -171,18 +195,23 @@ def test_me_returns_the_current_profile(client, monkeypatch, organiser_profile):
     assert response.get_json()["profile"]["id"] == organiser_profile.id
 
 
+# No Authorization header at all is refused -- the route is genuinely protected.
 def test_me_without_a_token_is_unauthorised(client):
     response = client.get("/me")
 
     assert response.status_code == 401
 
 
+# A header missing the "Bearer " prefix is refused too, rather than being
+# read as a token by accident.
 def test_me_with_a_malformed_header_is_unauthorised(client):
     response = client.get("/me", headers={"Authorization": "token-123"})
 
     assert response.status_code == 401
 
 
+# A well-formed but invalid token: the header parses, then Supabase rejects it,
+# and that 401 is passed through to the caller.
 def test_me_with_an_invalid_token_is_unauthorised(client, monkeypatch):
     def rejected(token):
         raise AuthError("Invalid or expired token.", status_code=401)
@@ -195,10 +224,15 @@ def test_me_with_an_invalid_token_is_unauthorised(client, monkeypatch):
     assert response.get_json()["error"] == "Invalid or expired token."
 
 
+# --- models/profile.py: the Profile shape -------------------------------
+
+
+# The role must reach the frontend as "organiser", not "Role.ORGANISER".
 def test_profile_serialises_the_role_as_a_plain_string(organiser_profile):
     assert organiser_profile.model_dump(mode="json")["role"] == "organiser"
 
 
+# A row shaped the way Supabase returns it maps cleanly onto our Profile model.
 def test_profile_accepts_a_supabase_row():
     row = {
         "id": "22222222-2222-2222-2222-222222222222",
