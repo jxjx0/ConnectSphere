@@ -13,7 +13,7 @@ workspace "ConnectSphere - System Context" "C4 Level 1 (v1): who uses the Connec
         # ---------------------------------------------------------------
         # The system we are building — one software system
         # ---------------------------------------------------------------
-        connectSphere = softwareSystem "ConnectSphere Event Planning System" "Manages the event request lifecycle, venue bookings, equipment reservations, attendee registration, and notifications."
+        connectSphere = softwareSystem "ConnectSphere Event Planning System" "Manages the event request lifecycle, automatic event assignment, venue bookings, equipment reservations, attendee registration, and notifications."
 
         # ---------------------------------------------------------------
         # Things we neither build, own nor operate
@@ -28,7 +28,6 @@ workspace "ConnectSphere - System Context" "C4 Level 1 (v1): who uses the Connec
         coordinator -> connectSphere "Reviews assigned requests, searches venues, submits booking requests, records equipment needs, and confirms events"
         venueStaff -> connectSphere "Maintains the venue catalogue and availability, and decides on venue booking requests"
         techStaff -> connectSphere "Reviews equipment requests, checks availability, and reserves equipment for events"
-        connectSphere -> coordinator "Assigns events to coordinators"
 
         connectSphere -> emailService "Sends notification and reminder messages for delivery to users"
     }

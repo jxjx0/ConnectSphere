@@ -17,7 +17,7 @@ workspace "ConnectSphere - Containers" "C4 Level 2 (v1): the runtime building bl
 
             spa = container "Web Application" "Role-based UI for all five user groups: event requests, review, venue calendar and search, equipment, registration, and dashboards." "React 18 (Vite), react-router-dom" "Web Browser"
 
-            api = container "API Application" "Enforces the business rules: authorisation by role, event status transitions, venue suitability and conflict detection, equipment availability, registration capacity, and notification triggers. Layered as routes -> services -> models." "Python 3, Flask 3, Pydantic" "API"
+            api = container "API Application" "Enforces the business rules: authorisation by role, event status transitions, automatic event assignments, venue suitability and conflict detection, equipment availability, registration capacity, and notification triggers. Layered as routes -> services -> models." "Python 3, Flask 3, Pydantic" "API"
 
             database = container "Application Database" "Stores profiles, events, venues, bookings, equipment, reservations, registrations, notifications, and the change/activity history used for auditability." "Supabase Postgres (managed PostgreSQL, row-level security)" "Database"
 
