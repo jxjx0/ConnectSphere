@@ -28,6 +28,7 @@ workspace "ConnectSphere - System Context" "C4 Level 1 (v1): who uses the Connec
         coordinator -> connectSphere "Reviews assigned requests, searches venues, submits booking requests, records equipment needs, and confirms events"
         venueStaff -> connectSphere "Maintains the venue catalogue and availability, and decides on venue booking requests"
         techStaff -> connectSphere "Reviews equipment requests, checks availability, and reserves equipment for events"
+        connectSphere -> coordinator "Assigns events to coordinators"
 
         connectSphere -> emailService "Sends notification and reminder messages for delivery to users"
     }
