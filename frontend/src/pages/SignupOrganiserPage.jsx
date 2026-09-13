@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 
 import SplitLayout from '../components/SplitLayout'
 import { useAuth } from '../context/AuthContext'
+import { validateContactNumber, validateFullName, validateOrganization } from '../validation'
 
 export default function SignupOrganiserPage() {
   const { signup } = useAuth()
@@ -10,6 +11,8 @@ export default function SignupOrganiserPage() {
 
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
+  const [contactNumber, setContactNumber] = useState('')
+  const [organization, setOrganization] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
@@ -18,10 +21,20 @@ export default function SignupOrganiserPage() {
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
+
+    const validationError =
+      validateFullName(fullName) ||
+      validateOrganization(organization) ||
+      validateContactNumber(contactNumber)
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+
     setSubmitting(true)
 
     try {
-      await signup({ fullName, email, password, role: 'organiser' })
+      await signup({ fullName, email, password, role: 'organiser', contactNumber, organization })
       navigate('/dashboard')
     } catch (caught) {
       setError(caught.message)
@@ -65,6 +78,33 @@ export default function SignupOrganiserPage() {
               autoComplete="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
+              required
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="organization">Organization</label>
+            <input
+              id="organization"
+              name="organization"
+              autoComplete="organization"
+              maxLength={120}
+              value={organization}
+              onChange={(event) => setOrganization(event.target.value)}
+              required
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="contactNumber">Contact number</label>
+            <input
+              id="contactNumber"
+              name="contactNumber"
+              type="tel"
+              autoComplete="tel"
+              maxLength={30}
+              value={contactNumber}
+              onChange={(event) => setContactNumber(event.target.value)}
               required
             />
           </div>

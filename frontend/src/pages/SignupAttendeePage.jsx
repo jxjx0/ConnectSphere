@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 
 import SplitLayout from '../components/SplitLayout'
 import { useAuth } from '../context/AuthContext'
+import { validateContactNumber, validateFullName } from '../validation'
 
 export default function SignupAttendeePage() {
   const { signup } = useAuth()
@@ -10,6 +11,7 @@ export default function SignupAttendeePage() {
 
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
+  const [contactNumber, setContactNumber] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
@@ -18,10 +20,17 @@ export default function SignupAttendeePage() {
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
+
+    const validationError = validateFullName(fullName) || validateContactNumber(contactNumber)
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+
     setSubmitting(true)
 
     try {
-      await signup({ fullName, email, password, role: 'attendee' })
+      await signup({ fullName, email, password, role: 'attendee', contactNumber })
       navigate('/dashboard')
     } catch (caught) {
       setError(caught.message)
@@ -65,6 +74,20 @@ export default function SignupAttendeePage() {
               autoComplete="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
+              required
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="contactNumber">Contact number</label>
+            <input
+              id="contactNumber"
+              name="contactNumber"
+              type="tel"
+              autoComplete="tel"
+              maxLength={30}
+              value={contactNumber}
+              onChange={(event) => setContactNumber(event.target.value)}
               required
             />
           </div>

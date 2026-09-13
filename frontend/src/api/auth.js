@@ -27,10 +27,17 @@ async function request(path, { method = 'GET', body, token } = {}) {
   return data
 }
 
-export function signup({ fullName, email, password, role }) {
+export function signup({ fullName, email, password, role, contactNumber, organization }) {
   return request('/signup', {
     method: 'POST',
-    body: { full_name: fullName, email, password, role },
+    body: {
+      full_name: fullName,
+      email,
+      password,
+      role,
+      contact_number: contactNumber,
+      organization,
+    },
   })
 }
 
