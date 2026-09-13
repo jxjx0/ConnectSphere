@@ -3,7 +3,7 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
 class Role(str, Enum):
@@ -31,6 +31,12 @@ class SignupRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=72)
     role: Role
+    # Role-specific: contact_number is required for attendees and
+    # organisers; organization is required for organisers only. Both live
+    # on the shared `profiles` table, populated only for the roles that
+    # need them.
+    contact_number: str | None = Field(default=None, max_length=30)
+    organization: str | None = Field(default=None, max_length=120)
 
     @field_validator("full_name")
     @classmethod
@@ -39,6 +45,14 @@ class SignupRequest(BaseModel):
         if not stripped:
             raise ValueError("full_name must not be blank")
         return stripped
+
+    @field_validator("contact_number", "organization")
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
 
     @field_validator("role")
     @classmethod
@@ -55,6 +69,15 @@ class SignupRequest(BaseModel):
             )
         return value
 
+    @model_validator(mode="after")
+    def validate_role_specific_fields(self) -> "SignupRequest":
+        """Require each role's own fields, per its signup form's own AC."""
+        if self.role in (Role.ATTENDEE, Role.ORGANISER) and not self.contact_number:
+            raise ValueError("contact_number must not be blank")
+        if self.role == Role.ORGANISER and not self.organization:
+            raise ValueError("organization must not be blank")
+        return self
+
 
 class LoginRequest(BaseModel):
     """The body of POST /login."""
@@ -64,9 +87,16 @@ class LoginRequest(BaseModel):
 
 
 class Profile(BaseModel):
-    """A row of the `profiles` table."""
+    """A row of the `profiles` table.
+
+    contact_number and organization are nullable: populated for attendees
+    and organisers (contact_number for both, organization for organisers
+    only), null for every other role.
+    """
 
     id: str
     full_name: str
     role: Role
+    contact_number: str | None = None
+    organization: str | None = None
     created_at: datetime | None = None

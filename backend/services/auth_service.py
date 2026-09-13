@@ -63,6 +63,8 @@ def signup(request: SignupRequest) -> dict:
                 "id": result.user.id,
                 "full_name": request.full_name,
                 "role": request.role.value,
+                "contact_number": request.contact_number,
+                "organization": request.organization,
             }
         )
         .execute()

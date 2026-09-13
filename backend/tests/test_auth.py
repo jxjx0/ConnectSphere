@@ -12,6 +12,8 @@ VALID_SIGNUP = {
     "email": "ada@example.com",
     "password": "correct-horse",
     "role": "organiser",
+    "contact_number": "9123 4567",
+    "organization": "Acme Events",
 }
 
 
@@ -58,6 +60,46 @@ def test_malformed_email_is_rejected():
 def test_blank_full_name_is_rejected():
     with pytest.raises(ValidationError):
         SignupRequest(**{**VALID_SIGNUP, "full_name": "   "})
+
+
+# contact_number is required for both external roles.
+@pytest.mark.parametrize("role", ["organiser", "attendee"])
+def test_missing_contact_number_is_rejected(role):
+    payload = {**VALID_SIGNUP, "role": role}
+    del payload["contact_number"]
+
+    with pytest.raises(ValidationError) as caught:
+        SignupRequest(**payload)
+
+    assert "contact_number must not be blank" in str(caught.value)
+
+
+# Spaces-only counts as blank here too, same as full_name.
+def test_blank_contact_number_is_rejected():
+    with pytest.raises(ValidationError) as caught:
+        SignupRequest(**{**VALID_SIGNUP, "contact_number": "   "})
+
+    assert "contact_number must not be blank" in str(caught.value)
+
+
+# organization is required for organisers only -- attendees don't have it.
+def test_missing_organization_is_rejected_for_organiser():
+    payload = {**VALID_SIGNUP, "role": "organiser"}
+    del payload["organization"]
+
+    with pytest.raises(ValidationError) as caught:
+        SignupRequest(**payload)
+
+    assert "organization must not be blank" in str(caught.value)
+
+
+def test_organization_is_not_required_for_attendee():
+    payload = {**VALID_SIGNUP, "role": "attendee"}
+    del payload["organization"]
+
+    request = SignupRequest(**payload)
+
+    assert request.organization is None
 
 
 # Surrounding spaces are trimmed, so we never store " Ada Tan ".
