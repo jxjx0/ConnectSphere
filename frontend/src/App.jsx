@@ -6,6 +6,7 @@ import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
 import SignupAttendeePage from './pages/SignupAttendeePage'
 import SignupOrganiserPage from './pages/SignupOrganiserPage'
+import VenuePage from './pages/VenuePage'
 
 export default function App() {
   return (
@@ -20,6 +21,24 @@ export default function App() {
         element={
           <AuthGuard>
             <DashboardPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/venues"
+        element={
+          <AuthGuard allowedRoles={['venue_staff']}>
+            <VenuePage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/venues/create"
+        element={
+          <AuthGuard allowedRoles={['venue_staff']}>
+            <VenuePage createMode />
           </AuthGuard>
         }
       />
