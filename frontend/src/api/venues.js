@@ -28,3 +28,11 @@ export function createVenue(venue, token) {
 export function getVenues(token) {
   return request('/venues', { token })
 }
+
+export function createVenueBlock(venueId, block, token) {
+  return request(`/venues/${venueId}/blocks`, {
+    method: 'POST',
+    body: block,
+    token,
+  })
+}
