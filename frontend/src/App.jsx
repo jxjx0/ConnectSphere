@@ -6,6 +6,7 @@ import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
 import SignupAttendeePage from './pages/SignupAttendeePage'
 import SignupOrganiserPage from './pages/SignupOrganiserPage'
+import EquipmentProfilePage from './pages/EquipmentProfilePage'
 
 export default function App() {
   return (
@@ -20,6 +21,15 @@ export default function App() {
         element={
           <AuthGuard>
             <DashboardPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/equipment/new"
+        element={
+          <AuthGuard>
+            <EquipmentProfilePage />
           </AuthGuard>
         }
       />
