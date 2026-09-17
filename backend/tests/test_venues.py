@@ -1,7 +1,11 @@
 """Tests for the protected venue catalogue endpoints."""
 
+import pytest
+from pydantic import ValidationError
+from types import SimpleNamespace
+
 from models.profile import Profile, Role
-from models.venue import Venue, VenueCreateRequest
+from models.venue import Venue, VenueCreateRequest, VenueUpdateRequest
 from services import auth_service, venue_service
 from services.auth_service import AuthError
 
@@ -189,6 +193,88 @@ def test_create_venue_rejects_invalid_request_data(client, monkeypatch):
     assert response.status_code == 400
     assert response.get_json()["errors"]
     assert all(isinstance(message, str) for message in response.get_json()["errors"])
+
+
+def test_venue_staff_can_update_a_valid_venue(client, monkeypatch):
+    authenticate_as_venue_staff(monkeypatch)
+    captured = {}
+
+    def update_venue(access_token, venue_id, request):
+        captured["access_token"] = access_token
+        captured["venue_id"] = venue_id
+        captured["request"] = request
+        return Venue(
+            **{
+                **VALID_VENUE,
+                "id": VENUE_RESPONSE.id,
+                "name": "Updated Hall",
+                "capacity": 250,
+            }
+        )
+
+    monkeypatch.setattr(venue_service, "update_venue", update_venue)
+
+    response = client.put(
+        f"/venues/{VENUE_RESPONSE.id}",
+        json={
+            **VALID_VENUE,
+            "name": "Updated Hall",
+            "capacity": 250,
+        },
+        headers={"Authorization": "Bearer venue-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["venue"]["name"] == "Updated Hall"
+    assert captured["access_token"] == "venue-token"
+    assert captured["venue_id"] == VENUE_RESPONSE.id
+    assert isinstance(captured["request"], VenueUpdateRequest)
+    assert captured["request"].capacity == 250
+
+
+def test_update_venue_rejects_invalid_request_data(client, monkeypatch):
+    authenticate_as_venue_staff(monkeypatch)
+    monkeypatch.setattr(
+        venue_service,
+        "update_venue",
+        lambda access_token, venue_id, request: (_ for _ in ()).throw(
+            AssertionError("the venue service should not be reached")
+        ),
+    )
+
+    response = client.put(
+        f"/venues/{VENUE_RESPONSE.id}",
+        json={**VALID_VENUE, "capacity": 0, "layouts": []},
+        headers={"Authorization": "Bearer venue-token"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["errors"]
+
+
+def test_non_venue_staff_cannot_update_a_venue(client, monkeypatch, organiser_profile):
+    monkeypatch.setattr(auth_service, "get_user_id", lambda access_token: organiser_profile.id)
+    monkeypatch.setattr(
+        auth_service,
+        "get_profile",
+        lambda access_token, user_id: organiser_profile,
+    )
+    monkeypatch.setattr(
+        venue_service,
+        "update_venue",
+        lambda access_token, venue_id, request: (_ for _ in ()).throw(
+            AssertionError("the venue service should not be reached")
+        ),
+    )
+
+    response = client.put(
+        f"/venues/{VENUE_RESPONSE.id}",
+        json=VALID_VENUE,
+        headers={"Authorization": "Bearer organiser-token"},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "Only Venue Staff can create venues."
 
 
 def test_authenticated_user_can_retrieve_venues(client, monkeypatch):

@@ -124,6 +124,7 @@ create unique index venues_name_unique_case_insensitive
 
 grant select on public.venues to authenticated;
 grant insert on public.venues to authenticated;
+grant update on public.venues to authenticated;
 
 create function public.is_venue_staff()
 returns boolean
@@ -155,4 +156,11 @@ create policy "Venue staff can create venues"
     on public.venues
     for insert
     to authenticated
+    with check (public.is_venue_staff());
+
+create policy "Venue staff can update venues"
+    on public.venues
+    for update
+    to authenticated
+    using (public.is_venue_staff())
     with check (public.is_venue_staff());

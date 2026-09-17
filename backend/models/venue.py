@@ -92,6 +92,9 @@ class VenueCreateRequest(BaseModel):
             raise ValueError("layout names must be unique")
         return self
 
+class VenueUpdateRequest(VenueCreateRequest):
+    """The body of PUT /venues/<venue_id>."""
+
 
 class Venue(BaseModel):
     """A row returned from the public.venues table."""

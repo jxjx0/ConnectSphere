@@ -44,6 +44,15 @@ export default function App() {
       />
 
       <Route
+        path="/venues/:venueId/edit"
+        element={
+          <AuthGuard allowedRoles={['venue_staff']}>
+            <VenuePage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
         path="*"
         element={
           <div className="page-state">
