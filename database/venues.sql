@@ -55,6 +55,37 @@ begin
 end;
 $$;
 
+create or replace function public.validate_venue_layout_capacities(
+    venue_capacity integer,
+    value jsonb
+)
+returns boolean
+language plpgsql
+immutable
+as $$
+declare
+    layout jsonb;
+begin
+    if venue_capacity is null
+        or jsonb_typeof(value) <> 'array'
+    then
+        return false;
+    end if;
+
+    for layout in select jsonb_array_elements(value)
+    loop
+        if jsonb_typeof(layout) <> 'object'
+            or (layout ->> 'capacity') !~ '^[0-9]+$'
+            or (layout ->> 'capacity')::integer > venue_capacity
+        then
+            return false;
+        end if;
+    end loop;
+
+    return true;
+end;
+$$;
+
 create or replace function public.validate_venue_accessibility(value jsonb)
 returns boolean
 language plpgsql
@@ -117,7 +148,9 @@ alter table public.venues
     add constraint venues_accessibility_valid
         check (public.validate_venue_accessibility(accessibility)),
     add constraint venues_operating_hours_valid
-        check (public.validate_venue_operating_hours(operating_hours));
+        check (public.validate_venue_operating_hours(operating_hours)),
+    add constraint venues_layout_capacities_within_venue
+        check (public.validate_venue_layout_capacities(capacity, layouts));
 
 create unique index venues_name_unique_case_insensitive
     on public.venues (lower(btrim(name)));

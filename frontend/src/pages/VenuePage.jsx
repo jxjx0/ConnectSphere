@@ -170,7 +170,7 @@ export default function VenuePage({ createMode = false }) {
       (!form.capacity || Number(form.capacity) <= 0
         ? 'Overall capacity must be positive.'
         : null) ||
-      validateVenueLayouts(form.layouts) ||
+      validateVenueLayouts(form.layouts, form.capacity) ||
       validateAccessibility(form.accessibility) ||
       validateOperatingHours(form.open, form.close)
     )

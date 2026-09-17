@@ -207,6 +207,66 @@ def test_create_venue_rejects_invalid_request_data(client, monkeypatch):
     assert all(isinstance(message, str) for message in response.get_json()["errors"])
 
 
+def test_venue_layout_capacity_equal_to_overall_capacity_is_valid():
+    request = VenueCreateRequest(
+        **{
+            **VALID_VENUE,
+            "capacity": 200,
+            "layouts": [{"name": "Theatre", "capacity": 200}],
+        }
+    )
+
+    assert request.layouts[0].capacity == 200
+
+
+def test_venue_layout_capacity_below_overall_capacity_is_valid():
+    request = VenueCreateRequest(
+        **{
+            **VALID_VENUE,
+            "capacity": 200,
+            "layouts": [{"name": "Theatre", "capacity": 199}],
+        }
+    )
+
+    assert request.layouts[0].capacity == 199
+
+
+def test_venue_layout_capacity_above_overall_capacity_is_rejected():
+    with pytest.raises(ValidationError, match="layout capacity cannot exceed"):
+        VenueCreateRequest(
+            **{
+                **VALID_VENUE,
+                "capacity": 200,
+                "layouts": [{"name": "Theatre", "capacity": 201}],
+            }
+        )
+
+
+def test_any_layout_capacity_above_overall_capacity_is_rejected():
+    with pytest.raises(ValidationError, match="layout capacity cannot exceed"):
+        VenueCreateRequest(
+            **{
+                **VALID_VENUE,
+                "capacity": 200,
+                "layouts": [
+                    {"name": "Theatre", "capacity": 199},
+                    {"name": "Banquet", "capacity": 201},
+                ],
+            }
+        )
+
+
+def test_edit_request_uses_the_same_layout_capacity_rule():
+    with pytest.raises(ValidationError, match="layout capacity cannot exceed"):
+        VenueUpdateRequest(
+            **{
+                **VALID_VENUE,
+                "capacity": 200,
+                "layouts": [{"name": "Theatre", "capacity": 201}],
+            }
+        )
+
+
 def test_venue_staff_can_update_a_valid_venue(client, monkeypatch):
     authenticate_as_venue_staff(monkeypatch)
     captured = {}

@@ -92,6 +92,15 @@ class VenueCreateRequest(BaseModel):
             raise ValueError("layout names must be unique")
         return self
 
+    @model_validator(mode="after")
+    def validate_layout_capacities(self) -> "VenueCreateRequest":
+        if any(layout.capacity > self.capacity for layout in self.layouts):
+            raise ValueError(
+                "layout capacity cannot exceed the overall venue capacity"
+            )
+        return self
+
+
 class VenueUpdateRequest(VenueCreateRequest):
     """The body of PUT /venues/<venue_id>."""
 

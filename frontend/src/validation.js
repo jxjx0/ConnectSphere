@@ -32,14 +32,18 @@ export function validateVenueName(value) {
   return null
 }
 
-export function validateVenueLayouts(layouts) {
+export function validateVenueLayouts(layouts, overallCapacity) {
   if (!layouts.length) return 'At least one supported layout is required.'
 
+  const venueCapacity = Number(overallCapacity)
   const names = []
   for (const layout of layouts) {
     if (!layout.name.trim()) return 'Layout names must not be blank.'
     if (!layout.capacity || Number(layout.capacity) <= 0) {
       return 'Each layout capacity must be positive.'
+    }
+    if (Number(layout.capacity) > venueCapacity) {
+      return 'Layout capacity cannot exceed the overall venue capacity.'
     }
     const normalizedName = layout.name.trim().toLowerCase()
     if (names.includes(normalizedName)) return 'Layout names must be unique.'
