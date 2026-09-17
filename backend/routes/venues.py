@@ -62,6 +62,16 @@ def update_venue(venue_id):
     return jsonify({"venue": venue.model_dump(mode="json")}), 200
 
 
+@venues_bp.get("/<venue_id>/history")
+@require_auth
+def get_venue_history(venue_id):
+    _require_venue_staff()
+    history = venue_service.get_venue_history(g.access_token, venue_id)
+    return jsonify(
+        {"history": [record.model_dump(mode="json") for record in history]}
+    ), 200
+
+
 @venues_bp.post("/<venue_id>/blocks")
 @require_auth
 def create_venue_block(venue_id):

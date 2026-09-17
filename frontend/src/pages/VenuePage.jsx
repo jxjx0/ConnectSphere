@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import {
   createVenue,
+  getVenueHistory,
   getVenues,
   updateVenue,
 } from '../api/venues'
@@ -104,6 +105,8 @@ export default function VenuePage({ createMode = false }) {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [blockingVenue, setBlockingVenue] = useState(null)
+  const [history, setHistory] = useState([])
+  const [historyError, setHistoryError] = useState('')
 
   useEffect(() => {
     if (createMode) return
