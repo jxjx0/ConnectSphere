@@ -6,6 +6,7 @@ from flask_cors import CORS
 import config
 from routes.auth import auth_bp
 from routes.health import health_bp
+from routes.venues import venues_bp
 from services.auth_service import AuthError
 
 from routes.equipment import equipment_bp
@@ -17,6 +18,7 @@ def create_app() -> Flask:
 
     app.register_blueprint(health_bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(venues_bp)
     app.register_blueprint(equipment_bp)
 
     @app.errorhandler(AuthError)

@@ -4,6 +4,7 @@
 
 import AppShell from '../components/AppShell'
 import { useAuth } from '../context/AuthContext'
+import { Link } from 'react-router-dom'
 
 // Roles arrive as 'venue_staff'; people read "Venue staff".
 function readableRole(role) {
@@ -23,6 +24,20 @@ export default function DashboardPage() {
           release.
         </p>
       </div>
+
+      {user.role === 'venue_staff' && (
+        <section className="stack stack--tight">
+          <h2 className="section-title">Venue Management</h2>
+          <div className="form-actions">
+            <Link to="/venues" className="button">
+              View Venue Catalogue
+            </Link>
+            <Link to="/venues/create" className="button button--secondary">
+              Create Venue Profile
+            </Link>
+          </div>
+        </section>
+      )}
 
       <section className="stack stack--tight">
         <h2 className="section-title">Your account</h2>
