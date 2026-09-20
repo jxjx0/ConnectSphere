@@ -24,7 +24,7 @@ function emptyForm() {
     name: '',
     location: '',
     capacity: '',
-    facilities: '',
+    facilities: [],
     accessibility: [],
     layouts: [{ ...EMPTY_LAYOUT }],
     open: '',
@@ -39,17 +39,6 @@ function formatFacilities(facilities) {
     return Object.entries(facilities)
       .map(([name, value]) => `${name}: ${String(value)}`)
       .join(', ') || 'None entered'
-  }
-  return String(facilities)
-}
-
-function facilitiesToInput(facilities) {
-  if (facilities === null || facilities === undefined) return ''
-  if (Array.isArray(facilities)) return facilities.join(', ')
-  if (typeof facilities === 'object') {
-    return Object.entries(facilities)
-      .map(([name, value]) => `${name}: ${String(value)}`)
-      .join(', ')
   }
   return String(facilities)
 }
@@ -124,7 +113,7 @@ export default function VenuePage({ createMode = false }) {
             name: venue.name,
             location: venue.location || '',
             capacity: String(venue.capacity),
-            facilities: facilitiesToInput(venue.facilities),
+            facilities: Array.isArray(venue.facilities) ? venue.facilities : [],
             accessibility: venue.accessibility || [],
             layouts: venue.layouts.map((layout) => ({
               name: layout.name,
@@ -164,6 +153,15 @@ export default function VenuePage({ createMode = false }) {
     }))
   }
 
+  function updateFacility(index, value) {
+    setForm((current) => ({
+      ...current,
+      facilities: current.facilities.map((facility, facilityIndex) =>
+        facilityIndex === index ? value : facility,
+      ),
+    }))
+  }
+
   function validateForm() {
     return (
       validateVenueName(form.name) ||
@@ -192,10 +190,7 @@ export default function VenuePage({ createMode = false }) {
       name: form.name.trim(),
       location: form.location.trim() || null,
       capacity: Number(form.capacity),
-      facilities: form.facilities
-        .split(',')
-        .map((facility) => facility.trim())
-        .filter(Boolean),
+      facilities: form.facilities.map((facility) => facility.trim()).filter(Boolean),
       accessibility: form.accessibility.map((feature) => feature.trim()).filter(Boolean),
       layouts: form.layouts.map((layout) => ({
         name: layout.name.trim(),
@@ -262,7 +257,7 @@ export default function VenuePage({ createMode = false }) {
             </div>
 
             <div className="field">
-              <label htmlFor="capacity">Overall capacity</label>
+              <label htmlFor="capacity">Maximum Overall Capacity</label>
               <input
                 id="capacity"
                 type="number"
@@ -274,14 +269,44 @@ export default function VenuePage({ createMode = false }) {
             </div>
 
             <div className="field">
-              <label htmlFor="facilities">Facilities</label>
-              <input
-                id="facilities"
-                placeholder="Parking, Wi-Fi"
-                value={form.facilities}
-                onChange={(event) => updateField('facilities', event.target.value)}
-              />
-              <p className="field__hint">Separate facilities with commas.</p>
+              <label>Facilities (optional)</label>
+              <div className="repeater">
+                {form.facilities.map((facility, index) => (
+                  <div className="repeater__row" key={index}>
+                    <input
+                      aria-label={`Facility ${index + 1}`}
+                      value={facility}
+                      onChange={(event) => updateFacility(index, event.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="button button--secondary button--small"
+                      onClick={() =>
+                        setForm((current) => ({
+                          ...current,
+                          facilities: current.facilities.filter(
+                            (_, facilityIndex) => facilityIndex !== index,
+                          ),
+                        }))
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="button button--secondary button--small"
+                onClick={() =>
+                  setForm((current) => ({
+                    ...current,
+                    facilities: [...current.facilities, ''],
+                  }))
+                }
+              >
+                Add facility
+              </button>
             </div>
 
             <div className="field">
