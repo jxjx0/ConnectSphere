@@ -25,3 +25,14 @@ export const getEquipment = async () => {
     });
     return response.data;
   };
+
+
+  export const updateEquipment = async (id, equipmentData) => {
+    const token = localStorage.getItem('connectsphere.token');
+    const response = await api.put(`/api/equipment/${id}`, equipmentData, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return response.data;
+  };

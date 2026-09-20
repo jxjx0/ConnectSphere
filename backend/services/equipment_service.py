@@ -29,3 +29,13 @@ def get_all_equipment(access_token: str):
     supabase = config. get_user_client(access_token)
     response = supabase.table('equipment').select('*').execute()
     return response.data
+
+def update_equipment(equipment_id, data, access_token=None):
+    supabase = config.get_user_client(access_token=access_token)
+    response = (
+        supabase.table('equipment')
+        .update(data)
+        .eq('id', equipment_id)
+        .execute()
+    )
+    return response.data

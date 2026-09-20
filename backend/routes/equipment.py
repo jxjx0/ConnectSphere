@@ -8,6 +8,12 @@ from services import auth_service
 from services.auth_service import AuthError
 from flask import Blueprint, jsonify, request, g 
 
+from services.equipment_service import (
+    create_equipment,
+    get_all_equipment,
+    update_equipment
+)
+
 equipment_bp = Blueprint('equipment', __name__, url_prefix='/api/equipment')
 
 def _validation_messages(error: ValidationError) -> list[str]:
@@ -53,5 +59,24 @@ def get_equipment_route():
     try:
         equipment_list = get_all_equipment(g.access_token)
         return jsonify(equipment_list), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+
+@equipment_bp.route('/<equipment_id>', methods=['PUT'])
+@require_auth
+def update_equipment_route(equipment_id):
+    try:
+        payload = request.get_json()
+        if not payload:
+            return jsonify({"error": "No payload provided"}), 400
+
+        updated_data = update_equipment(
+            equipment_id,
+            payload,
+            access_token=g.access_token
+        )
+        # Ensure a valid JSON payload is explicitly returned
+        return jsonify(updated_data or {"message": "Success"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
