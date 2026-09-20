@@ -67,6 +67,9 @@ function formatAuditValue(value, field) {
   if (field === 'accessibility' && Array.isArray(value)) {
     return value.join(', ') || 'None'
   }
+  if (field === 'facilities' && Array.isArray(value)) {
+    return value.join(', ') || 'None'
+  }
   if (field === 'facilities' && typeof value === 'object' && !Array.isArray(value)) {
     return Object.entries(value)
       .map(([name, feature]) => `${name}: ${feature}`)
