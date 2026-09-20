@@ -1,28 +1,40 @@
-import React, { useState } from 'react';
-import EquipmentForm from '../components/EquipmentForm';
-import { createEquipment } from '../api/equipment';
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import AppShell from '../components/AppShell'
+import EquipmentForm from '../components/EquipmentForm'
+import { createEquipment } from '../api/equipment'
 
-const EquipmentProfilePage = () => {
-  const navigate = useNavigate();
-  const [error, setError] = useState(null);
+export default function EquipmentProfilePage() {
+  const navigate = useNavigate()
+  const [error, setError] = useState(null)
 
   const handleSubmit = async (equipmentData) => {
+    setError(null)
     try {
-      await createEquipment(equipmentData);
-      navigate('/equipment'); // Redirect to the equipment catalogue page
+      await createEquipment(equipmentData)
+      navigate('/equipment')
     } catch (err) {
-      setError(err.message);
+      const message =
+        err.response?.data?.error ||
+        err.response?.data?.errors?.join(', ') ||
+        err.message
+      setError(message || 'Failed to create equipment profile.')
     }
-  };
+  }
 
   return (
-    <div>
-      <h1>Create Equipment Profile</h1>
-      {error && <p className="error">{error}</p>}
-      <EquipmentForm onSubmit={handleSubmit} />
-    </div>
-  );
-};
+    <AppShell>
+      <div className="content__header">
+        <h1>Create Equipment Profile</h1>
+        <p className="lead">
+          Add new technical hardware and specs to the equipment catalogue.
+        </p>
+      </div>
 
-export default EquipmentProfilePage;
+      <section className="stack">
+        {error && <p className="error">{error}</p>}
+        <EquipmentForm onSubmit={handleSubmit} />
+      </section>
+    </AppShell>
+  )
+}

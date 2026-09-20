@@ -8,6 +8,7 @@ import SignupAttendeePage from './pages/SignupAttendeePage'
 import SignupOrganiserPage from './pages/SignupOrganiserPage'
 import EquipmentProfilePage from './pages/EquipmentProfilePage'
 import VenuePage from './pages/VenuePage'
+import EquipmentPage from './pages/EquipmentPage'
 
 export default function App() {
   return (
@@ -33,6 +34,15 @@ export default function App() {
             <EquipmentProfilePage />
           </AuthGuard>
         }
+      />
+
+      <Route 
+        path="/equipment" 
+        element={
+          <AuthGuard>
+            <EquipmentPage />
+          </AuthGuard>
+        } 
       />
 
       <Route

@@ -1,6 +1,27 @@
 import axios from 'axios';
 
+const api = axios.create({
+  baseURL: 'http://localhost:5000',
+});
+
 export const createEquipment = async (equipmentData) => {
-  const response = await axios.post('/api/equipment', equipmentData);
+  // Grab the token Flask returned during login
+  const token = localStorage.getItem('connectsphere.token'); 
+
+  const response = await api.post('/api/equipment', equipmentData, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
   return response.data;
 };
+
+export const getEquipment = async () => {
+    const token = localStorage.getItem('connectsphere.token');
+    const response = await api.get('/api/equipment', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return response.data;
+  };

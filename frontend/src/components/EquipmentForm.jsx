@@ -21,19 +21,26 @@ const EquipmentForm = ({ onSubmit }) => {
   };
 
   return (
-    <form onSubmit={handleSubmit}>
-      <div>
-        <label>Name</label>
+    <form className="form-card" onSubmit={handleSubmit}>
+      <div className="form-group">
+        <label className="form-label">Name</label>
         <input
           type="text"
+          className="form-input"
+          placeholder="e.g., Audio Mixer"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
         {errors.name && <p className="error">{errors.name}</p>}
       </div>
-      <div>
-        <label>Type</label>
-        <select value={type} onChange={(e) => setType(e.target.value)}>
+
+      <div className="form-group">
+        <label className="form-label">Type</label>
+        <select 
+          className="form-input" 
+          value={type} 
+          onChange={(e) => setType(e.target.value)}
+        >
           <option value="" disabled>Select Type</option>
           <option value="Audio">Audio</option>
           <option value="Visual">Visual</option>
@@ -41,15 +48,23 @@ const EquipmentForm = ({ onSubmit }) => {
         </select>
         {errors.type && <p className="error">{errors.type}</p>}
       </div>
-      <div>
-        <label>Status</label>
-        <select value={status} onChange={(e) => setStatus(e.target.value)}>
+
+      <div className="form-group">
+        <label className="form-label">Status</label>
+        <select 
+          className="form-input" 
+          value={status} 
+          onChange={(e) => setStatus(e.target.value)}
+        >
           <option value="Functional">Functional</option>
           <option value="Under Repair">Under Repair</option>
           <option value="Decommissioned">Decommissioned</option>
         </select>
       </div>
-      <button type="submit">Create Equipment</button>
+
+      <button type="submit" className="button button--primary button--full">
+        Create Equipment
+      </button>
     </form>
   );
 };
