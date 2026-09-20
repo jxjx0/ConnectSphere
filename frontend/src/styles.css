@@ -795,3 +795,22 @@ a:hover {
   padding: 0.85rem;
   font-weight: bold;
 }
+
+.filter-card {
+  background: white;
+  padding: 1.25rem 1.5rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  width: 100%;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 1.5rem;
+  align-items: flex-end;
+}
+
+.filter-grid .form-group {
+  margin-bottom: 0;
+}
