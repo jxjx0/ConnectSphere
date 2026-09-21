@@ -4,7 +4,7 @@ from flask import Blueprint, g, jsonify, request
 from pydantic import ValidationError
 
 from models.profile import Role
-from models.venue import VenueCreateRequest
+from models.venue import VenueCreateRequest, VenueUpdateRequest
 from models.venue_block import VenueBlockCreateRequest
 from routes.auth import require_auth
 from services import auth_service, venue_service, venue_block_service
@@ -41,6 +41,36 @@ def create_venue():
     _require_venue_staff()
     venue = venue_service.create_venue(g.access_token, venue_request)
     return jsonify({"venue": venue.model_dump(mode="json")}), 201
+
+
+@venues_bp.put("/<venue_id>")
+@require_auth
+def update_venue(venue_id):
+    try:
+        venue_request = VenueUpdateRequest(
+            **(request.get_json(silent=True) or {})
+        )
+    except ValidationError as error:
+        return jsonify({"errors": _validation_messages(error)}), 400
+
+    _require_venue_staff()
+    venue = venue_service.update_venue(
+        g.access_token,
+        venue_id,
+        venue_request,
+    )
+    return jsonify({"venue": venue.model_dump(mode="json")}), 200
+
+
+@venues_bp.get("/<venue_id>/history")
+@require_auth
+def get_venue_history(venue_id):
+    _require_venue_staff()
+    history = venue_service.get_venue_history(g.access_token, venue_id)
+    return jsonify(
+        {"history": [record.model_dump(mode="json") for record in history]}
+    ), 200
+
 
 @venues_bp.post("/<venue_id>/blocks")
 @require_auth

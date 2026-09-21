@@ -9,6 +9,8 @@ erDiagram
     EVENTS ||--o{ VENUE_BOOKINGS : requests
     VENUES ||--o{ VENUE_BOOKINGS : "booked for"
     PROFILES ||--o{ VENUE_BOOKINGS : "decided by (venue staff)"
+    VENUES ||--o{ VENUE_EDIT_HISTORY : "has edit history"
+    PROFILES ||--o{ VENUE_EDIT_HISTORY : "made changes"
     EVENTS ||--o{ EQUIPMENT_RESERVATIONS : requests
     EQUIPMENT ||--o{ EQUIPMENT_RESERVATIONS : "reserved for"
     PROFILES ||--o{ EQUIPMENT_RESERVATIONS : "decided by (tech support)"
@@ -66,6 +68,16 @@ erDiagram
         jsonb accessibility
         jsonb layouts
         jsonb operating_hours
+    }
+
+    VENUE_EDIT_HISTORY {
+        uuid id PK
+        uuid venue_id FK
+        uuid changed_by FK
+        timestamptz changed_at
+        text[] changed_fields
+        jsonb old_values
+        jsonb new_values
     }
 
     VENUE_BOOKINGS {

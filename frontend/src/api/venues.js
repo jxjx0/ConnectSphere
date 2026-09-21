@@ -25,6 +25,14 @@ export function createVenue(venue, token) {
   return request('/venues', { method: 'POST', body: venue, token })
 }
 
+export function updateVenue(venueId, venue, token) {
+  return request(`/venues/${venueId}`, { method: 'PUT', body: venue, token })
+}
+
+export function getVenueHistory(venueId, token) {
+  return request(`/venues/${venueId}/history`, { token })
+}
+
 export function getVenues(token) {
   return request('/venues', { token })
 }
