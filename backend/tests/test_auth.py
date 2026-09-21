@@ -50,6 +50,22 @@ def test_short_password_is_rejected():
         SignupRequest(**{**VALID_SIGNUP, "password": "short"})
 
 
+# Passwords are capped at 72 characters, and the message names the field
+# rather than using Pydantic's generic "String should have at most...".
+def test_long_password_is_rejected():
+    with pytest.raises(ValidationError) as caught:
+        SignupRequest(**{**VALID_SIGNUP, "password": "a" * 73})
+
+    assert "Password should have at most 72 characters" in str(caught.value)
+
+
+# 72 characters exactly is the last accepted length, not the first rejected.
+def test_password_of_exactly_72_characters_is_accepted():
+    request = SignupRequest(**{**VALID_SIGNUP, "password": "a" * 72})
+
+    assert len(request.password) == 72
+
+
 # The email field has to actually look like an email address.
 def test_malformed_email_is_rejected():
     with pytest.raises(ValidationError):
