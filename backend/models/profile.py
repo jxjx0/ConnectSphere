@@ -29,7 +29,7 @@ class SignupRequest(BaseModel):
 
     full_name: str = Field(min_length=1, max_length=120)
     email: EmailStr
-    password: str = Field(min_length=8, max_length=72)
+    password: str = Field(min_length=8)
     role: Role
     # Role-specific: contact_number is required for attendees and
     # organisers; organization is required for organisers only. Both live
@@ -45,6 +45,19 @@ class SignupRequest(BaseModel):
         if not stripped:
             raise ValueError("full_name must not be blank")
         return stripped
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_length(cls, value: str) -> str:
+        """Check the cap here rather than with Field(max_length=72).
+
+        Field's own message is "String should have at most 72 characters",
+        which does not say which field it means -- the signup form shows it
+        to the user as-is. Raising it ourselves lets us name the field.
+        """
+        if len(value) > 72:
+            raise ValueError("Password should have at most 72 characters")
+        return value
 
     @field_validator("contact_number", "organization")
     @classmethod
