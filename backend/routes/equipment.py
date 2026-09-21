@@ -66,6 +66,7 @@ def get_equipment_route():
 @equipment_bp.route('/<equipment_id>', methods=['PUT'])
 @require_auth
 def update_equipment_route(equipment_id):
+    _require_tech_support()
     try:
         payload = request.get_json()
         if not payload:
