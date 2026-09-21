@@ -39,7 +39,7 @@ export default function App() {
       <Route 
         path="/equipment" 
         element={
-          <AuthGuard>
+          <AuthGuard allowedRoles={['tech_support']}>
             <EquipmentPage />
           </AuthGuard>
         } 
