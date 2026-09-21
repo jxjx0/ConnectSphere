@@ -318,7 +318,7 @@ export default function EquipmentPage() {
                   onChange={(e) => setEditForm({ ...editForm, maintenance_status: e.target.value })}
                 >
                   <option value="Functional">Functional</option>
-                  <option value="Damaged">Damaged</option>
+                  <option value="Under Repair">Under Repair</option>
                   <option value="Decommissioned">Decommissioned</option>
                 </select>
               </div>
