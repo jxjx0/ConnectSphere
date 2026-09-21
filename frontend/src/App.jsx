@@ -6,7 +6,9 @@ import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
 import SignupAttendeePage from './pages/SignupAttendeePage'
 import SignupOrganiserPage from './pages/SignupOrganiserPage'
+import EquipmentProfilePage from './pages/EquipmentProfilePage'
 import VenuePage from './pages/VenuePage'
+import EquipmentPage from './pages/EquipmentPage'
 
 export default function App() {
   return (
@@ -23,6 +25,24 @@ export default function App() {
             <DashboardPage />
           </AuthGuard>
         }
+      />
+
+      <Route
+        path="/equipment/new"
+        element={
+          <AuthGuard allowedRoles={['tech_support']}>
+            <EquipmentProfilePage />
+          </AuthGuard>
+        }
+      />
+
+      <Route 
+        path="/equipment" 
+        element={
+          <AuthGuard allowedRoles={['tech_support']}>
+            <EquipmentPage />
+          </AuthGuard>
+        } 
       />
 
       <Route

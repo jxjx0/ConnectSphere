@@ -748,3 +748,69 @@ a:hover {
   font-weight: 500;
   color: var(--ink-muted);
 }
+
+.form-card {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  max-width: 600px;
+  margin-top: 2rem;
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.form-label {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: #333;
+}
+
+.form-input {
+  padding: 0.75rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 1rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #006666;
+  box-shadow: 0 0 0 3px rgba(0, 102, 102, 0.1);
+}
+
+.button--primary {
+  background-color: #006666;
+  color: white;
+  border: none;
+}
+
+.button--full {
+  width: 100%;
+  padding: 0.85rem;
+  font-weight: bold;
+}
+
+.filter-card {
+  background: white;
+  padding: 1.25rem 1.5rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  width: 100%;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 1.5rem;
+  align-items: flex-end;
+}
+
+.filter-grid .form-group {
+  margin-bottom: 0;
+}

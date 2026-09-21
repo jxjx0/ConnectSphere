@@ -96,7 +96,6 @@ erDiagram
         uuid id PK
         text name
         text type
-        int quantity_total
         text maintenance_status
     }
 

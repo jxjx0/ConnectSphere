@@ -9,6 +9,8 @@ from routes.health import health_bp
 from routes.venues import venues_bp
 from services.auth_service import AuthError
 
+from routes.equipment import equipment_bp
+
 
 def create_app() -> Flask:
     app = Flask(__name__)
@@ -17,6 +19,8 @@ def create_app() -> Flask:
     app.register_blueprint(health_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(venues_bp)
+    # app.register_blueprint(equipment_bp)
+    app.register_blueprint(equipment_bp, url_prefix='/api/equipment')
 
     @app.errorhandler(AuthError)
     def handle_auth_error(error: AuthError):
