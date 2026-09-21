@@ -77,7 +77,8 @@ def update_equipment_route(equipment_id):
             payload,
             access_token=g.access_token
         )
-        # Ensure a valid JSON payload is explicitly returned
-        return jsonify(updated_data or {"message": "Success"}), 200
+        if not updated_data:
+            return jsonify({"error": "Equipment not found."}), 404
+        return jsonify(updated_data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
