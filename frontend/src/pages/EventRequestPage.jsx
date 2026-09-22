@@ -4,7 +4,9 @@ import { Link } from 'react-router-dom'
 import { submitEvent } from '../api/events'
 import AppShell from '../components/AppShell'
 import { useAuth } from '../context/AuthContext'
+import { EVENT_CATEGORIES, OTHER_CATEGORY } from '../eventCategories'
 import {
+  validateCategoryOther,
   validateEventDetails,
   validateEventTimes,
   validateExpectedAttendance,
@@ -16,6 +18,7 @@ function emptyForm() {
     description: '',
     purpose: '',
     category: '',
+    categoryOther: '',
     startTime: '',
     endTime: '',
     expectedAttendance: '',
@@ -46,6 +49,7 @@ export default function EventRequestPage() {
 
     const validationError =
       validateEventDetails(form) ||
+      validateCategoryOther(form.category, form.categoryOther) ||
       validateExpectedAttendance(form.expectedAttendance) ||
       validateEventTimes(form.startTime, form.endTime)
     if (validationError) {
@@ -62,6 +66,8 @@ export default function EventRequestPage() {
           description: form.description,
           purpose: form.purpose,
           category: form.category,
+          category_other:
+            form.category === OTHER_CATEGORY ? form.categoryOther : null,
           // The datetime-local input has no timezone, so send the
           // browser's local time as an explicit UTC timestamp.
           start_time: new Date(form.startTime).toISOString(),
@@ -145,19 +151,35 @@ export default function EventRequestPage() {
 
             <div className="field">
               <label htmlFor="category">Category</label>
-              <input
+              <select
                 id="category"
                 name="category"
-                maxLength={120}
-                aria-describedby="category-hint"
                 value={form.category}
                 onChange={updateField('category')}
                 required
-              />
-              <p className="field__hint" id="category-hint">
-                For example: conference, workshop, dinner, product launch.
-              </p>
+              >
+                <option value="">Choose a category…</option>
+                {EVENT_CATEGORIES.map((category) => (
+                  <option key={category.value} value={category.value}>
+                    {category.label}
+                  </option>
+                ))}
+              </select>
             </div>
+
+            {form.category === OTHER_CATEGORY && (
+              <div className="field">
+                <label htmlFor="categoryOther">Describe the category</label>
+                <input
+                  id="categoryOther"
+                  name="categoryOther"
+                  maxLength={120}
+                  value={form.categoryOther}
+                  onChange={updateField('categoryOther')}
+                  required
+                />
+              </div>
+            )}
 
             <div className="field">
               <label htmlFor="purpose">Purpose</label>

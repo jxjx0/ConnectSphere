@@ -24,3 +24,11 @@ async function request(path, { method = 'GET', body, token } = {}) {
 export function submitEvent(event, token) {
   return request('/events', { method: 'POST', body: event, token })
 }
+
+export function getMyEvents(token) {
+  return request('/events', { token })
+}
+
+export function getMyEvent(eventId, token) {
+  return request(`/events/${eventId}`, { token })
+}

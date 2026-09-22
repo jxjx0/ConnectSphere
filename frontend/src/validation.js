@@ -2,6 +2,8 @@
 // (backend/models/profile.py) so bad input is caught before a round trip
 // to the API. The backend remains the real boundary -- this is convenience.
 
+import { OTHER_CATEGORY } from './eventCategories'
+
 const PHONE_PATTERN = /^[0-9+()\-\s]{6,30}$/
 
 export function validateFullName(value) {
@@ -80,7 +82,16 @@ export function validateEventDetails({ name, description, purpose, category }) {
   if (!name.trim()) return 'Event name must not be blank.'
   if (!description.trim()) return 'Description must not be blank.'
   if (!purpose.trim()) return 'Purpose must not be blank.'
-  if (!category.trim()) return 'Category must not be blank.'
+  if (!category) return 'Choose a category.'
+  return null
+}
+
+// Mirrors validate_category_other in backend/models/event.py: the
+// description belongs to the Other choice, and only to it.
+export function validateCategoryOther(category, categoryOther) {
+  if (category === OTHER_CATEGORY && !categoryOther.trim()) {
+    return 'Describe the category when choosing Other.'
+  }
   return null
 }
 

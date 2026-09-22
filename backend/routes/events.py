@@ -41,3 +41,20 @@ def submit_event():
     event = event_service.submit_event(g.access_token, g.user_id, event_request)
     return jsonify({"event": event.model_dump(mode="json")}), 201
 
+
+@events_bp.get("")
+@require_auth
+def list_my_events():
+    _require_organiser()
+    events = event_service.list_my_events(g.access_token, g.user_id)
+    return jsonify(
+        {"events": [event.model_dump(mode="json") for event in events]}
+    ), 200
+
+
+@events_bp.get("/<event_id>")
+@require_auth
+def get_my_event(event_id):
+    _require_organiser()
+    event = event_service.get_my_event(g.access_token, g.user_id, event_id)
+    return jsonify({"event": event.model_dump(mode="json")}), 200

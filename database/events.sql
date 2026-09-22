@@ -22,6 +22,7 @@ create table public.events (
     description text not null,
     purpose text not null,
     category text not null,
+    category_other text,
     start_time timestamptz not null,
     end_time timestamptz not null,
     expected_attendance integer not null,
@@ -38,8 +39,33 @@ create table public.events (
         check (length(btrim(description)) > 0),
     constraint events_purpose_not_blank
         check (length(btrim(purpose)) > 0),
-    constraint events_category_not_blank
-        check (length(btrim(category)) > 0),
+    -- Categories are master data: the customer's brief names "Event
+    -- Categories" as a feature, and maintaining them is a System Admin job
+    -- that is out of scope for this release. Until an admin UI exists the
+    -- set lives here and in models/event.py. 'other' carries the
+    -- Organiser's own wording in category_other.
+    constraint events_category_valid
+        check (category in (
+            'conference',
+            'workshop',
+            'seminar',
+            'meeting',
+            'networking',
+            'product_launch',
+            'training',
+            'social_event',
+            'ceremony',
+            'other'
+        )),
+    constraint events_category_other_matches_category
+        check (
+            (
+                category = 'other'
+                and category_other is not null
+                and length(btrim(category_other)) > 0
+            )
+            or (category <> 'other' and category_other is null)
+        ),
     constraint events_expected_attendance_positive
         check (expected_attendance > 0),
     constraint events_end_after_start

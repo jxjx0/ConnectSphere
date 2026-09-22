@@ -26,6 +26,31 @@ class EventStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class EventCategory(str, Enum):
+    """The categories an Organiser may choose from.
+
+    Kept in step with the events_category_valid constraint in
+    database/events.sql, and with CATEGORY_LABELS in the frontend.
+
+    The customer named "Event Categories" as a feature but never supplied a
+    list, and maintaining one is a System Admin job that is out of scope for
+    this release. This set is the team's assumption until the customer
+    confirms it. OTHER lets an Organiser describe a category that is not
+    here, in EventSubmitRequest.category_other.
+    """
+
+    CONFERENCE = "conference"
+    WORKSHOP = "workshop"
+    SEMINAR = "seminar"
+    MEETING = "meeting"
+    NETWORKING = "networking"
+    PRODUCT_LAUNCH = "product_launch"
+    TRAINING = "training"
+    SOCIAL_EVENT = "social_event"
+    CEREMONY = "ceremony"
+    OTHER = "other"
+
+
 def _as_utc(value: datetime) -> datetime:
     """Treat a datetime with no timezone as UTC.
 
@@ -49,7 +74,8 @@ class EventSubmitRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1)
     purpose: str = Field(min_length=1)
-    category: str = Field(min_length=1, max_length=120)
+    category: EventCategory
+    category_other: str | None = Field(default=None, max_length=120)
     start_time: datetime
     end_time: datetime
     expected_attendance: int = Field(gt=0)
@@ -58,7 +84,7 @@ class EventSubmitRequest(BaseModel):
     accessibility_requirements: str | None = None
     equipment_requirements: str | None = None
 
-    @field_validator("name", "description", "purpose", "category")
+    @field_validator("name", "description", "purpose")
     @classmethod
     def strip_required_text(cls, value: str) -> str:
         stripped = value.strip()
@@ -67,6 +93,7 @@ class EventSubmitRequest(BaseModel):
         return stripped
 
     @field_validator(
+        "category_other",
         "location_preference",
         "layout_preference",
         "accessibility_requirements",
@@ -78,6 +105,24 @@ class EventSubmitRequest(BaseModel):
             return None
         stripped = value.strip()
         return stripped or None
+
+    @model_validator(mode="after")
+    def validate_category_other(self) -> "EventSubmitRequest":
+        """Tie category_other to the 'Other' choice, both ways.
+
+        Without the second half an Organiser could pick Conference and
+        still send a category_other, leaving two categories on one row and
+        no way to tell which one counts.
+        """
+        if self.category is EventCategory.OTHER and not self.category_other:
+            raise ValueError(
+                "Describe the category when choosing Other"
+            )
+        if self.category is not EventCategory.OTHER and self.category_other:
+            raise ValueError(
+                "Only choose a category description when the category is Other"
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_event_times(self) -> "EventSubmitRequest":
@@ -96,7 +141,12 @@ class EventSubmitRequest(BaseModel):
 
 
 class Event(BaseModel):
-    """A row of the `events` table."""
+    """A row of the `events` table.
+
+    coordinator_name is not a column. The service fills it in from the
+    profiles table so the Organiser sees a name rather than a uuid, and it
+    stays None until a Coordinator has been assigned.
+    """
 
     id: str
     organiser_id: str
@@ -104,7 +154,8 @@ class Event(BaseModel):
     name: str
     description: str
     purpose: str
-    category: str
+    category: EventCategory
+    category_other: str | None = None
     start_time: datetime
     end_time: datetime
     expected_attendance: int
@@ -114,3 +165,4 @@ class Event(BaseModel):
     equipment_requirements: str | None = None
     status: EventStatus
     created_at: datetime | None = None
+    coordinator_name: str | None = None

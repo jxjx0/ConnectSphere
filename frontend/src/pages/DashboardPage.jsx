@@ -29,8 +29,11 @@ export default function DashboardPage() {
         <section className="stack stack--tight">
           <h2 className="section-title">Event Requests</h2>
           <div className="form-actions">
-            <Link to="/events/new" className="button">
+            <Link to="/my-events/new" className="button">
               Request an Event
+            </Link>
+            <Link to="/my-events" className="button button--secondary">
+              My Event Requests
             </Link>
           </div>
         </section>
