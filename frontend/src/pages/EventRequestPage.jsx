@@ -113,6 +113,9 @@ export default function EventRequestPage() {
             >
               Submit another request
             </button>
+            <Link to="/my-events" className="button button--secondary">
+              View my requests
+            </Link>
             <Link to="/dashboard">Back to dashboard</Link>
           </div>
         </div>
