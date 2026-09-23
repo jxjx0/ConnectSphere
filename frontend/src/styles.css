@@ -402,7 +402,9 @@ a:hover {
   color: var(--ink);
 }
 
-.field input {
+.field input,
+.field textarea,
+.field select {
   font-family: var(--font-body);
   font-size: 0.9375rem;
   color: var(--ink);
@@ -414,27 +416,62 @@ a:hover {
   transition: border-color var(--ease), box-shadow var(--ease);
 }
 
-.field input::placeholder {
+.field input::placeholder,
+.field textarea::placeholder {
   color: var(--ink-faint);
 }
 
-.field input:hover {
+.field input:hover,
+.field textarea:hover,
+.field select:hover {
   border-color: var(--ink-faint);
 }
 
-.field input:focus {
+.field input:focus,
+.field textarea:focus,
+.field select:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 /* Marks the specific input that failed, not just the form. */
-.field input[aria-invalid='true'] {
+.field input[aria-invalid='true'],
+.field textarea[aria-invalid='true'],
+.field select[aria-invalid='true'] {
   border-color: var(--danger);
 }
 
-.field input[aria-invalid='true']:focus {
+.field input[aria-invalid='true']:focus,
+.field textarea[aria-invalid='true']:focus,
+.field select[aria-invalid='true']:focus {
   box-shadow: 0 0 0 3px var(--danger-ring);
+}
+
+/* A textarea grows downwards only -- sideways dragging breaks the form
+   column. */
+.field textarea {
+  resize: vertical;
+  min-height: 96px;
+  line-height: 1.5;
+}
+
+/* The browser's own select chrome ignores the border and radius above, so
+   the arrow is drawn here instead. */
+.field select {
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='none' stroke='%236b7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-3) center;
+  background-size: 12px 8px;
+  padding-right: calc(var(--space-3) * 2 + 12px);
+  cursor: pointer;
+}
+
+/* Before a choice is made the placeholder option should read as a
+   placeholder, not as a value. */
+.field select:invalid {
+  color: var(--ink-faint);
 }
 
 .field__hint {
@@ -813,4 +850,203 @@ a:hover {
 
 .filter-grid .form-group {
   margin-bottom: 0;
+}
+
+/* --- Event record body ----------------------------------------------- */
+/* Submitted answers are prose, not table data: the label sits above the
+   text and there are no rules between rows, so a long description reads as
+   a paragraph rather than a cell. */
+
+.answers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 42rem;
+}
+
+.answer dt {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: var(--space-2);
+}
+
+.answer dd {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--ink);
+  white-space: pre-line;
+}
+
+/* An answer the Organiser left blank should read as absent, not as text. */
+.answer dd[data-empty='true'] {
+  color: var(--ink-faint);
+}
+
+/* Short answers pair up; long ones keep the full width. */
+.answers--paired {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-5);
+}
+
+@media (max-width: 34rem) {
+  .answers--paired {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* --- Request progress ------------------------------------------------ */
+/* The point of an Organiser's event page: how far the request has got and
+   what happens next. Everything else on the page is reference. */
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.track {
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.track__step {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+}
+
+/* The line joining a step to the one before it. Drawn behind the dots. */
+.track__step::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 50%;
+  width: 100%;
+  height: 2px;
+  background: var(--rule-strong);
+}
+
+.track__step:first-child::before {
+  display: none;
+}
+
+.track__step--done::before,
+.track__step--current::before {
+  background: var(--accent);
+}
+
+.track__dot {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--rule-strong);
+  background: var(--bg);
+}
+
+.track__step--done .track__dot {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.track__step--current .track__dot {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-ring);
+}
+
+.track__label {
+  font-size: 0.75rem;
+  line-height: 1.3;
+  color: var(--ink-faint);
+}
+
+.track__step--done .track__label {
+  color: var(--ink-muted);
+}
+
+.track__step--current .track__label {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* What happens next, in plain words under the track. */
+.progress__next {
+  margin: 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--rule);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+/* Something is off the normal path and the Organiser needs to know. */
+.notice {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 2px solid var(--accent);
+  background: var(--accent-faint);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+@media (max-width: 34rem) {
+  .progress {
+    padding: var(--space-4);
+  }
+
+  .track__label {
+    font-size: 0.6875rem;
+  }
+}
+
+/* --- Event page header and footer ------------------------------------ */
+
+.record-head__title {
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
+/* The three facts worth knowing before the progress track: what kind of
+   event, when, and how big. */
+.record-head__meta {
+  margin: var(--space-2) 0 0;
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+}
+
+.record-head__dot {
+  padding: 0 var(--space-2);
+  color: var(--ink-faint);
+}
+
+/* When it was submitted matters least, so it sits at the very bottom. */
+.record-foot {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.answer--wide {
+  max-width: 42rem;
 }

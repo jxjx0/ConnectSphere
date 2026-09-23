@@ -2,6 +2,8 @@
 // (backend/models/profile.py) so bad input is caught before a round trip
 // to the API. The backend remains the real boundary -- this is convenience.
 
+import { OTHER_CATEGORY } from './eventCategories'
+
 const PHONE_PATTERN = /^[0-9+()\-\s]{6,30}$/
 
 export function validateFullName(value) {
@@ -68,5 +70,47 @@ export function validateOperatingHours(open, close) {
     return 'Operating hours must use valid HH:MM values.'
   }
   if (open >= close) return 'Closing time must be after opening time.'
+  return null
+}
+
+// Event request field validation, mirrored from the backend's
+// EventSubmitRequest (backend/models/event.py). The backend remains the
+// real boundary -- this is convenience, so the Organiser sees a problem
+// before a round trip to the API.
+
+export function validateEventDetails({ name, description, purpose, category }) {
+  if (!name.trim()) return 'Event name must not be blank.'
+  if (!description.trim()) return 'Description must not be blank.'
+  if (!purpose.trim()) return 'Purpose must not be blank.'
+  if (!category) return 'Choose a category.'
+  return null
+}
+
+// Mirrors validate_category_other in backend/models/event.py: the
+// description belongs to the Other choice, and only to it.
+export function validateCategoryOther(category, categoryOther) {
+  if (category === OTHER_CATEGORY && !categoryOther.trim()) {
+    return 'Describe the category when choosing Other.'
+  }
+  return null
+}
+
+export function validateExpectedAttendance(value) {
+  if (!value || Number(value) <= 0) {
+    return 'Expected attendance must be a positive number.'
+  }
+  return null
+}
+
+export function validateEventTimes(startTime, endTime) {
+  if (!startTime || !endTime) return 'Start and end times are required.'
+
+  const start = new Date(startTime)
+  const end = new Date(endTime)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return 'Start and end times must be valid dates.'
+  }
+  if (end <= start) return 'End time must be after the start time.'
+  if (start <= new Date()) return 'Start time must be in the future.'
   return null
 }

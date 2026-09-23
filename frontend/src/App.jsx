@@ -7,6 +7,9 @@ import LoginPage from './pages/LoginPage'
 import SignupAttendeePage from './pages/SignupAttendeePage'
 import SignupOrganiserPage from './pages/SignupOrganiserPage'
 import EquipmentProfilePage from './pages/EquipmentProfilePage'
+import EventRequestPage from './pages/EventRequestPage'
+import MyEventDetailPage from './pages/MyEventDetailPage'
+import MyEventsPage from './pages/MyEventsPage'
 import VenuePage from './pages/VenuePage'
 import EquipmentPage from './pages/EquipmentPage'
 
@@ -23,6 +26,33 @@ export default function App() {
         element={
           <AuthGuard>
             <DashboardPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/my-events"
+        element={
+          <AuthGuard allowedRoles={['organiser']}>
+            <MyEventsPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/my-events/new"
+        element={
+          <AuthGuard allowedRoles={['organiser']}>
+            <EventRequestPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/my-events/:eventId"
+        element={
+          <AuthGuard allowedRoles={['organiser']}>
+            <MyEventDetailPage />
           </AuthGuard>
         }
       />
