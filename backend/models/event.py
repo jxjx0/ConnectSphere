@@ -124,6 +124,66 @@ class EventSubmitRequest(BaseModel):
             )
         return self
 
+
+class EventChangeRequestSubmit(BaseModel):
+    """The proposed details in an Organiser's event change request."""
+
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1)
+    reason_for_change: str = Field(min_length=1)
+    purpose: str = Field(min_length=1)
+    category: EventCategory
+    category_other: str | None = Field(default=None, max_length=120)
+    start_time: datetime
+    end_time: datetime
+    expected_attendance: int = Field(gt=0)
+    location_preference: str | None
+    layout_preference: str | None
+    accessibility_requirements: str | None
+    equipment_requirements: str | None
+
+    @field_validator("name", "description", "reason_for_change", "purpose")
+    @classmethod
+    def strip_and_require_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("This field must not be blank")
+        return stripped
+
+    @field_validator("category_other")
+    @classmethod
+    def strip_category_other(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator(
+        "location_preference", "layout_preference",
+        "accessibility_requirements", "equipment_requirements",
+        mode="before",
+    )
+    @classmethod
+    def nil_means_no_requirement(cls, value: str) -> str | None:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("This field must not be blank")
+        stripped = value.strip()
+        if stripped.casefold() == "nil":
+            return None
+        return stripped
+
+    @model_validator(mode="after")
+    def validate_change_request(self) -> "EventChangeRequestSubmit":
+        if self.category is EventCategory.OTHER and not self.category_other:
+            raise ValueError("Describe the category when choosing Other")
+        if self.category is not EventCategory.OTHER and self.category_other:
+            raise ValueError(
+                "Only choose a category description when the category is Other"
+            )
+        if _as_utc(self.end_time) <= _as_utc(self.start_time):
+            raise ValueError("End time must be after the start time")
+        return self
+
     @model_validator(mode="after")
     def validate_event_times(self) -> "EventSubmitRequest":
         """Check the event runs forwards, and has not already happened.
@@ -166,3 +226,4 @@ class Event(BaseModel):
     status: EventStatus
     created_at: datetime | None = None
     coordinator_name: str | None = None
+    has_pending_change_request: bool = False

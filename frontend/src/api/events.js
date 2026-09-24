@@ -32,3 +32,11 @@ export function getMyEvents(token) {
 export function getMyEvent(eventId, token) {
   return request(`/events/${eventId}`, { token })
 }
+
+export function submitEventChangeRequest(eventId, changes, token) {
+  return request(`/events/${eventId}/change-requests`, {
+    method: 'POST',
+    body: changes,
+    token,
+  })
+}
