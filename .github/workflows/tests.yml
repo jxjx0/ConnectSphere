@@ -1,4 +1,5 @@
 name: ConnectSphere CI
+run-name: Backend CI • ${{ github.event_name }} • ${{ github.head_ref || github.ref_name }}
 
 on:
   push:
