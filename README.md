@@ -174,6 +174,21 @@ cd backend
 venv\Scripts\pytest
 ```
 
+## Testing and Continuous Integration
+
+The backend uses `pytest`. Run the test suite locally with:
+
+```bash
+cd backend
+python -m pytest -v
+```
+
+The project uses GitHub Actions for continuous integration. The CI workflow
+runs on pull requests targeting `main` and on pushes to `main`. It uses Python
+3.13, installs dependencies from `backend/requirements.txt`, and runs the
+backend pytest suite automatically. If any backend test fails, the CI check
+fails.
+
 ---
 
 ## API endpoints
@@ -325,5 +340,4 @@ monkeypatch.setattr(
 So the suite checks our own wiring — status codes, request parsing, error
 shapes — and runs in seconds with no network and no credentials. The tradeoff:
 it can't tell you whether Supabase itself is configured correctly.
-
 
