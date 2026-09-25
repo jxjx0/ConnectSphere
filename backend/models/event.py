@@ -124,6 +124,15 @@ class EventSubmitRequest(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def validate_event_times(self) -> "EventSubmitRequest":
+        """Reject backwards event times and events that have already started."""
+        if _as_utc(self.end_time) <= _as_utc(self.start_time):
+            raise ValueError("End time must be after the start time")
+        if _as_utc(self.start_time) <= datetime.now(timezone.utc):
+            raise ValueError("Start time must be in the future")
+        return self
+
 
 class EventChangeRequestSubmit(BaseModel):
     """The proposed details in an Organiser's event change request."""
@@ -183,22 +192,6 @@ class EventChangeRequestSubmit(BaseModel):
         if _as_utc(self.end_time) <= _as_utc(self.start_time):
             raise ValueError("End time must be after the start time")
         return self
-
-    @model_validator(mode="after")
-    def validate_event_times(self) -> "EventSubmitRequest":
-        """Check the event runs forwards, and has not already happened.
-
-        This is the whole of the date checking for this story. An event
-        request names no venue, so there is nothing yet for a date to
-        clash with -- availability is only meaningful once the Coordinator
-        requests a specific venue.
-        """
-        if _as_utc(self.end_time) <= _as_utc(self.start_time):
-            raise ValueError("End time must be after the start time")
-        if _as_utc(self.start_time) <= datetime.now(timezone.utc):
-            raise ValueError("Start time must be in the future")
-        return self
-
 
 class Event(BaseModel):
     """A row of the `events` table.
