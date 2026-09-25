@@ -149,6 +149,22 @@ export default function MyEventDetailPage() {
           </dl>
         </section>
 
+        <section className="stack stack--tight">
+          {event.has_pending_change_request ? (
+            <p className="notice" role="status">
+              Your change request is waiting for review. You can submit another
+              request after this one has been reviewed.
+            </p>
+          ) : ['submitted', 'confirmed'].includes(event.status) ? (
+            <Link
+              to={`/my-events/${event.id}/change-request`}
+              className="button"
+            >
+              Request for change
+            </Link>
+          ) : null}
+        </section>
+
         <p className="record-foot">
           Submitted {formatDateTime(event.created_at)}
         </p>

@@ -3,7 +3,12 @@
 from postgrest import APIError as PostgrestAPIError
 
 import config
-from models.event import Event, EventStatus, EventSubmitRequest
+from models.event import (
+    Event,
+    EventChangeRequestSubmit,
+    EventStatus,
+    EventSubmitRequest,
+)
 from services.auth_service import AuthError
 
 
@@ -139,4 +144,70 @@ def get_my_event(access_token: str, organiser_id: str, event_id: str) -> Event:
 
     if not result.data:
         raise AuthError("Event request was not found.", status_code=404)
-    return _with_coordinator_names(client, [Event(**result.data[0])])[0]
+    event = _with_coordinator_names(client, [Event(**result.data[0])])[0]
+    return _with_pending_change_requests(client, [event])[0]
+
+
+def _with_pending_change_requests(client, events: list[Event]) -> list[Event]:
+    """Add whether an event is waiting for a change request review."""
+    if not events:
+        return events
+    try:
+        result = (
+            client.table("event_change_requests")
+            .select("event_id")
+            .in_("event_id", [event.id for event in events])
+            .eq("status", "pending")
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    pending_ids = {row["event_id"] for row in result.data}
+    return [
+        event.model_copy(
+            update={"has_pending_change_request": event.id in pending_ids}
+        )
+        for event in events
+    ]
+
+
+def submit_event_change_request(
+    access_token: str,
+    organiser_id: str,
+    event_id: str,
+    request: EventChangeRequestSubmit,
+) -> None:
+    """Persist a proposed change and mark its event as change_requested.
+
+    The database function performs ownership, event status, duplicate
+    pending request, and changed-values checks atomically.
+    """
+    client = config.get_user_client(access_token)
+    try:
+        client.rpc(
+            "submit_event_change_request",
+            {
+                "p_event_id": event_id,
+                "p_organiser_id": organiser_id,
+                "p_changes": request.model_dump(mode="json"),
+            },
+        ).execute()
+    except PostgrestAPIError as error:
+        message = str(error).lower()
+        if "pending change request" in message:
+            raise AuthError(
+                "A change request is already waiting for review.",
+                status_code=409,
+            ) from error
+        if "event cannot be changed" in message:
+            raise AuthError(
+                "Only submitted or confirmed events can be changed.",
+                status_code=409,
+            ) from error
+        if "no event details were changed" in message:
+            raise AuthError(
+                "Change at least one event detail before submitting.",
+                status_code=400,
+            ) from error
+        raise _database_error(error) from error

@@ -479,6 +479,11 @@ a:hover {
   color: var(--ink-muted);
 }
 
+.field__error {
+  font-size: 0.8125rem;
+  color: var(--danger);
+}
+
 /* A password input with a reveal toggle sitting inside it. */
 .password {
   position: relative;
