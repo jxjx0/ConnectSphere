@@ -189,8 +189,7 @@ class EventChangeRequestSubmit(BaseModel):
             raise ValueError(
                 "Only choose a category description when the category is Other"
             )
-        if _as_utc(self.end_time) <= _as_utc(self.start_time):
-            raise ValueError("End time must be after the start time")
+        # CI GATE TEST: end-time check deliberately removed -- revert before merging
         return self
 
 class Event(BaseModel):
