@@ -1,5 +1,5 @@
 name: Backend Test CI
-run-name: Backend Tests • ${{ github.head_ref || github.ref_name }}
+run-name: Backend Tests • ${{ github.event_name }} • ${{ github.head_ref || github.ref_name }}
 
 on:
   push:
