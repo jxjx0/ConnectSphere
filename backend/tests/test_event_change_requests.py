@@ -131,6 +131,15 @@ def test_required_text_fields_reject_blank_values(field):
 
 # Checks that category, start time, end time, and expected attendance 
 # cannot be missing.
+@pytest.mark.parametrize(
+    ("field", "empty_value"),
+    [
+        ("category", ""),
+        ("start_time", ""),
+        ("end_time", ""),
+        ("expected_attendance", None),
+    ],
+)
 def test_change_request_rejects_missing_required_structured_fields(
     field, empty_value
 ):
@@ -171,16 +180,6 @@ def test_change_request_rejects_end_time_before_start_time():
     with pytest.raises(ValidationError, match="End time must be after the start time"):
         EventChangeRequestSubmit(**payload)
 
-
-@pytest.mark.parametrize(
-    ("field", "empty_value"),
-    [
-        ("category", ""),
-        ("start_time", ""),
-        ("end_time", ""),
-        ("expected_attendance", None),
-    ],
-)
 
 # Tests if event category is "other", category_other cannot be blank.
 def test_other_category_requires_its_description():
