@@ -57,6 +57,11 @@ alter table public.events
 -- 4. Organisers may change only the form fields -- never organiser_id or
 --    coordinator_id -- and may delete. The policies below narrow both to
 --    their own drafts.
+--    Supabase grants table-wide UPDATE to authenticated by default, which
+--    covers every column and would make the column list below pointless,
+--    so it is revoked first. submit_event_change_request is security
+--    definer and does not depend on this grant.
+revoke update on public.events from authenticated;
 grant update (
     name, description, purpose, category, category_other,
     start_time, end_time, expected_attendance,
