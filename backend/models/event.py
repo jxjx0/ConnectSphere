@@ -134,6 +134,78 @@ class EventSubmitRequest(BaseModel):
         return self
 
 
+class EventDraftRequest(BaseModel):
+    """The body of POST /events/drafts and PUT /events/drafts/<id>.
+
+    A draft may be incomplete, so only name is required. Whatever has been
+    filled in is still checked, so a draft never holds data that could not
+    be submitted later. "Start time must be in the future" is left to
+    submission: a draft saved today may be finished next week.
+    """
+
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = None
+    purpose: str | None = None
+    category: EventCategory | None = None
+    category_other: str | None = Field(default=None, max_length=120)
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    expected_attendance: int | None = Field(default=None, gt=0)
+    location_preference: str | None = None
+    layout_preference: str | None = None
+    accessibility_requirements: str | None = None
+    equipment_requirements: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Give the draft a name before saving it")
+        return stripped
+
+    @field_validator(
+        "description",
+        "purpose",
+        "category_other",
+        "location_preference",
+        "layout_preference",
+        "accessibility_requirements",
+        "equipment_requirements",
+    )
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator(
+        "category", "start_time", "end_time", "expected_attendance",
+        mode="before",
+    )
+    @classmethod
+    def empty_means_not_filled_in(cls, value):
+        """An untouched form input arrives as "", which means not filled in."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @model_validator(mode="after")
+    def validate_filled_in_fields(self) -> "EventDraftRequest":
+        if self.category_other and self.category is not EventCategory.OTHER:
+            raise ValueError(
+                "Only choose a category description when the category is Other"
+            )
+        if (
+            self.start_time
+            and self.end_time
+            and _as_utc(self.end_time) <= _as_utc(self.start_time)
+        ):
+            raise ValueError("End time must be after the start time")
+        return self
+
+
 class EventChangeRequestSubmit(BaseModel):
     """The proposed details in an Organiser's event change request."""
 
@@ -199,24 +271,29 @@ class Event(BaseModel):
     coordinator_name is not a column. The service fills it in from the
     profiles table so the Organiser sees a name rather than a uuid, and it
     stays None until a Coordinator has been assigned.
+
+    The details are optional because a draft may be incomplete. The
+    database guarantees they are all present on any event that is not a
+    draft (events_complete_unless_draft).
     """
 
     id: str
     organiser_id: str
     coordinator_id: str | None = None
     name: str
-    description: str
-    purpose: str
-    category: EventCategory
+    description: str | None = None
+    purpose: str | None = None
+    category: EventCategory | None = None
     category_other: str | None = None
-    start_time: datetime
-    end_time: datetime
-    expected_attendance: int
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    expected_attendance: int | None = None
     location_preference: str | None = None
     layout_preference: str | None = None
     accessibility_requirements: str | None = None
     equipment_requirements: str | None = None
     status: EventStatus
     created_at: datetime | None = None
+    updated_at: datetime | None = None
     coordinator_name: str | None = None
     has_pending_change_request: bool = False
