@@ -1,11 +1,14 @@
 """Event request persistence through Supabase."""
 
+from datetime import datetime, timezone
+
 from postgrest import APIError as PostgrestAPIError
 
 import config
 from models.event import (
     Event,
     EventChangeRequestSubmit,
+    EventDraftRequest,
     EventStatus,
     EventSubmitRequest,
 )
@@ -211,3 +214,159 @@ def submit_event_change_request(
                 status_code=400,
             ) from error
         raise _database_error(error) from error
+
+
+# --- Draft event requests (T7-37) ------------------------------------------
+#
+# Every draft query filters on organiser_id and status = 'draft'. Row-level
+# security enforces the same thing in the database; the filters are here so
+# the intent is visible in the code too. A draft that belongs to someone
+# else, or has already been submitted, comes back as 404 -- the same answer
+# as one that does not exist.
+
+DRAFT_NOT_FOUND = "Draft was not found."
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def create_draft(
+    access_token: str,
+    organiser_id: str,
+    request: EventDraftRequest,
+) -> Event:
+    """Save a new, possibly incomplete, event request as a draft.
+
+    As with submit_event, organiser_id and status are set here, never taken
+    from the request body.
+    """
+    client = config.get_user_client(access_token)
+    draft = request.model_dump(mode="json")
+    draft["organiser_id"] = organiser_id
+    draft["status"] = EventStatus.DRAFT.value
+
+    try:
+        result = client.table("events").insert(draft).execute()
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    if not result.data:
+        raise AuthError("Draft was not saved.", status_code=502)
+    return Event(**result.data[0])
+
+
+def list_my_drafts(access_token: str, organiser_id: str) -> list[Event]:
+    """Return the Organiser's drafts, most recently edited first."""
+    client = config.get_user_client(access_token)
+    try:
+        result = (
+            client.table("events")
+            .select("*")
+            .eq("organiser_id", organiser_id)
+            .eq("status", EventStatus.DRAFT.value)
+            .order("updated_at", desc=True)
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    return [Event(**event) for event in result.data]
+
+
+def get_my_draft(access_token: str, organiser_id: str, draft_id: str) -> Event:
+    """Return one of the Organiser's drafts, to continue editing it."""
+    client = config.get_user_client(access_token)
+    try:
+        result = (
+            client.table("events")
+            .select("*")
+            .eq("id", draft_id)
+            .eq("organiser_id", organiser_id)
+            .eq("status", EventStatus.DRAFT.value)
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    if not result.data:
+        raise AuthError(DRAFT_NOT_FOUND, status_code=404)
+    return Event(**result.data[0])
+
+
+def _update_my_draft(client, organiser_id: str, draft_id: str, values: dict):
+    """Write values onto one of the Organiser's drafts and return the row.
+
+    Shared by saving and submitting. The status filter means a draft that
+    has already been submitted can no longer be changed this way.
+    """
+    values["updated_at"] = _now()
+    try:
+        result = (
+            client.table("events")
+            .update(values)
+            .eq("id", draft_id)
+            .eq("organiser_id", organiser_id)
+            .eq("status", EventStatus.DRAFT.value)
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    if not result.data:
+        raise AuthError(DRAFT_NOT_FOUND, status_code=404)
+    return Event(**result.data[0])
+
+
+def update_draft(
+    access_token: str,
+    organiser_id: str,
+    draft_id: str,
+    request: EventDraftRequest,
+) -> Event:
+    """Save the form as it now stands over an existing draft.
+
+    Every field is written, so a field cleared in the form is cleared in
+    the draft too.
+    """
+    client = config.get_user_client(access_token)
+    return _update_my_draft(
+        client, organiser_id, draft_id, request.model_dump(mode="json")
+    )
+
+
+def submit_draft(
+    access_token: str,
+    organiser_id: str,
+    draft_id: str,
+    request: EventSubmitRequest,
+) -> Event:
+    """Save the final details and submit the draft, in one update.
+
+    The request has passed the same EventSubmitRequest checks as a brand
+    new submission, so a draft cannot be submitted incomplete. The database
+    checks this again (events_complete_unless_draft).
+    """
+    client = config.get_user_client(access_token)
+    values = request.model_dump(mode="json")
+    values["status"] = EventStatus.SUBMITTED.value
+    return _update_my_draft(client, organiser_id, draft_id, values)
+
+
+def delete_draft(access_token: str, organiser_id: str, draft_id: str) -> None:
+    """Discard one of the Organiser's drafts. Submitted events cannot be deleted."""
+    client = config.get_user_client(access_token)
+    try:
+        result = (
+            client.table("events")
+            .delete()
+            .eq("id", draft_id)
+            .eq("organiser_id", organiser_id)
+            .eq("status", EventStatus.DRAFT.value)
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    if not result.data:
+        raise AuthError(DRAFT_NOT_FOUND, status_code=404)
