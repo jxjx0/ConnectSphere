@@ -24,7 +24,7 @@ alter table public.events
     alter column end_time            drop not null,
     alter column expected_attendance drop not null;
 
--- 2. Anything past draft must be complete.
+-- 2. Anything past beyond 'draft', form must be fully complete.
 do $$
 begin
     if not exists (
@@ -54,7 +54,7 @@ $$;
 alter table public.events
     add column if not exists updated_at timestamptz not null default now();
 
--- 4. Organisers may change only the form fields -- never organiser_id or
+-- 4. Organisers may change only the form fields -- cannot change organiser_id or
 --    coordinator_id -- and may delete. The policies below narrow both to
 --    their own drafts.
 --    Supabase grants table-wide UPDATE to authenticated by default, which
