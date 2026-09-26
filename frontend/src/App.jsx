@@ -50,6 +50,15 @@ export default function App() {
       />
 
       <Route
+        path="/my-events/drafts/:draftId"
+        element={
+          <AuthGuard allowedRoles={['organiser']}>
+            <EventRequestPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
         path="/my-events/:eventId"
         element={
           <AuthGuard allowedRoles={['organiser']}>

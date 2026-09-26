@@ -40,3 +40,38 @@ export function submitEventChangeRequest(eventId, changes, token) {
     token,
   })
 }
+
+// Drafts (T7-37). A draft needs only a name; submitting one applies the
+// same checks as a brand new request.
+
+export function saveDraft(draft, token) {
+  return request('/events/drafts', { method: 'POST', body: draft, token })
+}
+
+export function getMyDrafts(token) {
+  return request('/events/drafts', { token })
+}
+
+export function getMyDraft(draftId, token) {
+  return request(`/events/drafts/${draftId}`, { token })
+}
+
+export function updateDraft(draftId, draft, token) {
+  return request(`/events/drafts/${draftId}`, {
+    method: 'PUT',
+    body: draft,
+    token,
+  })
+}
+
+export function submitDraft(draftId, event, token) {
+  return request(`/events/drafts/${draftId}/submit`, {
+    method: 'POST',
+    body: event,
+    token,
+  })
+}
+
+export function deleteDraft(draftId, token) {
+  return request(`/events/drafts/${draftId}`, { method: 'DELETE', token })
+}

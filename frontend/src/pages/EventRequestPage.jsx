@@ -1,7 +1,14 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 
-import { submitEvent } from '../api/events'
+import {
+  deleteDraft,
+  getMyDraft,
+  saveDraft,
+  submitDraft,
+  submitEvent,
+  updateDraft,
+} from '../api/events'
 import AppShell from '../components/AppShell'
 import { useAuth } from '../context/AuthContext'
 import { EVENT_CATEGORIES, OTHER_CATEGORY } from '../eventCategories'
@@ -29,23 +36,139 @@ function emptyForm() {
   }
 }
 
+// The datetime-local input wants "2026-10-03T14:30" in the browser's local
+// time, so a stored UTC timestamp is converted back before it is shown.
+function toDateTimeInput(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  const pad = (part) => String(part).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+    + `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+// A saved draft back into form state. Anything not filled in yet comes
+// back as null, which the inputs show as empty.
+function formFromDraft(draft) {
+  return {
+    name: draft.name ?? '',
+    description: draft.description ?? '',
+    purpose: draft.purpose ?? '',
+    category: draft.category ?? '',
+    categoryOther: draft.category_other ?? '',
+    startTime: toDateTimeInput(draft.start_time),
+    endTime: toDateTimeInput(draft.end_time),
+    expectedAttendance:
+      draft.expected_attendance == null ? '' : String(draft.expected_attendance),
+    locationPreference: draft.location_preference ?? '',
+    layoutPreference: draft.layout_preference ?? '',
+    accessibilityRequirements: draft.accessibility_requirements ?? '',
+    equipmentRequirements: draft.equipment_requirements ?? '',
+  }
+}
+
+// Form state into the body the backend expects. Used for both saving a
+// draft and submitting, so empty inputs are sent as null rather than
+// failing to convert.
+function toPayload(form) {
+  return {
+    name: form.name,
+    description: form.description,
+    purpose: form.purpose,
+    category: form.category || null,
+    category_other:
+      form.category === OTHER_CATEGORY ? form.categoryOther : null,
+    // The datetime-local input has no timezone, so send the browser's
+    // local time as an explicit UTC timestamp.
+    start_time: form.startTime ? new Date(form.startTime).toISOString() : null,
+    end_time: form.endTime ? new Date(form.endTime).toISOString() : null,
+    expected_attendance: form.expectedAttendance
+      ? Number(form.expectedAttendance)
+      : null,
+    location_preference: form.locationPreference,
+    layout_preference: form.layoutPreference,
+    accessibility_requirements: form.accessibilityRequirements,
+    equipment_requirements: form.equipmentRequirements,
+  }
+}
+
 export default function EventRequestPage() {
   const { token } = useAuth()
+  const navigate = useNavigate()
+  // Present when continuing a draft at /my-events/drafts/:draftId.
+  const params = useParams()
 
   const [form, setForm] = useState(emptyForm)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [savedMessage, setSavedMessage] = useState('')
+  const [loading, setLoading] = useState(Boolean(params.draftId))
+  const [loadError, setLoadError] = useState('')
+  // The draft this form is saved into. Null until the first save, so the
+  // first save creates a draft and later saves update that same one.
+  const [draftId, setDraftId] = useState(params.draftId ?? null)
   // Holds the event the backend created, which is what the confirmation
   // message is built from. Null until a request has been submitted.
   const [submitted, setSubmitted] = useState(null)
+
+  useEffect(() => {
+    if (!params.draftId) return
+    getMyDraft(params.draftId, token)
+      .then((data) => setForm(formFromDraft(data.event)))
+      .catch((caught) => setLoadError(caught.message))
+      .finally(() => setLoading(false))
+  }, [params.draftId, token])
 
   function updateField(field) {
     return (event) => setForm({ ...form, [field]: event.target.value })
   }
 
+  async function handleSaveDraft() {
+    setError('')
+    setSavedMessage('')
+
+    // A draft needs only a name; everything else is checked on submit.
+    if (!form.name.trim()) {
+      setError('Give the draft a name before saving it.')
+      return
+    }
+
+    setSaving(true)
+
+    try {
+      const data = draftId
+        ? await updateDraft(draftId, toPayload(form), token)
+        : await saveDraft(toPayload(form), token)
+      setDraftId(data.event.id)
+      setSavedMessage('Draft saved. You can continue it later from your drafts.')
+    } catch (caught) {
+      setError(caught.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDeleteDraft() {
+    if (!window.confirm('Delete this draft? This cannot be undone.')) return
+
+    setError('')
+    setSavedMessage('')
+    setDeleting(true)
+
+    try {
+      await deleteDraft(draftId, token)
+      navigate('/my-events?tab=drafts')
+    } catch (caught) {
+      setError(caught.message)
+      setDeleting(false)
+    }
+  }
+
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
+    setSavedMessage('')
 
     const validationError =
       validateEventDetails(form) ||
@@ -60,32 +183,36 @@ export default function EventRequestPage() {
     setSubmitting(true)
 
     try {
-      const data = await submitEvent(
-        {
-          name: form.name,
-          description: form.description,
-          purpose: form.purpose,
-          category: form.category,
-          category_other:
-            form.category === OTHER_CATEGORY ? form.categoryOther : null,
-          // The datetime-local input has no timezone, so send the
-          // browser's local time as an explicit UTC timestamp.
-          start_time: new Date(form.startTime).toISOString(),
-          end_time: new Date(form.endTime).toISOString(),
-          expected_attendance: Number(form.expectedAttendance),
-          location_preference: form.locationPreference,
-          layout_preference: form.layoutPreference,
-          accessibility_requirements: form.accessibilityRequirements,
-          equipment_requirements: form.equipmentRequirements,
-        },
-        token,
-      )
+      const data = draftId
+        ? await submitDraft(draftId, toPayload(form), token)
+        : await submitEvent(toPayload(form), token)
       setSubmitted(data.event)
     } catch (caught) {
       setError(caught.message)
     } finally {
       setSubmitting(false)
     }
+  }
+
+  if (loading) {
+    return (
+      <AppShell>
+        <p className="page-state">Loading your draft…</p>
+      </AppShell>
+    )
+  }
+
+  // A draft belonging to someone else, or already submitted, comes back
+  // as "not found" -- see get_my_draft in event_service.py.
+  if (loadError) {
+    return (
+      <AppShell>
+        <div className="page-state">
+          <p>{loadError}</p>
+          <Link to="/my-events?tab=drafts">Back to my drafts</Link>
+        </div>
+      </AppShell>
+    )
   }
 
   if (submitted) {
@@ -108,7 +235,9 @@ export default function EventRequestPage() {
               className="button button--secondary"
               onClick={() => {
                 setForm(emptyForm())
+                setDraftId(null)
                 setSubmitted(null)
+                navigate('/my-events/new')
               }}
             >
               Submit another request
@@ -127,7 +256,7 @@ export default function EventRequestPage() {
     <AppShell>
       <div className="content">
         <div className="content__header">
-          <h1>Request an event</h1>
+          <h1>{draftId ? 'Continue your draft' : 'Request an event'}</h1>
           <p className="lead">
             Tell us about your event. You do not need to choose a venue or
             specific equipment &mdash; describe what you need and your Event
@@ -318,11 +447,45 @@ export default function EventRequestPage() {
             </p>
           )}
 
-          <div className="form-actions">
-            <button type="submit" className="button" disabled={submitting}>
+          {savedMessage && (
+            <p className="form-success" role="status">
+              {savedMessage}{' '}
+              <Link to="/my-events?tab=drafts">View my drafts</Link>
+            </p>
+          )}
+
+          <div className="form-actions form-actions--wide">
+            <button
+              type="submit"
+              className="button"
+              disabled={submitting || saving || deleting}
+            >
               {submitting ? 'Submitting…' : 'Submit request'}
             </button>
-            <Link to="/dashboard">Cancel</Link>
+            {/* type="button" so saving skips the browser's required-field
+                checks: a draft may be incomplete. */}
+            <button
+              type="button"
+              className="button button--secondary"
+              onClick={handleSaveDraft}
+              disabled={submitting || saving || deleting}
+            >
+              {saving ? 'Saving…' : 'Save as draft'}
+            </button>
+            {/* Only once there is a saved draft to delete. */}
+            {draftId && (
+              <button
+                type="button"
+                className="button button--danger"
+                onClick={handleDeleteDraft}
+                disabled={submitting || saving || deleting}
+              >
+                {deleting ? 'Deleting…' : 'Delete draft'}
+              </button>
+            )}
+            <Link to={draftId ? '/my-events?tab=drafts' : '/dashboard'}>
+              Cancel
+            </Link>
           </div>
         </form>
       </div>
