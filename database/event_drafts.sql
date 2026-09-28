@@ -73,8 +73,8 @@ grant update (
 grant delete on public.events to authenticated;
 
 -- 5. Only their own drafts. After an edit the row must still be a draft,
---    or be 'submitted' (that is the submit action) -- an Organiser cannot
---    move their own event to any later status.
+--    or be 'under_review' (that is the submit action) -- an Organiser
+--    cannot move their own event to any later status.
 drop policy if exists "Organisers can edit their own drafts" on public.events;
 create policy "Organisers can edit their own drafts"
     on public.events
@@ -83,7 +83,7 @@ create policy "Organisers can edit their own drafts"
     using (organiser_id = (select auth.uid()) and status = 'draft')
     with check (
         organiser_id = (select auth.uid())
-        and status in ('draft', 'submitted')
+        and status in ('draft', 'under_review')
     );
 
 drop policy if exists "Organisers can delete their own drafts" on public.events;

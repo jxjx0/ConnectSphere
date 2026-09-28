@@ -95,7 +95,7 @@ class FakeQuery:
         return SimpleNamespace(data=self.rows)
 
 
-def _event_row(status="submitted") -> dict:
+def _event_row(status="under_review") -> dict:
     event_details = valid_change_request()
     event_details.pop("reason_for_change")
     event_details["accessibility_requirements"] = None
@@ -311,7 +311,7 @@ def test_service_sends_normalized_change_and_reason_to_atomic_rpc(monkeypatch):
         (
             "Event cannot be changed in its current status",
             409,
-            "Only submitted or confirmed events can be changed.",
+            "Only events under review, in planning or confirmed can be changed.",
         ),
         (
             "A pending change request already exists",

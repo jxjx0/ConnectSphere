@@ -11,19 +11,16 @@ class EventStatus(str, Enum):
 
     Kept in step with the events_status_valid constraint in
     database/events.sql. Submitting a request (T7-45) always produces
-    SUBMITTED; the other values belong to later stories.
+    UNDER_REVIEW; a Coordinator approving one moves it to PLANNING.
     """
 
     DRAFT = "draft"
-    SUBMITTED = "submitted"
     UNDER_REVIEW = "under_review"
-    AWAITING_CLARIFICATION = "awaiting_clarification"
-    CHANGE_REQUESTED = "change_requested"
+    REJECTED = "rejected"
     PLANNING = "planning"
     CONFIRMED = "confirmed"
     COMPLETED = "completed"
-    REJECTED = "rejected"
-    CANCELLED = "cancelled"
+    CHANGE_REQUESTED = "change_requested"
 
 
 class EventCategory(str, Enum):

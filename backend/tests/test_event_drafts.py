@@ -55,10 +55,10 @@ DRAFT_ROW = {
     "status": "draft",
 }
 
-SUBMITTED_ROW = {
+UNDER_REVIEW_ROW = {
     "id": DRAFT_ID,
     "organiser_id": ORGANISER.id,
-    "status": "submitted",
+    "status": "under_review",
     **complete_event(),
 }
 
@@ -159,8 +159,8 @@ def test_creating_a_draft_sets_the_organiser_and_status_itself(monkeypatch):
     assert inserted["status"] == "draft"
 
 
-def test_submitting_changes_only_my_draft_to_submitted(monkeypatch):
-    calls = fake_events_table(monkeypatch, [SUBMITTED_ROW])
+def test_submitting_changes_only_my_draft_to_under_review(monkeypatch):
+    calls = fake_events_table(monkeypatch, [UNDER_REVIEW_ROW])
 
     event = event_service.submit_draft(
         "organiser-token",
@@ -169,10 +169,10 @@ def test_submitting_changes_only_my_draft_to_submitted(monkeypatch):
         EventSubmitRequest(**complete_event()),
     )
 
-    assert call_named(calls, "update")[1]["status"] == "submitted"
+    assert call_named(calls, "update")[1]["status"] == "under_review"
     assert ("eq", "organiser_id", ORGANISER.id) in calls
     assert ("eq", "status", "draft") in calls
-    assert event.status is EventStatus.SUBMITTED
+    assert event.status is EventStatus.UNDER_REVIEW
 
 
 def test_deleting_touches_only_my_draft(monkeypatch):

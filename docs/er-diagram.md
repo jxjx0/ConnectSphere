@@ -43,7 +43,7 @@ erDiagram
         int expected_attendance
         text layout_preference
         text accessibility_requirements
-        text status "draft, requested, planning, confirmed, completed, rejected, cancelled, returned"
+        text status "draft, under_review, rejected, planning, confirmed, completed, change_requested"
         text review_notes "coordinator's clarification/amendment request to the organiser"
         bool is_draft
         bool registration_enabled

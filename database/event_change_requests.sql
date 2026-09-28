@@ -7,7 +7,9 @@ create table public.event_change_requests (
     event_id uuid not null references public.events(id) on delete cascade,
     organiser_id uuid not null references public.profiles(id),
     event_status_before_request text not null
-        check (event_status_before_request in ('submitted', 'confirmed')),
+        check (event_status_before_request in (
+            'under_review', 'planning', 'confirmed'
+        )),
     name text not null,
     description text not null,
     reason_for_change text not null,
@@ -107,7 +109,7 @@ begin
         raise exception 'Event request was not found';
     end if;
 
-    if current_event.status not in ('submitted', 'confirmed') then
+    if current_event.status not in ('under_review', 'planning', 'confirmed') then
         raise exception 'Event cannot be changed in its current status';
     end if;
 

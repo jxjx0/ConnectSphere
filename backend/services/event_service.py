@@ -50,7 +50,7 @@ def submit_event(
     client = config.get_user_client(access_token)
     event = request.model_dump(mode="json")
     event["organiser_id"] = organiser_id
-    event["status"] = EventStatus.SUBMITTED.value
+    event["status"] = EventStatus.UNDER_REVIEW.value
 
     try:
         result = client.table("events").insert(event).execute()
@@ -205,7 +205,8 @@ def submit_event_change_request(
             ) from error
         if "event cannot be changed" in message:
             raise AuthError(
-                "Only submitted or confirmed events can be changed.",
+                "Only events under review, in planning or confirmed can be "
+                "changed.",
                 status_code=409,
             ) from error
         if "no event details were changed" in message:
@@ -349,7 +350,7 @@ def submit_draft(
     """
     client = config.get_user_client(access_token)
     values = request.model_dump(mode="json")
-    values["status"] = EventStatus.SUBMITTED.value
+    values["status"] = EventStatus.UNDER_REVIEW.value
     return _update_my_draft(client, organiser_id, draft_id, values)
 
 
