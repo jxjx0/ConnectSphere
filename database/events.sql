@@ -156,14 +156,17 @@ $$;
 revoke all on function public.is_coordinator() from public;
 grant execute on function public.is_coordinator() to authenticated;
 
-create policy "Coordinators can view their assigned reviewable events"
+-- Every assigned event except drafts, so decided events stay visible.
+-- Deciding also needs this: the update returns the row after it has
+-- moved to planning or rejected.
+create policy "Coordinators can view their assigned events"
     on public.events
     for select
     to authenticated
     using (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status = 'under_review'
+        and status <> 'draft'
     );
 
 create policy "Coordinators can decide their assigned reviewable events"

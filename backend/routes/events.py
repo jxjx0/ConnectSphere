@@ -77,9 +77,9 @@ def get_my_event(event_id):
 
 @events_bp.get("/review")
 @require_auth
-def list_assigned_submitted_events():
+def list_assigned_events():
     _require_coordinator()
-    events = event_service.list_assigned_submitted_events(
+    events = event_service.list_assigned_events(
         g.access_token, g.user_id
     )
     return jsonify(
@@ -89,10 +89,38 @@ def list_assigned_submitted_events():
 
 @events_bp.get("/review/<event_id>")
 @require_auth
-def get_assigned_submitted_event(event_id):
+def get_assigned_event(event_id):
     _require_coordinator()
-    event = event_service.get_assigned_submitted_event(
+    event = event_service.get_assigned_event(
         g.access_token, g.user_id, event_id
+    )
+    organiser = event_service.get_event_organiser(
+        g.access_token, event.organiser_id
+    )
+    return jsonify(
+        {
+            "event": event.model_dump(mode="json"),
+            "organiser": organiser.model_dump(mode="json") if organiser else None,
+        }
+    ), 200
+
+
+@events_bp.post("/review/<event_id>/approve")
+@require_auth
+def approve_assigned_event(event_id):
+    _require_coordinator()
+    event = event_service.decide_assigned_event(
+        g.access_token, g.user_id, event_id, EventStatus.PLANNING
+    )
+    return jsonify({"event": event.model_dump(mode="json")}), 200
+
+
+@events_bp.post("/review/<event_id>/reject")
+@require_auth
+def reject_assigned_event(event_id):
+    _require_coordinator()
+    event = event_service.decide_assigned_event(
+        g.access_token, g.user_id, event_id, EventStatus.REJECTED
     )
     return jsonify({"event": event.model_dump(mode="json")}), 200
 
@@ -186,36 +214,6 @@ def submit_draft(draft_id):
         g.access_token, g.user_id, draft_id, event_request
     )
     return jsonify({"event": event.model_dump(mode="json")}), 200
-
-
-@events_bp.post("/review/<event_id>/approve")
-@require_auth
-def approve_assigned_event(event_id):
-    _require_coordinator()
-    event = event_service.decide_assigned_event(
-        g.access_token, g.user_id, event_id, EventStatus.PLANNING
-    )
-    return jsonify({"event": event.model_dump(mode="json")}), 200
-
-
-@events_bp.post("/review/<event_id>/reject")
-@require_auth
-def reject_assigned_event(event_id):
-    _require_coordinator()
-    event = event_service.decide_assigned_event(
-        g.access_token, g.user_id, event_id, EventStatus.REJECTED
-    )
-    return jsonify({"event": event.model_dump(mode="json")}), 200
-
-
-@events_bp.get("/review/<event_id>/documents")
-@require_auth
-def list_assigned_event_documents(event_id):
-    _require_coordinator()
-    documents = event_service.list_assigned_event_documents(
-        g.access_token, g.user_id, event_id
-    )
-    return jsonify({"documents": documents}), 200
 
 
 @events_bp.delete("/drafts/<draft_id>")

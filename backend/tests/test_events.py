@@ -7,7 +7,13 @@ import pytest
 from pydantic import ValidationError
 
 import config
-from models.event import Event, EventCategory, EventStatus, EventSubmitRequest
+from models.event import (
+    Event,
+    EventCategory,
+    EventOrganiser,
+    EventStatus,
+    EventSubmitRequest,
+)
 from models.profile import Profile, Role
 from services import auth_service, event_service
 from services.auth_service import AuthError
@@ -502,48 +508,45 @@ def test_non_organisers_cannot_open_an_event_request(client, monkeypatch):
     assert response.status_code == 403
 
 
-# --- Reviewing assigned submitted requests --------------------------------
+# --- Reviewing assigned event requests ------------------------------------
 
 
-def test_coordinator_list_includes_assigned_under_review_requests(monkeypatch):
+def test_coordinator_list_includes_assigned_events_of_every_status(monkeypatch):
     calls = []
-    assigned = EVENT_RESPONSE.model_dump(mode="json")
-    assigned["coordinator_id"] = COORDINATOR_PROFILE.id
-    assigned["status"] = EventStatus.UNDER_REVIEW.value
-    fake_client(monkeypatch, {"events": [assigned]}, calls)
+    under_review = EVENT_RESPONSE.model_dump(mode="json")
+    under_review["coordinator_id"] = COORDINATOR_PROFILE.id
+    under_review["status"] = EventStatus.UNDER_REVIEW.value
+    approved = dict(under_review, id="55555555-5555-5555-5555-555555555555")
+    approved["status"] = EventStatus.PLANNING.value
+    fake_client(monkeypatch, {"events": [under_review, approved]}, calls)
 
-    events = event_service.list_assigned_submitted_events(
+    events = event_service.list_assigned_events(
         "coordinator-token", COORDINATOR_PROFILE.id
     )
 
     assert ("eq", "coordinator_id", COORDINATOR_PROFILE.id) in calls
-    assert (
-        "in",
-        "status",
-        (EventStatus.SUBMITTED.value, EventStatus.UNDER_REVIEW.value),
-    ) in calls
+    assert ("neq", "status", EventStatus.DRAFT.value) in calls
     assert ("order", "start_time") in calls
     assert events[0].name == "Annual Client Summit"
-    assert events[0].status is EventStatus.UNDER_REVIEW
+    assert [event.status for event in events] == [
+        EventStatus.UNDER_REVIEW,
+        EventStatus.PLANNING,
+    ]
 
 
-def test_coordinator_detail_filters_by_id_assignment_and_review_status(monkeypatch):
+def test_coordinator_detail_filters_by_id_and_assignment(monkeypatch):
     calls = []
     assigned = EVENT_RESPONSE.model_dump(mode="json")
     assigned["coordinator_id"] = COORDINATOR_PROFILE.id
     fake_client(monkeypatch, {"events": [assigned]}, calls)
 
-    event = event_service.get_assigned_submitted_event(
+    event = event_service.get_assigned_event(
         "coordinator-token", COORDINATOR_PROFILE.id, EVENT_RESPONSE.id
     )
 
     assert ("eq", "id", EVENT_RESPONSE.id) in calls
     assert ("eq", "coordinator_id", COORDINATOR_PROFILE.id) in calls
-    assert (
-        "in",
-        "status",
-        (EventStatus.SUBMITTED.value, EventStatus.UNDER_REVIEW.value),
-    ) in calls
+    assert ("neq", "status", EventStatus.DRAFT.value) in calls
     assert event.purpose == "Client relationship building"
     assert event.start_time is not None and event.end_time is not None
     assert event.expected_attendance == 120
@@ -552,13 +555,11 @@ def test_coordinator_detail_filters_by_id_assignment_and_review_status(monkeypat
     assert event.accessibility_requirements == "Step-free access to the stage"
 
 
-def test_unassigned_or_non_reviewable_event_is_not_found_for_coordinator(
-    monkeypatch,
-):
+def test_unassigned_event_is_not_found_for_coordinator(monkeypatch):
     fake_client(monkeypatch, {"events": []}, [])
 
     with pytest.raises(AuthError) as caught:
-        event_service.get_assigned_submitted_event(
+        event_service.get_assigned_event(
             "coordinator-token", COORDINATOR_PROFILE.id, EVENT_RESPONSE.id
         )
 
@@ -568,11 +569,11 @@ def test_unassigned_or_non_reviewable_event_is_not_found_for_coordinator(
 @pytest.mark.parametrize(
     ("decision", "expected_status"),
     [
-        (EventStatus.APPROVED, EventStatus.APPROVED),
+        (EventStatus.PLANNING, EventStatus.PLANNING),
         (EventStatus.REJECTED, EventStatus.REJECTED),
     ],
 )
-def test_coordinator_decision_updates_only_assigned_submitted_event(
+def test_coordinator_decision_updates_only_assigned_event_under_review(
     monkeypatch, decision, expected_status
 ):
     calls = []
@@ -582,21 +583,7 @@ def test_coordinator_decision_updates_only_assigned_submitted_event(
             "status": expected_status,
         }
     )
-
-    class UpdateQuery(FakeQuery):
-        def update(self, values):
-            calls.append(("update", values))
-            return self
-
-        def select(self, *args):
-            return self
-
-    class Client:
-        def table(self, name):
-            assert name == "events"
-            return UpdateQuery([updated.model_dump(mode="json")], calls)
-
-    monkeypatch.setattr(config, "get_user_client", lambda token: Client())
+    fake_client(monkeypatch, {"events": [updated.model_dump(mode="json")]}, calls)
 
     event = event_service.decide_assigned_event(
         "coordinator-token",
@@ -605,14 +592,13 @@ def test_coordinator_decision_updates_only_assigned_submitted_event(
         decision,
     )
 
-    assert ("update", {"status": expected_status.value}) in calls
+    updates = [values for call, values, *_ in calls if call == "update"]
+    assert len(updates) == 1
+    assert updates[0]["status"] == expected_status.value
+    assert "updated_at" in updates[0]
     assert ("eq", "id", EVENT_RESPONSE.id) in calls
     assert ("eq", "coordinator_id", COORDINATOR_PROFILE.id) in calls
-    assert (
-        "in",
-        "status",
-        (EventStatus.SUBMITTED.value, EventStatus.UNDER_REVIEW.value),
-    ) in calls
+    assert ("eq", "status", EventStatus.UNDER_REVIEW.value) in calls
     assert event.status is expected_status
 
 
@@ -624,111 +610,50 @@ def test_coordinator_cannot_decide_missing_event(monkeypatch):
             "coordinator-token",
             COORDINATOR_PROFILE.id,
             EVENT_RESPONSE.id,
-            EventStatus.APPROVED,
+            EventStatus.PLANNING,
         )
 
     assert caught.value.status_code == 404
 
 
-def test_coordinator_documents_are_returned_as_signed_links(monkeypatch):
-    calls = []
-    event_row = {"id": EVENT_RESPONSE.id}
-    document_row = {
-        "id": "44444444-4444-4444-4444-444444444444",
-        "file_name": "event-brief.pdf",
-        "storage_path": f"{EVENT_RESPONSE.id}/event-brief.pdf",
-        "created_at": "2026-01-01T00:00:00+00:00",
-    }
-
-    class StorageBucket:
-        def create_signed_url(self, path, expires_in):
-            calls.append(("sign", path, expires_in))
-            return {"signedURL": "https://storage.example/signed/event-brief.pdf"}
-
-    class Storage:
-        def from_(self, bucket):
-            calls.append(("bucket", bucket))
-            return StorageBucket()
-
-    class Client:
-        storage = Storage()
-
-        def table(self, name):
-            rows = {
-                "events": [event_row],
-                "event_documents": [document_row],
-            }.get(name, [])
-            return FakeQuery(rows, calls)
-
-    monkeypatch.setattr(config, "get_user_client", lambda token: Client())
-
-    documents = event_service.list_assigned_event_documents(
-        "coordinator-token", COORDINATOR_PROFILE.id, EVENT_RESPONSE.id
+def test_coordinator_cannot_decide_an_event_already_decided(monkeypatch):
+    # The update matches nothing, but the event is still assigned to them.
+    results = iter([[], [{"id": EVENT_RESPONSE.id}]])
+    monkeypatch.setattr(
+        config,
+        "get_user_client",
+        lambda access_token: SimpleNamespace(
+            table=lambda name: FakeQuery(next(results), [])
+        ),
     )
 
-    assert ("eq", "coordinator_id", COORDINATOR_PROFILE.id) in calls
-    assert (
-        "in",
-        "status",
-        (EventStatus.SUBMITTED.value, EventStatus.UNDER_REVIEW.value),
-    ) in calls
-    assert calls[-1] == (
-        "sign",
-        f"{EVENT_RESPONSE.id}/event-brief.pdf",
-        3600,
-    )
-    assert documents == [
-        {
-            "id": document_row["id"],
-            "file_name": "event-brief.pdf",
-            "url": "https://storage.example/signed/event-brief.pdf",
-            "created_at": document_row["created_at"],
-        }
-    ]
+    with pytest.raises(AuthError) as caught:
+        event_service.decide_assigned_event(
+            "coordinator-token",
+            COORDINATOR_PROFILE.id,
+            EVENT_RESPONSE.id,
+            EventStatus.REJECTED,
+        )
+
+    assert caught.value.status_code == 409
 
 
-def test_document_read_errors_use_a_read_message():
+def test_review_read_errors_use_a_read_message():
     error = SimpleNamespace(code="PGRST205")
 
     translated = event_service._review_read_error(
-        error, "supporting documents"
+        error, "the event request"
     )
 
     assert translated.status_code == 502
-    assert translated.message == "Unable to load supporting documents."
+    assert translated.message == "Unable to load the event request."
 
 
-def test_user_client_authenticates_storage_as_the_signed_in_user(monkeypatch):
-    captured = {}
-
-    class Options:
-        headers = {"Authorization": "Bearer anonymous-key"}
-
-    class Postgrest:
-        def auth(self, token):
-            captured["postgrest_token"] = token
-
-    class Client:
-        options = Options()
-        postgrest = Postgrest()
-
-    monkeypatch.setattr(config, "SUPABASE_URL", "https://supabase.example")
-    monkeypatch.setattr(config, "SUPABASE_ANON_KEY", "anonymous-key")
-    monkeypatch.setattr(config, "create_client", lambda url, key: Client())
-
-    config.get_user_client("coordinator-token")
-
-    assert Client.options.headers["Authorization"] == (
-        "Bearer coordinator-token"
-    )
-    assert captured["postgrest_token"] == "coordinator-token"
-
-
-def test_coordinator_can_list_assigned_submitted_requests(client, monkeypatch):
+def test_coordinator_can_list_assigned_requests(client, monkeypatch):
     authenticate_as(monkeypatch, COORDINATOR_PROFILE)
     monkeypatch.setattr(
         event_service,
-        "list_assigned_submitted_events",
+        "list_assigned_events",
         lambda access_token, coordinator_id: [EVENT_RESPONSE],
     )
 
@@ -746,9 +671,7 @@ def test_non_coordinators_cannot_list_review_requests(client, monkeypatch):
     def list_events(access_token, coordinator_id):
         raise AssertionError("the service must not be reached")
 
-    monkeypatch.setattr(
-        event_service, "list_assigned_submitted_events", list_events
-    )
+    monkeypatch.setattr(event_service, "list_assigned_events", list_events)
 
     response = client.get(
         "/events/review", headers={"Authorization": "Bearer organiser-token"}
@@ -767,8 +690,11 @@ def test_coordinator_detail_route_passes_current_coordinator_id(
         captured.update(coordinator_id=coordinator_id, event_id=event_id)
         return EVENT_RESPONSE
 
+    monkeypatch.setattr(event_service, "get_assigned_event", get_event)
     monkeypatch.setattr(
-        event_service, "get_assigned_submitted_event", get_event
+        event_service,
+        "get_event_organiser",
+        lambda access_token, organiser_id: None,
     )
 
     response = client.get(
@@ -787,13 +713,11 @@ def test_non_coordinators_cannot_view_coordinator_review_detail(
     client, monkeypatch
 ):
     authenticate_as(monkeypatch, ORGANISER_PROFILE)
-    monkeypatch.setattr(
-        event_service,
-        "get_assigned_submitted_event",
-        lambda *args: (_ for _ in ()).throw(
-            AssertionError("the service must not be reached")
-        ),
-    )
+
+    def get_event(access_token, coordinator_id, event_id):
+        raise AssertionError("the service must not be reached")
+
+    monkeypatch.setattr(event_service, "get_assigned_event", get_event)
 
     response = client.get(
         f"/events/review/{EVENT_RESPONSE.id}",
@@ -803,34 +727,68 @@ def test_non_coordinators_cannot_view_coordinator_review_detail(
     assert response.status_code == 403
 
 
-def test_coordinator_detail_and_documents_routes_return_requested_data(
+def test_coordinator_detail_route_returns_requested_data(
     client, monkeypatch
 ):
     authenticate_as(monkeypatch, COORDINATOR_PROFILE)
     monkeypatch.setattr(
         event_service,
-        "get_assigned_submitted_event",
+        "get_assigned_event",
         lambda access_token, coordinator_id, event_id: EVENT_RESPONSE,
     )
-    monkeypatch.setattr(
-        event_service,
-        "list_assigned_event_documents",
-        lambda access_token, coordinator_id, event_id: [
-            {"id": "doc-1", "file_name": "brief.pdf", "url": "https://signed"}
-        ],
-    )
+    captured = {}
+
+    def get_organiser(access_token, organiser_id):
+        captured["organiser_id"] = organiser_id
+        return EventOrganiser(
+            full_name=ORGANISER_PROFILE.full_name,
+            contact_number=ORGANISER_PROFILE.contact_number,
+            organization=ORGANISER_PROFILE.organization,
+        )
+
+    monkeypatch.setattr(event_service, "get_event_organiser", get_organiser)
 
     headers = {"Authorization": "Bearer coordinator-token"}
     detail = client.get(f"/events/review/{EVENT_RESPONSE.id}", headers=headers)
-    documents = client.get(
-        f"/events/review/{EVENT_RESPONSE.id}/documents", headers=headers
-    )
 
     assert detail.status_code == 200
     assert detail.get_json()["event"]["layout_preference"] == "Theatre"
     assert detail.get_json()["event"]["accessibility_requirements"]
-    assert documents.status_code == 200
-    assert documents.get_json()["documents"][0]["file_name"] == "brief.pdf"
+    assert captured["organiser_id"] == ORGANISER_PROFILE.id
+    assert detail.get_json()["organiser"] == {
+        "full_name": "Ada Tan",
+        "contact_number": "+65 9123 4567",
+        "organization": "Northwind Pte Ltd",
+    }
+
+
+def test_coordinator_sees_the_organisers_contact_details(monkeypatch):
+    calls = []
+    fake_client(
+        monkeypatch,
+        {"profiles": [ORGANISER_PROFILE.model_dump(mode="json")]},
+        calls,
+    )
+
+    organiser = event_service.get_event_organiser(
+        "coordinator-token", ORGANISER_PROFILE.id
+    )
+
+    assert ("eq", "id", ORGANISER_PROFILE.id) in calls
+    assert organiser.full_name == "Ada Tan"
+    assert organiser.contact_number == "+65 9123 4567"
+    assert organiser.organization == "Northwind Pte Ltd"
+
+
+def test_unreadable_organiser_profile_returns_none(monkeypatch):
+    fake_client(monkeypatch, {"profiles": []}, [])
+
+    assert (
+        event_service.get_event_organiser(
+            "coordinator-token", ORGANISER_PROFILE.id
+        )
+        is None
+    )
 
 
 def test_coordinator_can_approve_an_assigned_request(client, monkeypatch):
@@ -838,7 +796,7 @@ def test_coordinator_can_approve_an_assigned_request(client, monkeypatch):
     approved = EVENT_RESPONSE.model_copy(
         update={
             "coordinator_id": COORDINATOR_PROFILE.id,
-            "status": EventStatus.APPROVED,
+            "status": EventStatus.PLANNING,
         }
     )
     captured = {}
@@ -860,20 +818,18 @@ def test_coordinator_can_approve_an_assigned_request(client, monkeypatch):
     assert captured == {
         "coordinator_id": COORDINATOR_PROFILE.id,
         "event_id": EVENT_RESPONSE.id,
-        "status": EventStatus.APPROVED,
+        "status": EventStatus.PLANNING,
     }
-    assert response.get_json()["event"]["status"] == "approved"
+    assert response.get_json()["event"]["status"] == "planning"
 
 
 def test_non_coordinators_cannot_reject_review_requests(client, monkeypatch):
     authenticate_as(monkeypatch, ORGANISER_PROFILE)
-    monkeypatch.setattr(
-        event_service,
-        "decide_assigned_event",
-        lambda *args: (_ for _ in ()).throw(
-            AssertionError("the service must not be reached")
-        ),
-    )
+
+    def decide(access_token, coordinator_id, event_id, status):
+        raise AssertionError("the service must not be reached")
+
+    monkeypatch.setattr(event_service, "decide_assigned_event", decide)
 
     response = client.post(
         f"/events/review/{EVENT_RESPONSE.id}/reject",

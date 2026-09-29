@@ -113,12 +113,8 @@ No `.env` needed for the frontend in local development — it defaults to
 ### About the database
 
 The `profiles` table already exists in the shared hosted Supabase project.
-There is nothing to create locally — everyone connects to the same remote
-database. For an existing project, apply `database/event_review.sql` followed
-by `database/event_documents.sql` in the Supabase SQL Editor. This enables
-coordinator row-level access and creates the private supporting-document
-bucket/table. On a fresh database, run `database/events.sql` before those two
-scripts.
+There is nothing to create or migrate locally — everyone connects to the same
+remote database.
 
 ---
 
@@ -203,11 +199,10 @@ fails.
 | `POST` | `/signup` | — | Register an organiser or attendee |
 | `POST` | `/login` | — | Log in, returns an access token |
 | `GET` | `/me` | Bearer token | Current user's profile |
-| `GET` | `/events/review` | Coordinator | Assigned submitted requests |
+| `GET` | `/events/review` | Coordinator | All requests assigned to them (any status except draft) |
 | `GET` | `/events/review/<event_id>` | Coordinator | Assigned request details |
-| `GET` | `/events/review/<event_id>/documents` | Coordinator | Signed links to attached documents |
-| `POST` | `/events/review/<event_id>/approve` | Coordinator | Approve an assigned submitted request |
-| `POST` | `/events/review/<event_id>/reject` | Coordinator | Reject an assigned submitted request |
+| `POST` | `/events/review/<event_id>/approve` | Coordinator | Approve an assigned request under review (moves it to planning) |
+| `POST` | `/events/review/<event_id>/reject` | Coordinator | Reject an assigned request under review |
 
 `/signup` accepts only external roles (`organiser`, `attendee`). Internal roles
 are rejected server-side regardless of what the client sends.

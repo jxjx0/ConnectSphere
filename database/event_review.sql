@@ -13,16 +13,12 @@ alter table public.events
     add constraint events_status_valid
         check (status in (
             'draft',
-            'submitted',
-            'approved',
             'under_review',
-            'awaiting_clarification',
-            'change_requested',
+            'rejected',
             'planning',
             'confirmed',
             'completed',
-            'rejected',
-            'cancelled'
+            'change_requested'
         ));
 
 create or replace function public.is_coordinator()
@@ -47,14 +43,23 @@ drop policy if exists "Coordinators can view their assigned submitted events"
     on public.events;
 drop policy if exists "Coordinators can view their assigned reviewable events"
     on public.events;
-create policy "Coordinators can view their assigned reviewable events"
+drop policy if exists "Coordinators can view their assigned events under review"
+    on public.events;
+drop policy if exists "Coordinators can view assigned events"
+    on public.events;
+drop policy if exists "Coordinators can view their assigned events"
+    on public.events;
+-- Every assigned event except drafts, so decided events stay visible.
+-- Deciding also needs this: the update returns the row after it has
+-- moved to planning or rejected.
+create policy "Coordinators can view their assigned events"
     on public.events
     for select
     to authenticated
     using (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status in ('submitted', 'under_review')
+        and status <> 'draft'
     );
 
 drop policy if exists "Coordinators can decide their assigned submitted events"
@@ -68,10 +73,10 @@ create policy "Coordinators can decide their assigned reviewable events"
     using (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status in ('submitted', 'under_review')
+        and status = 'under_review'
     )
     with check (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status in ('approved', 'rejected')
+        and status in ('planning', 'rejected')
     );

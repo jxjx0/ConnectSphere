@@ -304,3 +304,11 @@ class EventReviewSummary(BaseModel):
     start_time: datetime
     end_time: datetime
     status: EventStatus
+
+
+class EventOrganiser(BaseModel):
+    """The Organiser's contact details, shown to their event's Coordinator."""
+
+    full_name: str | None = None
+    contact_number: str | None = None
+    organization: str | None = None

@@ -9,6 +9,7 @@ from models.event import (
     Event,
     EventChangeRequestSubmit,
     EventDraftRequest,
+    EventOrganiser,
     EventReviewSummary,
     EventStatus,
     EventSubmitRequest,
@@ -384,17 +385,21 @@ def delete_draft(access_token: str, organiser_id: str, draft_id: str) -> None:
         raise AuthError(DRAFT_NOT_FOUND, status_code=404)
 
 
-def list_assigned_submitted_events(
+def list_assigned_events(
     access_token: str, coordinator_id: str
 ) -> list[EventReviewSummary]:
-    """Return assigned requests that are awaiting a Coordinator decision."""
+    """Return every event assigned to this Coordinator, whatever its status.
+
+    Decided events stay on the list so the Coordinator can keep working on
+    them. Drafts are left out: they have not been submitted yet.
+    """
     client = config.get_user_client(access_token)
     try:
         result = (
             client.table("events")
             .select("id, name, start_time, end_time, status")
             .eq("coordinator_id", coordinator_id)
-            .eq("status", EventStatus.UNDER_REVIEW.value)
+            .neq("status", EventStatus.DRAFT.value)
             .order("start_time")
             .execute()
         )
@@ -403,10 +408,10 @@ def list_assigned_submitted_events(
     return [EventReviewSummary(**event) for event in result.data]
 
 
-def get_assigned_submitted_event(
+def get_assigned_event(
     access_token: str, coordinator_id: str, event_id: str
 ) -> Event:
-    """Return one reviewable request assigned to the signed-in Coordinator."""
+    """Return one event assigned to the signed-in Coordinator."""
     client = config.get_user_client(access_token)
     try:
         result = (
@@ -414,7 +419,7 @@ def get_assigned_submitted_event(
             .select("*")
             .eq("id", event_id)
             .eq("coordinator_id", coordinator_id)
-            .eq("status", EventStatus.UNDER_REVIEW.value)
+            .neq("status", EventStatus.DRAFT.value)
             .execute()
         )
     except PostgrestAPIError as error:
@@ -423,6 +428,31 @@ def get_assigned_submitted_event(
     if not result.data:
         raise AuthError("Event request was not found.", status_code=404)
     return Event(**result.data[0])
+
+
+def get_event_organiser(
+    access_token: str, organiser_id: str
+) -> EventOrganiser | None:
+    """Return the contact details of an event's Organiser.
+
+    Row-level security only lets a Coordinator read the profile of an
+    Organiser whose event is assigned to them. None means the profile
+    could not be read.
+    """
+    client = config.get_user_client(access_token)
+    try:
+        result = (
+            client.table("profiles")
+            .select("full_name, contact_number, organization")
+            .eq("id", organiser_id)
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _review_read_error(error, "the event organiser") from error
+
+    if not result.data:
+        return None
+    return EventOrganiser(**result.data[0])
 
 
 def decide_assigned_event(
@@ -439,68 +469,35 @@ def decide_assigned_event(
     try:
         result = (
             client.table("events")
-            .update({"status": status.value})
+            .update({"status": status.value, "updated_at": _now()})
             .eq("id", event_id)
             .eq("coordinator_id", coordinator_id)
             .eq("status", EventStatus.UNDER_REVIEW.value)
-            .select("*")
             .execute()
         )
     except PostgrestAPIError as error:
-        raise _review_read_error(error, "the event decision") from error
+        raise _database_error(error) from error
 
-    if not result.data:
-        raise AuthError(
-            "Only an assigned submitted event can be decided.",
-            status_code=404,
-        )
-    return Event(**result.data[0])
+    if result.data:
+        return Event(**result.data[0])
 
-
-def list_assigned_event_documents(
-    access_token: str, coordinator_id: str, event_id: str
-) -> list[dict]:
-    """Return signed links for documents on this Coordinator's reviewable event."""
-    client = config.get_user_client(access_token)
+    # Nothing was updated: either the event is not assigned to this
+    # Coordinator, or it has already been decided.
     try:
-        event = (
+        existing = (
             client.table("events")
             .select("id")
             .eq("id", event_id)
             .eq("coordinator_id", coordinator_id)
-            .eq("status", EventStatus.UNDER_REVIEW.value)
-            .execute()
-        )
-        if not event.data:
-            raise AuthError("Event request was not found.", status_code=404)
-
-        result = (
-            client.table("event_documents")
-            .select("id, file_name, storage_path, created_at")
-            .eq("event_id", event_id)
-            .order("created_at")
+            .neq("status", EventStatus.DRAFT.value)
             .execute()
         )
     except PostgrestAPIError as error:
-        raise _review_read_error(error, "supporting documents") from error
+        raise _database_error(error) from error
 
-    documents = []
-    for document in result.data:
-        try:
-            signed = client.storage.from_(
-                "event-supporting-documents"
-            ).create_signed_url(document["storage_path"], 3600)
-        except PostgrestAPIError as error:
-            raise _review_read_error(error, "supporting documents") from error
-        url = signed.get("signedURL") or signed.get("signedUrl")
-        if not url:
-            raise AuthError("Unable to access a supporting document.", status_code=502)
-        documents.append(
-            {
-                "id": document["id"],
-                "file_name": document["file_name"],
-                "url": url,
-                "created_at": document.get("created_at"),
-            }
+    if existing.data:
+        raise AuthError(
+            "Only a request under review can be approved or rejected.",
+            status_code=409,
         )
-    return documents
+    raise AuthError("Event request was not found.", status_code=404)

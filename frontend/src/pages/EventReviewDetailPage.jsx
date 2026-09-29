@@ -4,12 +4,17 @@ import { Link, useParams } from 'react-router-dom'
 import {
   approveAssignedEvent,
   getAssignedEventRequest,
-  getEventSupportingDocuments,
   rejectAssignedEvent,
 } from '../api/events'
 import AppShell from '../components/AppShell'
 import { useAuth } from '../context/AuthContext'
-import { formatDateRange, optional, readableStatus } from '../eventDisplay'
+import { categoryLabel } from '../eventCategories'
+import {
+  formatDateRange,
+  formatDateTime,
+  optional,
+  readableStatus,
+} from '../eventDisplay'
 
 function Answer({ label, value }) {
   return (
@@ -24,8 +29,7 @@ export default function EventReviewDetailPage() {
   const { token } = useAuth()
   const { eventId } = useParams()
   const [event, setEvent] = useState(null)
-  const [documents, setDocuments] = useState([])
-  const [documentsError, setDocumentsError] = useState('')
+  const [organiser, setOrganiser] = useState(null)
   const [error, setError] = useState('')
   const [decisionError, setDecisionError] = useState('')
   const [deciding, setDeciding] = useState(false)
@@ -36,21 +40,15 @@ export default function EventReviewDetailPage() {
 
     getAssignedEventRequest(eventId, token)
       .then((data) => {
-        if (active) setEvent(data.event)
+        if (!active) return
+        setEvent(data.event)
+        setOrganiser(data.organiser)
       })
       .catch((caught) => {
         if (active) setError(caught.message)
       })
       .finally(() => {
         if (active) setLoading(false)
-      })
-
-    getEventSupportingDocuments(eventId, token)
-      .then((data) => {
-        if (active) setDocuments(data.documents)
-      })
-      .catch((caught) => {
-        if (active) setDocumentsError(caught.message)
       })
 
     return () => {
@@ -90,7 +88,7 @@ export default function EventReviewDetailPage() {
       <AppShell>
         <div className="page-state">
           <p>{error}</p>
-          <Link to="/event-reviews">Back to assigned requests</Link>
+          <Link to="/dashboard">Back to dashboard</Link>
         </div>
       </AppShell>
     )
@@ -99,13 +97,15 @@ export default function EventReviewDetailPage() {
   return (
     <AppShell>
       <div className="content">
-        <Link to="/event-reviews" className="backlink">
-          ← Assigned requests
+        <Link to="/dashboard" className="backlink">
+          ← Dashboard
         </Link>
 
         <header className="record-head">
           <h1 className="record-head__title">{event.name}</h1>
           <p className="record-head__meta">
+            {categoryLabel(event.category, event.category_other)}
+            <span className="record-head__dot" aria-hidden="true">·</span>
             {formatDateRange(event.start_time, event.end_time)}
             <span className="record-head__dot" aria-hidden="true">·</span>
             {event.expected_attendance} expected
@@ -115,47 +115,35 @@ export default function EventReviewDetailPage() {
         </header>
 
         <section className="stack stack--tight">
+          <h2 className="section-title">Organiser</h2>
+          {organiser ? (
+            <dl className="answers">
+              <Answer label="Name" value={organiser.full_name} />
+              <Answer label="Organisation" value={organiser.organization} />
+              <Answer label="Contact number" value={organiser.contact_number} />
+            </dl>
+          ) : (
+            <p className="note">Organiser details are not available.</p>
+          )}
+        </section>
+
+        <section className="stack stack--tight">
           <h2 className="section-title">Request details</h2>
           <dl className="answers">
+            <Answer label="Submitted" value={formatDateTime(event.created_at)} />
             <Answer label="Purpose" value={event.purpose} />
+            <Answer label="Description" value={event.description} />
+            <Answer label="Category" value={categoryLabel(event.category, event.category_other)} />
             <Answer label="Preferred dates" value={formatDateRange(event.start_time, event.end_time)} />
             <Answer label="Estimated attendance" value={`${event.expected_attendance} people`} />
+            <Answer label="Preferred location" value={event.location_preference} />
             <Answer label="Room layout" value={event.layout_preference} />
             <Answer label="Equipment needs" value={event.equipment_requirements} />
             <Answer label="Accessibility needs" value={event.accessibility_requirements} />
           </dl>
         </section>
 
-        <section className="stack stack--tight">
-          <h2 className="section-title">Supporting documents</h2>
-          {documentsError ? (
-            <p className="note" role="alert">
-              Supporting documents could not be loaded: {documentsError}
-            </p>
-          ) : documents.length === 0 ? (
-            <p className="note">No supporting documents attached.</p>
-          ) : (
-            <div className="choices">
-              {documents.map((document) => (
-                <a
-                  key={document.id}
-                  className="choice"
-                  href={document.url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <span className="choice__text">
-                    <span className="choice__title">{document.file_name}</span>
-                    <span className="choice__description">Open supporting document</span>
-                  </span>
-                  <span className="choice__arrow" aria-hidden="true">↗</span>
-                </a>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {['submitted', 'under_review'].includes(event.status) && (
+        {event.status === 'under_review' && (
           <section className="stack stack--tight">
             <h2 className="section-title">Review decision</h2>
             {decisionError && (
