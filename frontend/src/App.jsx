@@ -12,6 +12,8 @@ import MyEventDetailPage from './pages/MyEventDetailPage'
 import MyEventsPage from './pages/MyEventsPage'
 import VenuePage from './pages/VenuePage'
 import EquipmentPage from './pages/EquipmentPage'
+import EventReviewPage from './pages/EventReviewPage'
+import EventReviewDetailPage from './pages/EventReviewDetailPage'
 
 export default function App() {
   return (
@@ -53,6 +55,24 @@ export default function App() {
         element={
           <AuthGuard allowedRoles={['organiser']}>
             <MyEventDetailPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/event-reviews"
+        element={
+          <AuthGuard allowedRoles={['coordinator']}>
+            <EventReviewPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/event-reviews/:eventId"
+        element={
+          <AuthGuard allowedRoles={['coordinator']}>
+            <EventReviewDetailPage />
           </AuthGuard>
         }
       />

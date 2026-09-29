@@ -39,6 +39,17 @@ export default function DashboardPage() {
         </section>
       )}
 
+      {user.role === 'coordinator' && (
+        <section className="stack stack--tight">
+          <h2 className="section-title">Event Requests</h2>
+          <div className="form-actions">
+            <Link to="/event-reviews" className="button">
+              Review Assigned Requests
+            </Link>
+          </div>
+        </section>
+      )}
+
       {user.role === 'venue_staff' && (
         <section className="stack stack--tight">
           <h2 className="section-title">Venue Management</h2>

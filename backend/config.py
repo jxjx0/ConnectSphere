@@ -43,5 +43,9 @@ def get_user_client(access_token: str) -> Client:
     """
     _require_settings()
     client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    # Keep the token on the shared options too: PostgREST's auth helper only
+    # updates its own client, while Storage is created lazily from these
+    # shared headers.
+    client.options.headers["Authorization"] = f"Bearer {access_token}"
     client.postgrest.auth(access_token)
     return client

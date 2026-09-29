@@ -16,6 +16,7 @@ class EventStatus(str, Enum):
 
     DRAFT = "draft"
     SUBMITTED = "submitted"
+    APPROVED = "approved"
     UNDER_REVIEW = "under_review"
     AWAITING_CLARIFICATION = "awaiting_clarification"
     CHANGE_REQUESTED = "change_requested"
@@ -166,3 +167,13 @@ class Event(BaseModel):
     status: EventStatus
     created_at: datetime | None = None
     coordinator_name: str | None = None
+
+
+class EventReviewSummary(BaseModel):
+    """The fields needed to render the Coordinator's review list."""
+
+    id: str
+    name: str
+    start_time: datetime
+    end_time: datetime
+    status: EventStatus

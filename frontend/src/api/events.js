@@ -32,3 +32,29 @@ export function getMyEvents(token) {
 export function getMyEvent(eventId, token) {
   return request(`/events/${eventId}`, { token })
 }
+
+export function getAssignedEventRequests(token) {
+  return request('/events/review', { token })
+}
+
+export function getAssignedEventRequest(eventId, token) {
+  return request(`/events/review/${eventId}`, { token })
+}
+
+export function getEventSupportingDocuments(eventId, token) {
+  return request(`/events/review/${eventId}/documents`, { token })
+}
+
+export function approveAssignedEvent(eventId, token) {
+  return request(`/events/review/${eventId}/approve`, {
+    method: 'POST',
+    token,
+  })
+}
+
+export function rejectAssignedEvent(eventId, token) {
+  return request(`/events/review/${eventId}/reject`, {
+    method: 'POST',
+    token,
+  })
+}
