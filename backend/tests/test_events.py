@@ -52,7 +52,7 @@ COORDINATOR_PROFILE = Profile(
 EVENT_RESPONSE = Event(
     id="33333333-3333-3333-3333-333333333333",
     organiser_id=ORGANISER_PROFILE.id,
-    status=EventStatus.SUBMITTED,
+    status=EventStatus.UNDER_REVIEW,
     **valid_event(),
 )
 
@@ -195,8 +195,8 @@ def test_service_sets_the_organiser_and_status_itself(monkeypatch):
     )
 
     assert captured["organiser_id"] == ORGANISER_PROFILE.id
-    assert captured["status"] == "submitted"
-    assert event.status is EventStatus.SUBMITTED
+    assert captured["status"] == "under_review"
+    assert event.status is EventStatus.UNDER_REVIEW
 
 
 # --- Route -----------------------------------------------------------------
@@ -218,7 +218,7 @@ def test_organiser_can_submit_an_event_request(client, monkeypatch):
 
     assert response.status_code == 201
     assert response.get_json()["event"]["name"] == "Annual Client Summit"
-    assert response.get_json()["event"]["status"] == "submitted"
+    assert response.get_json()["event"]["status"] == "under_review"
 
 
 def test_submit_passes_the_signed_in_organiser_to_the_service(

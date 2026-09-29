@@ -62,7 +62,7 @@ begin
         raise exception 'Event request was not found';
     end if;
 
-    if current_event.status not in ('submitted', 'confirmed') then
+    if current_event.status not in ('under_review', 'planning', 'confirmed') then
         raise exception 'Event cannot be changed in its current status';
     end if;
 

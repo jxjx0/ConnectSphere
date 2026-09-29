@@ -6,6 +6,7 @@ import AppShell from '../components/AppShell'
 import { useAuth } from '../context/AuthContext'
 import { categoryLabel } from '../eventCategories'
 import {
+  CHANGEABLE_STATUSES,
   formatDateRange,
   formatDateTime,
   optional,
@@ -155,7 +156,7 @@ export default function MyEventDetailPage() {
               Your change request is waiting for review. You can submit another
               request after this one has been reviewed.
             </p>
-          ) : ['submitted', 'confirmed'].includes(event.status) ? (
+          ) : CHANGEABLE_STATUSES.includes(event.status) ? (
             <Link
               to={`/my-events/${event.id}/change-request`}
               className="button"

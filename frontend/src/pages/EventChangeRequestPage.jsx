@@ -8,6 +8,7 @@ import {
 import AppShell from '../components/AppShell'
 import { useAuth } from '../context/AuthContext'
 import { EVENT_CATEGORIES, OTHER_CATEGORY } from '../eventCategories'
+import { CHANGEABLE_STATUSES } from '../eventDisplay'
 
 const NIL = 'NIL'
 
@@ -141,7 +142,7 @@ export default function EventChangeRequestPage() {
   )
   const fieldErrors = validation.fieldErrors || {}
   const noChanges = Boolean(validation.noChanges)
-  const eligible = event && ['submitted', 'confirmed'].includes(event.status)
+  const eligible = event && CHANGEABLE_STATUSES.includes(event.status)
   const canSubmit = !submitting && Object.keys(fieldErrors).length === 0 && !noChanges
 
   function updateField(field) {
@@ -196,7 +197,7 @@ export default function EventChangeRequestPage() {
           <p className="note">
             {event.has_pending_change_request
               ? 'A change request for this event is already waiting for review.'
-              : 'Change requests are available for submitted or confirmed events.'}
+              : 'Change requests are available for events under review, in planning or confirmed.'}
           </p>
         </div>
       </AppShell>
