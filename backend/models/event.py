@@ -11,20 +11,16 @@ class EventStatus(str, Enum):
 
     Kept in step with the events_status_valid constraint in
     database/events.sql. Submitting a request (T7-45) always produces
-    SUBMITTED; the other values belong to later stories.
+    UNDER_REVIEW; a Coordinator approving one moves it to PLANNING.
     """
 
     DRAFT = "draft"
-    SUBMITTED = "submitted"
-    APPROVED = "approved"
     UNDER_REVIEW = "under_review"
-    AWAITING_CLARIFICATION = "awaiting_clarification"
-    CHANGE_REQUESTED = "change_requested"
+    REJECTED = "rejected"
     PLANNING = "planning"
     CONFIRMED = "confirmed"
     COMPLETED = "completed"
-    REJECTED = "rejected"
-    CANCELLED = "cancelled"
+    CHANGE_REQUESTED = "change_requested"
 
 
 class EventCategory(str, Enum):
@@ -127,13 +123,7 @@ class EventSubmitRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_event_times(self) -> "EventSubmitRequest":
-        """Check the event runs forwards, and has not already happened.
-
-        This is the whole of the date checking for this story. An event
-        request names no venue, so there is nothing yet for a date to
-        clash with -- availability is only meaningful once the Coordinator
-        requests a specific venue.
-        """
+        """Reject backwards event times and events that have already started."""
         if _as_utc(self.end_time) <= _as_utc(self.start_time):
             raise ValueError("End time must be after the start time")
         if _as_utc(self.start_time) <= datetime.now(timezone.utc):
@@ -141,32 +131,169 @@ class EventSubmitRequest(BaseModel):
         return self
 
 
+class EventDraftRequest(BaseModel):
+    """The body of POST /events/drafts and PUT /events/drafts/<id>.
+
+    A draft may be incomplete, so only name is required. Whatever has been
+    filled in is still checked, so a draft never holds data that could not
+    be submitted later. "Start time must be in the future" is left to
+    submission: a draft saved today may be finished next week.
+    """
+
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = None
+    purpose: str | None = None
+    category: EventCategory | None = None
+    category_other: str | None = Field(default=None, max_length=120)
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    expected_attendance: int | None = Field(default=None, gt=0)
+    location_preference: str | None = None
+    layout_preference: str | None = None
+    accessibility_requirements: str | None = None
+    equipment_requirements: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Give the draft a name before saving it")
+        return stripped
+
+    @field_validator(
+        "description",
+        "purpose",
+        "category_other",
+        "location_preference",
+        "layout_preference",
+        "accessibility_requirements",
+        "equipment_requirements",
+    )
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator(
+        "category", "start_time", "end_time", "expected_attendance",
+        mode="before",
+    )
+    @classmethod
+    def empty_means_not_filled_in(cls, value):
+        """An untouched form input arrives as "", which means not filled in."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @model_validator(mode="after")
+    def validate_filled_in_fields(self) -> "EventDraftRequest":
+        if self.category_other and self.category is not EventCategory.OTHER:
+            raise ValueError(
+                "Only choose a category description when the category is Other"
+            )
+        if (
+            self.start_time
+            and self.end_time
+            and _as_utc(self.end_time) <= _as_utc(self.start_time)
+        ):
+            raise ValueError("End time must be after the start time")
+        return self
+
+
+class EventChangeRequestSubmit(BaseModel):
+    """The proposed details in an Organiser's event change request."""
+
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1)
+    reason_for_change: str = Field(min_length=1)
+    purpose: str = Field(min_length=1)
+    category: EventCategory
+    category_other: str | None = Field(default=None, max_length=120)
+    start_time: datetime
+    end_time: datetime
+    expected_attendance: int = Field(gt=0)
+    location_preference: str | None
+    layout_preference: str | None
+    accessibility_requirements: str | None
+    equipment_requirements: str | None
+
+    @field_validator("name", "description", "reason_for_change", "purpose")
+    @classmethod
+    def strip_and_require_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("This field must not be blank")
+        return stripped
+
+    @field_validator("category_other")
+    @classmethod
+    def strip_category_other(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator(
+        "location_preference", "layout_preference",
+        "accessibility_requirements", "equipment_requirements",
+        mode="before",
+    )
+    @classmethod
+    def nil_means_no_requirement(cls, value: str) -> str | None:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("This field must not be blank")
+        stripped = value.strip()
+        if stripped.casefold() == "nil":
+            return None
+        return stripped
+
+    @model_validator(mode="after")
+    def validate_change_request(self) -> "EventChangeRequestSubmit":
+        if self.category is EventCategory.OTHER and not self.category_other:
+            raise ValueError("Describe the category when choosing Other")
+        if self.category is not EventCategory.OTHER and self.category_other:
+            raise ValueError(
+                "Only choose a category description when the category is Other"
+            )
+        if _as_utc(self.end_time) <= _as_utc(self.start_time):
+            raise ValueError("End time must be after the start time")
+        return self
+
 class Event(BaseModel):
     """A row of the `events` table.
 
     coordinator_name is not a column. The service fills it in from the
     profiles table so the Organiser sees a name rather than a uuid, and it
     stays None until a Coordinator has been assigned.
+
+    The details are optional because a draft may be incomplete. The
+    database guarantees they are all present on any event that is not a
+    draft (events_complete_unless_draft).
     """
 
     id: str
     organiser_id: str
     coordinator_id: str | None = None
     name: str
-    description: str
-    purpose: str
-    category: EventCategory
+    description: str | None = None
+    purpose: str | None = None
+    category: EventCategory | None = None
     category_other: str | None = None
-    start_time: datetime
-    end_time: datetime
-    expected_attendance: int
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    expected_attendance: int | None = None
     location_preference: str | None = None
     layout_preference: str | None = None
     accessibility_requirements: str | None = None
     equipment_requirements: str | None = None
     status: EventStatus
     created_at: datetime | None = None
+    updated_at: datetime | None = None
     coordinator_name: str | None = None
+    has_pending_change_request: bool = False
 
 
 class EventReviewSummary(BaseModel):

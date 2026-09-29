@@ -1,9 +1,18 @@
 """Event request persistence through Supabase."""
 
+from datetime import datetime, timezone
+
 from postgrest import APIError as PostgrestAPIError
 
 import config
-from models.event import Event, EventReviewSummary, EventStatus, EventSubmitRequest
+from models.event import (
+    Event,
+    EventChangeRequestSubmit,
+    EventDraftRequest,
+    EventReviewSummary,
+    EventStatus,
+    EventSubmitRequest,
+)
 from services.auth_service import AuthError
 
 
@@ -52,7 +61,7 @@ def submit_event(
     client = config.get_user_client(access_token)
     event = request.model_dump(mode="json")
     event["organiser_id"] = organiser_id
-    event["status"] = EventStatus.SUBMITTED.value
+    event["status"] = EventStatus.UNDER_REVIEW.value
 
     try:
         result = client.table("events").insert(event).execute()
@@ -149,7 +158,230 @@ def get_my_event(access_token: str, organiser_id: str, event_id: str) -> Event:
 
     if not result.data:
         raise AuthError("Event request was not found.", status_code=404)
-    return _with_coordinator_names(client, [Event(**result.data[0])])[0]
+    event = _with_coordinator_names(client, [Event(**result.data[0])])[0]
+    return _with_pending_change_requests(client, [event])[0]
+
+
+def _with_pending_change_requests(client, events: list[Event]) -> list[Event]:
+    """Add whether an event is waiting for a change request review."""
+    if not events:
+        return events
+    try:
+        result = (
+            client.table("event_change_requests")
+            .select("event_id")
+            .in_("event_id", [event.id for event in events])
+            .eq("status", "pending")
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    pending_ids = {row["event_id"] for row in result.data}
+    return [
+        event.model_copy(
+            update={"has_pending_change_request": event.id in pending_ids}
+        )
+        for event in events
+    ]
+
+
+def submit_event_change_request(
+    access_token: str,
+    organiser_id: str,
+    event_id: str,
+    request: EventChangeRequestSubmit,
+) -> None:
+    """Persist a proposed change and mark its event as change_requested.
+
+    The database function performs ownership, event status, duplicate
+    pending request, and changed-values checks atomically.
+    """
+    client = config.get_user_client(access_token)
+    try:
+        client.rpc(
+            "submit_event_change_request",
+            {
+                "p_event_id": event_id,
+                "p_organiser_id": organiser_id,
+                "p_changes": request.model_dump(mode="json"),
+            },
+        ).execute()
+    except PostgrestAPIError as error:
+        message = str(error).lower()
+        if "pending change request" in message:
+            raise AuthError(
+                "A change request is already waiting for review.",
+                status_code=409,
+            ) from error
+        if "event cannot be changed" in message:
+            raise AuthError(
+                "Only events under review, in planning or confirmed can be "
+                "changed.",
+                status_code=409,
+            ) from error
+        if "no event details were changed" in message:
+            raise AuthError(
+                "Change at least one event detail before submitting.",
+                status_code=400,
+            ) from error
+        raise _database_error(error) from error
+
+
+# --- Draft event requests (T7-37) ------------------------------------------
+#
+# Every draft query filters on organiser_id and status = 'draft'. Row-level
+# security enforces the same thing in the database; the filters are here so
+# the intent is visible in the code too. A draft that belongs to someone
+# else, or has already been submitted, comes back as 404 -- the same answer
+# as one that does not exist.
+
+DRAFT_NOT_FOUND = "Draft was not found."
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def create_draft(
+    access_token: str,
+    organiser_id: str,
+    request: EventDraftRequest,
+) -> Event:
+    """Save a new, possibly incomplete, event request as a draft.
+
+    As with submit_event, organiser_id and status are set here, never taken
+    from the request body.
+    """
+    client = config.get_user_client(access_token)
+    draft = request.model_dump(mode="json")
+    draft["organiser_id"] = organiser_id
+    draft["status"] = EventStatus.DRAFT.value
+
+    try:
+        result = client.table("events").insert(draft).execute()
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    if not result.data:
+        raise AuthError("Draft was not saved.", status_code=502)
+    return Event(**result.data[0])
+
+
+def list_my_drafts(access_token: str, organiser_id: str) -> list[Event]:
+    """Return the Organiser's drafts, most recently edited first."""
+    client = config.get_user_client(access_token)
+    try:
+        result = (
+            client.table("events")
+            .select("*")
+            .eq("organiser_id", organiser_id)
+            .eq("status", EventStatus.DRAFT.value)
+            .order("updated_at", desc=True)
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    return [Event(**event) for event in result.data]
+
+
+def get_my_draft(access_token: str, organiser_id: str, draft_id: str) -> Event:
+    """Return one of the Organiser's drafts, to continue editing it."""
+    client = config.get_user_client(access_token)
+    try:
+        result = (
+            client.table("events")
+            .select("*")
+            .eq("id", draft_id)
+            .eq("organiser_id", organiser_id)
+            .eq("status", EventStatus.DRAFT.value)
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    if not result.data:
+        raise AuthError(DRAFT_NOT_FOUND, status_code=404)
+    return Event(**result.data[0])
+
+
+def _update_my_draft(client, organiser_id: str, draft_id: str, values: dict):
+    """Write values onto one of the Organiser's drafts and return the row.
+
+    Shared by saving and submitting. The status filter means a draft that
+    has already been submitted can no longer be changed this way.
+    """
+    values["updated_at"] = _now()
+    try:
+        result = (
+            client.table("events")
+            .update(values)
+            .eq("id", draft_id)
+            .eq("organiser_id", organiser_id)
+            .eq("status", EventStatus.DRAFT.value)
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    if not result.data:
+        raise AuthError(DRAFT_NOT_FOUND, status_code=404)
+    return Event(**result.data[0])
+
+
+def update_draft(
+    access_token: str,
+    organiser_id: str,
+    draft_id: str,
+    request: EventDraftRequest,
+) -> Event:
+    """Save the form as it now stands over an existing draft.
+
+    Every field is written, so a field cleared in the form is cleared in
+    the draft too.
+    """
+    client = config.get_user_client(access_token)
+    return _update_my_draft(
+        client, organiser_id, draft_id, request.model_dump(mode="json")
+    )
+
+
+def submit_draft(
+    access_token: str,
+    organiser_id: str,
+    draft_id: str,
+    request: EventSubmitRequest,
+) -> Event:
+    """Save the final details and submit the draft, in one update.
+
+    The request has passed the same EventSubmitRequest checks as a brand
+    new submission, so a draft cannot be submitted incomplete. The database
+    checks this again (events_complete_unless_draft).
+    """
+    client = config.get_user_client(access_token)
+    values = request.model_dump(mode="json")
+    values["status"] = EventStatus.UNDER_REVIEW.value
+    return _update_my_draft(client, organiser_id, draft_id, values)
+
+
+def delete_draft(access_token: str, organiser_id: str, draft_id: str) -> None:
+    """Discard one of the Organiser's drafts. Submitted events cannot be deleted."""
+    client = config.get_user_client(access_token)
+    try:
+        result = (
+            client.table("events")
+            .delete()
+            .eq("id", draft_id)
+            .eq("organiser_id", organiser_id)
+            .eq("status", EventStatus.DRAFT.value)
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    if not result.data:
+        raise AuthError(DRAFT_NOT_FOUND, status_code=404)
 
 
 def list_assigned_submitted_events(
@@ -162,10 +394,7 @@ def list_assigned_submitted_events(
             client.table("events")
             .select("id, name, start_time, end_time, status")
             .eq("coordinator_id", coordinator_id)
-            .in_(
-                "status",
-                [EventStatus.SUBMITTED.value, EventStatus.UNDER_REVIEW.value],
-            )
+            .eq("status", EventStatus.UNDER_REVIEW.value)
             .order("start_time")
             .execute()
         )
@@ -185,10 +414,7 @@ def get_assigned_submitted_event(
             .select("*")
             .eq("id", event_id)
             .eq("coordinator_id", coordinator_id)
-            .in_(
-                "status",
-                [EventStatus.SUBMITTED.value, EventStatus.UNDER_REVIEW.value],
-            )
+            .eq("status", EventStatus.UNDER_REVIEW.value)
             .execute()
         )
     except PostgrestAPIError as error:
@@ -206,7 +432,7 @@ def decide_assigned_event(
     status: EventStatus,
 ) -> Event:
     """Approve or reject a reviewable request assigned to this Coordinator."""
-    if status not in {EventStatus.APPROVED, EventStatus.REJECTED}:
+    if status not in {EventStatus.PLANNING, EventStatus.REJECTED}:
         raise AuthError("Invalid event decision.", status_code=400)
 
     client = config.get_user_client(access_token)
@@ -216,10 +442,7 @@ def decide_assigned_event(
             .update({"status": status.value})
             .eq("id", event_id)
             .eq("coordinator_id", coordinator_id)
-            .in_(
-                "status",
-                [EventStatus.SUBMITTED.value, EventStatus.UNDER_REVIEW.value],
-            )
+            .eq("status", EventStatus.UNDER_REVIEW.value)
             .select("*")
             .execute()
         )
@@ -245,10 +468,7 @@ def list_assigned_event_documents(
             .select("id")
             .eq("id", event_id)
             .eq("coordinator_id", coordinator_id)
-            .in_(
-                "status",
-                [EventStatus.SUBMITTED.value, EventStatus.UNDER_REVIEW.value],
-            )
+            .eq("status", EventStatus.UNDER_REVIEW.value)
             .execute()
         )
         if not event.data:

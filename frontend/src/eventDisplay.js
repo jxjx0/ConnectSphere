@@ -1,8 +1,8 @@
 // Turning stored event values into what a person reads. Shared by the
 // event list and the event detail page so both word things the same way.
 
-// Statuses arrive as 'awaiting_clarification'; people read
-// "Awaiting clarification".
+// Statuses arrive as 'change_requested'; people read
+// "Change requested".
 export function readableStatus(status) {
   const words = status.replace(/_/g, ' ')
   return words.charAt(0).toUpperCase() + words.slice(1)
@@ -54,11 +54,10 @@ function formatTime(date) {
   return `${hour}:${String(date.getMinutes()).padStart(2, '0')} ${period}`
 }
 
-// The path a request normally travels. Off-path statuses (a clarification
+// The path a request normally travels. Off-path statuses (a change
 // request, a rejection) are not steps -- they are things that happen while
 // the request sits at one of these, so they are called out separately.
 const PROGRESS_STEPS = [
-  { status: 'submitted', label: 'Submitted' },
   { status: 'under_review', label: 'Under review' },
   { status: 'planning', label: 'Planning' },
   { status: 'confirmed', label: 'Confirmed' },
@@ -68,44 +67,34 @@ const PROGRESS_STEPS = [
 // Where a status sits on that path, and what the Organiser should expect
 // next. Keeping the wording here means the page stays a layout.
 const PROGRESS_BY_STATUS = {
-  submitted: {
-    step: 0,
-    next: 'An Event Coordinator will be assigned to review your request.',
-  },
   under_review: {
-    step: 1,
+    step: 0,
     next: 'Your Coordinator is reviewing the details you submitted.',
   },
-  awaiting_clarification: {
-    step: 1,
-    notice: 'Your Coordinator has asked for more information.',
-    next: 'Update the details they have asked about and resubmit.',
-  },
   change_requested: {
-    step: 1,
+    step: 0,
     notice: 'Your change request is waiting to be reviewed.',
     next: 'Your Coordinator will decide whether the change can be made.',
   },
   planning: {
-    step: 2,
+    step: 1,
     next: 'Your Coordinator is arranging a venue and any equipment.',
   },
   confirmed: {
-    step: 3,
+    step: 2,
     next: 'Everything is arranged. Your event is going ahead.',
   },
-  completed: { step: 4, next: 'This event has finished.' },
+  completed: { step: 3, next: 'This event has finished.' },
   rejected: {
     step: 1,
     ended: true,
     notice: 'This request was not taken forward.',
   },
-  cancelled: {
-    step: 1,
-    ended: true,
-    notice: 'This request was cancelled.',
-  },
 }
+
+// The stages an Organiser may ask to change their event from. Must match
+// the check in the submit_event_change_request database function.
+export const CHANGEABLE_STATUSES = ['under_review', 'planning', 'confirmed']
 
 export function progressFor(status) {
   const progress = PROGRESS_BY_STATUS[status] || { step: 0 }

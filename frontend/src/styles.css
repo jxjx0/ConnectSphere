@@ -479,6 +479,11 @@ a:hover {
   color: var(--ink-muted);
 }
 
+.field__error {
+  font-size: 0.8125rem;
+  color: var(--danger);
+}
+
 /* A password input with a reveal toggle sitting inside it. */
 .password {
   position: relative;
@@ -518,6 +523,14 @@ a:hover {
   gap: var(--space-4);
   flex-wrap: wrap;
   margin-top: var(--space-2);
+}
+
+/* A row with more actions than fit the narrow form width: it may run
+ * wider than the fields, and still wraps on a phone-width screen. */
+.form-actions--wide {
+  align-self: flex-start;
+  width: max-content;
+  max-width: calc(100vw - 2 * var(--space-6));
 }
 
 /* Quiet trailing links under a form or page. */
@@ -599,6 +612,24 @@ a:hover {
 .button--secondary:active {
   background: var(--sunken);
   border-color: var(--ink-faint);
+}
+
+/* Outline in the danger colour, for an action that destroys something. */
+.button--danger {
+  background: transparent;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.button--danger:hover {
+  background: var(--danger-faint);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.button--danger:active {
+  background: var(--danger-faint);
+  border-color: var(--danger);
 }
 
 /* --- Errors ---------------------------------------------------------- */

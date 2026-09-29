@@ -30,7 +30,7 @@ create table public.events (
     layout_preference text,
     accessibility_requirements text,
     equipment_requirements text,
-    status text not null default 'submitted',
+    status text not null default 'under_review',
     created_at timestamptz not null default now(),
 
     constraint events_name_not_blank
@@ -71,21 +71,19 @@ create table public.events (
     constraint events_end_after_start
         check (end_time > start_time),
     -- The whole lifecycle is listed here so that no story invents its own
-    -- spelling of a status. T7-45 only ever writes 'submitted'; the later
-    -- values belong to stories in this and future sprints.
+    -- spelling of a status. It is the team's agreed set (see
+    -- event_statuses.sql) and must match EventStatus in
+    -- backend/models/event.py. Submitting a request (T7-45) writes
+    -- 'under_review'; a Coordinator approving one moves it to 'planning'.
     constraint events_status_valid
         check (status in (
             'draft',
-            'submitted',
-            'approved',
             'under_review',
-            'awaiting_clarification',
-            'change_requested',
+            'rejected',
             'planning',
             'confirmed',
             'completed',
-            'rejected',
-            'cancelled'
+            'change_requested'
         ))
 );
 
@@ -165,7 +163,7 @@ create policy "Coordinators can view their assigned reviewable events"
     using (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status in ('submitted', 'under_review')
+        and status = 'under_review'
     );
 
 create policy "Coordinators can decide their assigned reviewable events"
@@ -175,10 +173,10 @@ create policy "Coordinators can decide their assigned reviewable events"
     using (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status in ('submitted', 'under_review')
+        and status = 'under_review'
     )
     with check (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status in ('approved', 'rejected')
+        and status in ('planning', 'rejected')
     );
