@@ -294,3 +294,21 @@ class Event(BaseModel):
     updated_at: datetime | None = None
     coordinator_name: str | None = None
     has_pending_change_request: bool = False
+
+
+class EventReviewSummary(BaseModel):
+    """The fields needed to render the Coordinator's review list."""
+
+    id: str
+    name: str
+    start_time: datetime
+    end_time: datetime
+    status: EventStatus
+
+
+class EventOrganiser(BaseModel):
+    """The Organiser's contact details, shown to their event's Coordinator."""
+
+    full_name: str | None = None
+    contact_number: str | None = None
+    organization: str | None = None

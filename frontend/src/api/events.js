@@ -33,6 +33,28 @@ export function getMyEvent(eventId, token) {
   return request(`/events/${eventId}`, { token })
 }
 
+export function getAssignedEventRequests(token) {
+  return request('/events/review', { token })
+}
+
+export function getAssignedEventRequest(eventId, token) {
+  return request(`/events/review/${eventId}`, { token })
+}
+
+export function approveAssignedEvent(eventId, token) {
+  return request(`/events/review/${eventId}/approve`, {
+    method: 'POST',
+    token,
+  })
+}
+
+export function rejectAssignedEvent(eventId, token) {
+  return request(`/events/review/${eventId}/reject`, {
+    method: 'POST',
+    token,
+  })
+}
+
 export function submitEventChangeRequest(eventId, changes, token) {
   return request(`/events/${eventId}/change-requests`, {
     method: 'POST',

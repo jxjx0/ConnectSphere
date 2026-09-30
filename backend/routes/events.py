@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from models.event import (
     EventChangeRequestSubmit,
     EventDraftRequest,
+    EventStatus,
     EventSubmitRequest,
 )
 from models.profile import Role
@@ -27,6 +28,16 @@ def _require_organiser() -> None:
     if profile.role != Role.ORGANISER:
         raise AuthError(
             "Only Event Organisers can submit event requests.",
+            status_code=403,
+        )
+
+
+def _require_coordinator() -> None:
+    """Require the authenticated profile to have the coordinator role."""
+    profile = auth_service.get_profile(g.access_token, g.user_id)
+    if profile.role != Role.COORDINATOR:
+        raise AuthError(
+            "Only Event Coordinators can review event requests.",
             status_code=403,
         )
 
@@ -61,6 +72,56 @@ def list_my_events():
 def get_my_event(event_id):
     _require_organiser()
     event = event_service.get_my_event(g.access_token, g.user_id, event_id)
+    return jsonify({"event": event.model_dump(mode="json")}), 200
+
+
+@events_bp.get("/review")
+@require_auth
+def list_assigned_events():
+    _require_coordinator()
+    events = event_service.list_assigned_events(
+        g.access_token, g.user_id
+    )
+    return jsonify(
+        {"events": [event.model_dump(mode="json") for event in events]}
+    ), 200
+
+
+@events_bp.get("/review/<event_id>")
+@require_auth
+def get_assigned_event(event_id):
+    _require_coordinator()
+    event = event_service.get_assigned_event(
+        g.access_token, g.user_id, event_id
+    )
+    organiser = event_service.get_event_organiser(
+        g.access_token, event.organiser_id
+    )
+    return jsonify(
+        {
+            "event": event.model_dump(mode="json"),
+            "organiser": organiser.model_dump(mode="json") if organiser else None,
+        }
+    ), 200
+
+
+@events_bp.post("/review/<event_id>/approve")
+@require_auth
+def approve_assigned_event(event_id):
+    _require_coordinator()
+    event = event_service.decide_assigned_event(
+        g.access_token, g.user_id, event_id, EventStatus.PLANNING
+    )
+    return jsonify({"event": event.model_dump(mode="json")}), 200
+
+
+@events_bp.post("/review/<event_id>/reject")
+@require_auth
+def reject_assigned_event(event_id):
+    _require_coordinator()
+    event = event_service.decide_assigned_event(
+        g.access_token, g.user_id, event_id, EventStatus.REJECTED
+    )
     return jsonify({"event": event.model_dump(mode="json")}), 200
 
 

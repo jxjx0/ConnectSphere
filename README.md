@@ -199,6 +199,10 @@ fails.
 | `POST` | `/signup` | — | Register an organiser or attendee |
 | `POST` | `/login` | — | Log in, returns an access token |
 | `GET` | `/me` | Bearer token | Current user's profile |
+| `GET` | `/events/review` | Coordinator | All requests assigned to them (any status except draft) |
+| `GET` | `/events/review/<event_id>` | Coordinator | Assigned request details |
+| `POST` | `/events/review/<event_id>/approve` | Coordinator | Approve an assigned request under review (moves it to planning) |
+| `POST` | `/events/review/<event_id>/reject` | Coordinator | Reject an assigned request under review |
 
 `/signup` accepts only external roles (`organiser`, `attendee`). Internal roles
 are rejected server-side regardless of what the client sends.

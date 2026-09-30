@@ -9,6 +9,8 @@ from models.event import (
     Event,
     EventChangeRequestSubmit,
     EventDraftRequest,
+    EventOrganiser,
+    EventReviewSummary,
     EventStatus,
     EventSubmitRequest,
 )
@@ -33,6 +35,16 @@ def _database_error(error: PostgrestAPIError) -> AuthError:
             status_code=403,
         )
     return AuthError("Unable to save the event request.", status_code=502)
+
+
+def _review_read_error(error: PostgrestAPIError, resource: str) -> AuthError:
+    """Translate PostgREST failures from the coordinator read paths."""
+    if error.code in {"42501", "PGRST301"}:
+        return AuthError(
+            f"You do not have permission to view {resource}.",
+            status_code=403,
+        )
+    return AuthError(f"Unable to load {resource}.", status_code=502)
 
 
 def submit_event(
@@ -371,3 +383,121 @@ def delete_draft(access_token: str, organiser_id: str, draft_id: str) -> None:
 
     if not result.data:
         raise AuthError(DRAFT_NOT_FOUND, status_code=404)
+
+
+def list_assigned_events(
+    access_token: str, coordinator_id: str
+) -> list[EventReviewSummary]:
+    """Return every event assigned to this Coordinator, whatever its status.
+
+    Decided events stay on the list so the Coordinator can keep working on
+    them. Drafts are left out: they have not been submitted yet.
+    """
+    client = config.get_user_client(access_token)
+    try:
+        result = (
+            client.table("events")
+            .select("id, name, start_time, end_time, status")
+            .eq("coordinator_id", coordinator_id)
+            .neq("status", EventStatus.DRAFT.value)
+            .order("start_time")
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _review_read_error(error, "assigned event requests") from error
+    return [EventReviewSummary(**event) for event in result.data]
+
+
+def get_assigned_event(
+    access_token: str, coordinator_id: str, event_id: str
+) -> Event:
+    """Return one event assigned to the signed-in Coordinator."""
+    client = config.get_user_client(access_token)
+    try:
+        result = (
+            client.table("events")
+            .select("*")
+            .eq("id", event_id)
+            .eq("coordinator_id", coordinator_id)
+            .neq("status", EventStatus.DRAFT.value)
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _review_read_error(error, "the event request") from error
+
+    if not result.data:
+        raise AuthError("Event request was not found.", status_code=404)
+    return Event(**result.data[0])
+
+
+def get_event_organiser(
+    access_token: str, organiser_id: str
+) -> EventOrganiser | None:
+    """Return the contact details of an event's Organiser.
+
+    Row-level security only lets a Coordinator read the profile of an
+    Organiser whose event is assigned to them. None means the profile
+    could not be read.
+    """
+    client = config.get_user_client(access_token)
+    try:
+        result = (
+            client.table("profiles")
+            .select("full_name, contact_number, organization")
+            .eq("id", organiser_id)
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _review_read_error(error, "the event organiser") from error
+
+    if not result.data:
+        return None
+    return EventOrganiser(**result.data[0])
+
+
+def decide_assigned_event(
+    access_token: str,
+    coordinator_id: str,
+    event_id: str,
+    status: EventStatus,
+) -> Event:
+    """Approve or reject a reviewable request assigned to this Coordinator."""
+    if status not in {EventStatus.PLANNING, EventStatus.REJECTED}:
+        raise AuthError("Invalid event decision.", status_code=400)
+
+    client = config.get_user_client(access_token)
+    try:
+        result = (
+            client.table("events")
+            .update({"status": status.value, "updated_at": _now()})
+            .eq("id", event_id)
+            .eq("coordinator_id", coordinator_id)
+            .eq("status", EventStatus.UNDER_REVIEW.value)
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    if result.data:
+        return Event(**result.data[0])
+
+    # Nothing was updated: either the event is not assigned to this
+    # Coordinator, or it has already been decided.
+    try:
+        existing = (
+            client.table("events")
+            .select("id")
+            .eq("id", event_id)
+            .eq("coordinator_id", coordinator_id)
+            .neq("status", EventStatus.DRAFT.value)
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    if existing.data:
+        raise AuthError(
+            "Only a request under review can be approved or rejected.",
+            status_code=409,
+        )
+    raise AuthError("Event request was not found.", status_code=404)

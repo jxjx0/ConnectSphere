@@ -2,7 +2,11 @@
 // the user signed in, the token survived, and the backend told us who they
 // are. Real dashboard content arrives in Sprint 1.
 
+import { useEffect, useState } from 'react'
+
+import { getAssignedEventRequests } from '../api/events'
 import AppShell from '../components/AppShell'
+import AssignedRequestTabs from '../components/AssignedRequestTabs'
 import { useAuth } from '../context/AuthContext'
 import { Link } from 'react-router-dom'
 
@@ -13,7 +17,19 @@ function readableRole(role) {
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth()
+  const { user, token } = useAuth()
+  const isCoordinator = user.role === 'coordinator'
+  const [assignedEvents, setAssignedEvents] = useState([])
+  const [assignedError, setAssignedError] = useState('')
+  const [assignedLoading, setAssignedLoading] = useState(isCoordinator)
+
+  useEffect(() => {
+    if (!isCoordinator) return
+    getAssignedEventRequests(token)
+      .then((data) => setAssignedEvents(data.events))
+      .catch((caught) => setAssignedError(caught.message))
+      .finally(() => setAssignedLoading(false))
+  }, [isCoordinator, token])
 
   return (
     <AppShell>
@@ -36,6 +52,21 @@ export default function DashboardPage() {
               My Event Requests
             </Link>
           </div>
+        </section>
+      )}
+
+      {isCoordinator && (
+        <section className="stack stack--tight">
+          <h2 className="section-title">Assigned Event Requests</h2>
+          {assignedLoading && (
+            <p className="note">Loading assigned event requests…</p>
+          )}
+          {assignedError && (
+            <p className="form-error" role="alert">{assignedError}</p>
+          )}
+          {!assignedLoading && !assignedError && (
+            <AssignedRequestTabs events={assignedEvents} />
+          )}
         </section>
       )}
 
