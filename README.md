@@ -63,8 +63,8 @@ cd ConnectSphere
 
 ### 2. Backend
 
-Two steps: create the virtual environment, then install the dependencies into
-it.
+Two steps: create the virtual environment (`venv`, a private folder of Python
+packages for this project), then install the dependencies into it.
 
 **macOS / Linux**
 
@@ -82,20 +82,51 @@ python -m venv venv
 venv\Scripts\pip install -r requirements.txt
 ```
 
+**Already set up?** After pulling changes that add a package to
+`requirements.txt`, you don't need to recreate the venv — just rerun the
+install line (`venv/bin/pip install -r requirements.txt`, or
+`venv\Scripts\pip install -r requirements.txt` on Windows).
+
 ### 3. Environment file
 
 Ask the team for the `.env` file and save it as `backend/.env` — that exact
-name, directly inside the `backend` folder. It holds the Supabase credentials
-the backend needs to start, and it is not in the repo.
+name, directly inside the `backend` folder. It is not in the repo.
+`backend/.env.example` lists every variable it needs:
 
-It also holds the keys for notifications (`SUPABASE_SERVICE_ROLE_KEY`,
-`SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`). Without them the app still runs,
-but notifications are not saved or emailed. `backend/.env.example` lists
-every variable.
+| Variable | What it's for |
+|---|---|
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Connecting to Supabase. Required — the backend won't start without them. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Admin key used only by the notification service. Skips row-level security, so treat it like a password. |
+| `SENDGRID_API_KEY` | Sending notification emails through SendGrid. |
+| `SENDGRID_FROM_EMAIL` | The sender address: `connectspheret7@gmail.com`. |
+| `FRONTEND_ORIGIN` | Where the frontend runs, for CORS. |
 
-**Never commit `.env`.** It's gitignored — keep it that way.
+Without the last three keys the app still runs, but notifications are not
+saved or emailed.
 
-### 4. Frontend
+**Never commit `.env`**, and never paste its keys into chats, Jira or PRs. It's
+gitignored — keep it that way. Get the values from a teammate by private
+message.
+
+### 4. macOS only: install Python's certificates
+
+Python installed from python.org does not come with security certificates, so
+the backend can't connect to SendGrid to send emails (you'd see
+`CERTIFICATE_VERIFY_FAILED`). Fix it once per machine:
+
+1. Find your version: `ls /Applications | grep Python` (e.g. `Python 3.12`)
+2. Run the matching script, e.g.:
+
+   ```bash
+   "/Applications/Python 3.12/Install Certificates.command"
+   ```
+
+   or double-click **Install Certificates.command** in Finder → Applications →
+   Python 3.x.
+
+Windows, Homebrew, pyenv and Anaconda Python don't need this.
+
+### 5. Frontend
 
 **macOS / Linux**
 
@@ -117,9 +148,7 @@ No `.env` needed for the frontend in local development — it defaults to
 
 ### About the database
 
-The `profiles` table already exists in the shared hosted Supabase project.
-There is nothing to create or migrate locally — everyone connects to the same
-remote database.
+All tables already exist in the shared hosted Supabase project. There is nothing to create or migrate locally — everyone connects to the same remote database. SQL files in database are just for reference only
 
 ---
 
