@@ -137,8 +137,9 @@ erDiagram
         uuid user_id FK
         uuid event_id FK
         text type
-        text message
-        timestamptz read_at
+        text title
+        text body
+        boolean is_read
         timestamptz created_at
     }
 ```
