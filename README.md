@@ -88,6 +88,11 @@ Ask the team for the `.env` file and save it as `backend/.env` — that exact
 name, directly inside the `backend` folder. It holds the Supabase credentials
 the backend needs to start, and it is not in the repo.
 
+It also holds the keys for notifications (`SUPABASE_SERVICE_ROLE_KEY`,
+`SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`). Without them the app still runs,
+but notifications are not saved or emailed. `backend/.env.example` lists
+every variable.
+
 **Never commit `.env`.** It's gitignored — keep it that way.
 
 ### 4. Frontend
