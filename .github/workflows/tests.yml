@@ -46,6 +46,7 @@ jobs:
         with:
           name: backend-test-results
           path: backend/test-results.xml
+          retention-days: 14
 
       - name: Upload backend coverage report
         id: coverage_artifact
@@ -56,6 +57,7 @@ jobs:
           path: |
             backend/coverage.xml
             backend/htmlcov/
+          retention-days: 14
 
       - name: Summarize backend test results
         if: always()
