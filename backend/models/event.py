@@ -21,6 +21,19 @@ class EventStatus(str, Enum):
     CONFIRMED = "confirmed"
     COMPLETED = "completed"
     CHANGE_REQUESTED = "change_requested"
+    AWAITING_CLARIFICATION = "awaiting_clarification"
+
+
+class EventClarificationRequest(BaseModel):
+    notes: str = Field(min_length=1, max_length=5000)
+
+    @field_validator("notes")
+    @classmethod
+    def strip_notes(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Clarification notes must not be blank")
+        return stripped
 
 
 class EventCategory(str, Enum):
@@ -294,6 +307,7 @@ class Event(BaseModel):
     updated_at: datetime | None = None
     coordinator_name: str | None = None
     has_pending_change_request: bool = False
+    clarification_notes: str | None = None
 
 
 class EventReviewSummary(BaseModel):

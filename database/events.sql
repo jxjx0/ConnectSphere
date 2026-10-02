@@ -30,6 +30,7 @@ create table public.events (
     layout_preference text,
     accessibility_requirements text,
     equipment_requirements text,
+    clarification_notes text,
     status text not null default 'under_review',
     created_at timestamptz not null default now(),
 
@@ -83,7 +84,8 @@ create table public.events (
             'planning',
             'confirmed',
             'completed',
-            'change_requested'
+            'change_requested',
+            'awaiting_clarification'
         ))
 );
 
@@ -176,10 +178,10 @@ create policy "Coordinators can decide their assigned reviewable events"
     using (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status = 'under_review'
+        and status in ('under_review', 'planning', 'change_requested')
     )
     with check (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status in ('planning', 'rejected')
+        and status in ('planning', 'rejected', 'awaiting_clarification')
     );

@@ -4,7 +4,7 @@
 --
 -- Agreed statuses:
 --   draft, under_review, rejected, planning, confirmed, completed,
---   change_requested
+--   change_requested, awaiting_clarification
 --
 -- Design notes:
 --   * 'submitted' is gone: a request goes straight to 'under_review' when
@@ -12,7 +12,6 @@
 --   * 'approved' is gone: a Coordinator approving a request moves it to
 --     'planning'. 'approved' had been added to the live database by hand
 --     and the backend could not read those rows.
---   * 'awaiting_clarification' and 'cancelled' are left out for now.
 --   * Change requests are allowed from under_review, planning and
 --     confirmed -- every stage from submission until the event happens.
 --   * The Coordinator policies at the bottom were created directly in
@@ -35,7 +34,8 @@ alter table public.events
         'planning',
         'confirmed',
         'completed',
-        'change_requested'
+        'change_requested',
+        'awaiting_clarification'
     ));
 
 alter table public.events alter column status set default 'under_review';
@@ -80,12 +80,12 @@ create policy "Coordinators can decide their assigned events under review"
     using (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status = 'under_review'
+        and status in ('under_review', 'planning', 'change_requested')
     )
     with check (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status in ('planning', 'rejected')
+        and status in ('planning', 'rejected', 'awaiting_clarification')
     );
 
 drop policy if exists "Coordinators can view their assigned submitted events"

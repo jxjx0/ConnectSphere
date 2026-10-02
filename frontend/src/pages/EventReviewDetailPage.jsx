@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import {
   approveAssignedEvent,
   getAssignedEventRequest,
+  requestEventClarification,
   rejectAssignedEvent,
 } from '../api/events'
 import AppShell from '../components/AppShell'
@@ -33,6 +34,10 @@ export default function EventReviewDetailPage() {
   const [error, setError] = useState('')
   const [decisionError, setDecisionError] = useState('')
   const [deciding, setDeciding] = useState(false)
+  const [clarificationNotes, setClarificationNotes] = useState('')
+  const [clarificationError, setClarificationError] = useState('')
+  const [clarifying, setClarifying] = useState(false)
+  const [showClarificationForm, setShowClarificationForm] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -72,6 +77,24 @@ export default function EventReviewDetailPage() {
       setDecisionError(caught.message)
     } finally {
       setDeciding(false)
+    }
+  }
+
+  async function requestClarification(eventTarget) {
+    eventTarget.preventDefault()
+    setClarificationError('')
+    setClarifying(true)
+    try {
+      const data = await requestEventClarification(
+        eventId, clarificationNotes, token,
+      )
+      setEvent(data.event)
+      setClarificationNotes('')
+      setShowClarificationForm(false)
+    } catch (caught) {
+      setClarificationError(caught.message)
+    } finally {
+      setClarifying(false)
     }
   }
 
@@ -127,6 +150,13 @@ export default function EventReviewDetailPage() {
           )}
         </section>
 
+        {event.clarification_notes && (
+          <section className="stack stack--tight">
+            <h2 className="section-title">Clarification requested</h2>
+            <p className="notice">{event.clarification_notes}</p>
+          </section>
+        )}
+
         <section className="stack stack--tight">
           <h2 className="section-title">Request details</h2>
           <dl className="answers">
@@ -167,6 +197,54 @@ export default function EventReviewDetailPage() {
                 Reject
               </button>
             </div>
+          </section>
+        )}
+
+        {['under_review', 'planning', 'change_requested'].includes(event.status) && (
+          <section className="stack stack--tight">
+            {!showClarificationForm ? (
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => setShowClarificationForm(true)}
+              >
+                Request Clarification
+              </button>
+            ) : (
+              <form className="stack stack--tight" onSubmit={requestClarification}>
+                <label className="field">
+                  <span className="field__label">What needs clarification?</span>
+                  <textarea
+                    value={clarificationNotes}
+                    onChange={(e) => setClarificationNotes(e.target.value)}
+                    rows={3}
+                    maxLength={5000}
+                    required
+                    autoFocus
+                    placeholder="Describe the information or amendments needed."
+                  />
+                </label>
+                {clarificationError && (
+                  <p className="form-error" role="alert">{clarificationError}</p>
+                )}
+                <div className="form-actions">
+                  <button className="button" disabled={clarifying}>
+                    {clarifying ? 'Sending…' : 'Send request'}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button--secondary"
+                    disabled={clarifying}
+                    onClick={() => {
+                      setShowClarificationForm(false)
+                      setClarificationError('')
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
           </section>
         )}
       </div>

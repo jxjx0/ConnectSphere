@@ -18,7 +18,8 @@ alter table public.events
             'planning',
             'confirmed',
             'completed',
-            'change_requested'
+            'change_requested',
+            'awaiting_clarification'
         ));
 
 create or replace function public.is_coordinator()
@@ -73,10 +74,10 @@ create policy "Coordinators can decide their assigned reviewable events"
     using (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status = 'under_review'
+        and status in ('under_review', 'planning', 'change_requested')
     )
     with check (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status in ('planning', 'rejected')
+        and status in ('planning', 'rejected', 'awaiting_clarification')
     );
