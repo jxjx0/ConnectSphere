@@ -28,3 +28,17 @@ def organiser_profile():
         full_name="Ada Tan",
         role=Role.ORGANISER,
     )
+
+
+@pytest.fixture
+def venue_payload():
+    """Provide fresh valid input for venue model and service tests."""
+    return {
+        "name": "Community Hall",
+        "location": "Campus West",
+        "capacity": 180,
+        "facilities": {"parking": True, "projectors": 2},
+        "accessibility": ["Step-free access"],
+        "layouts": [{"name": "Theatre", "capacity": 120}],
+        "operating_hours": {"open": "08:00", "close": "20:00"},
+    }
