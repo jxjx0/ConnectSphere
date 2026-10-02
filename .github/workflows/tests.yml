@@ -28,5 +28,39 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Run backend tests
+        id: tests
         working-directory: backend
-        run: python -m pytest
+        run: >-
+          python -m pytest
+          --cov
+          --cov-config=.coveragerc
+          --cov-report=term-missing
+          --cov-report=xml:coverage.xml
+          --cov-report=html:htmlcov
+          --junitxml=test-results.xml
+
+      - name: Upload backend test results
+        id: test_results_artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-test-results
+          path: backend/test-results.xml
+
+      - name: Upload backend coverage report
+        id: coverage_artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-coverage-report
+          path: |
+            backend/coverage.xml
+            backend/htmlcov/
+
+      - name: Summarize backend test results
+        if: always()
+        env:
+          PYTEST_OUTCOME: ${{ steps.tests.outcome }}
+          TEST_RESULTS_ARTIFACT_URL: ${{ steps.test_results_artifact.outputs.artifact-url }}
+          COVERAGE_ARTIFACT_URL: ${{ steps.coverage_artifact.outputs.artifact-url }}
+        run: python .github/scripts/backend_test_summary.py
