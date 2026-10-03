@@ -71,6 +71,11 @@ const PROGRESS_BY_STATUS = {
     step: 0,
     next: 'Your Coordinator is reviewing the details you submitted.',
   },
+  awaiting_clarification: {
+    step: 0,
+    notice: 'Your Coordinator needs more information before planning can continue.',
+    next: 'Review the clarification notes and send your response below.',
+  },
   change_requested: {
     step: 0,
     notice: 'Your change request is waiting to be reviewed.',

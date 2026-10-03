@@ -21,6 +21,43 @@ class EventStatus(str, Enum):
     CONFIRMED = "confirmed"
     COMPLETED = "completed"
     CHANGE_REQUESTED = "change_requested"
+    AWAITING_CLARIFICATION = "awaiting_clarification"
+
+
+class EventClarificationRequest(BaseModel):
+    notes: str = Field(min_length=1, max_length=5000)
+
+    @field_validator("notes")
+    @classmethod
+    def strip_notes(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Clarification notes must not be blank")
+        return stripped
+
+
+class EventClarificationResponse(BaseModel):
+    response: str = Field(min_length=1, max_length=5000)
+
+    @field_validator("response")
+    @classmethod
+    def strip_response(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Your response must not be blank")
+        return stripped
+
+
+class EventClarification(BaseModel):
+    id: str
+    event_id: str
+    organiser_id: str
+    coordinator_id: str
+    coordinator_notes: str
+    previous_status: EventStatus | None = None
+    organiser_response: str | None = None
+    requested_at: datetime
+    responded_at: datetime | None = None
 
 
 class EventCategory(str, Enum):

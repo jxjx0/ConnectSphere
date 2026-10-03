@@ -5,6 +5,8 @@ from pydantic import ValidationError
 
 from models.event import (
     EventChangeRequestSubmit,
+    EventClarificationRequest,
+    EventClarificationResponse,
     EventDraftRequest,
     EventStatus,
     EventSubmitRequest,
@@ -75,6 +77,35 @@ def get_my_event(event_id):
     return jsonify({"event": event.model_dump(mode="json")}), 200
 
 
+@events_bp.get("/<event_id>/clarifications")
+@require_auth
+def list_my_event_clarifications(event_id):
+    _require_organiser()
+    clarifications = event_service.list_event_clarifications(
+        g.access_token, event_id, organiser_id=g.user_id
+    )
+    return jsonify(
+        {"clarifications": [item.model_dump(mode="json") for item in clarifications]}
+    ), 200
+
+
+@events_bp.post("/<event_id>/clarification-response")
+@require_auth
+def respond_to_event_clarification(event_id):
+    try:
+        clarification_response = EventClarificationResponse(
+            **(request.get_json(silent=True) or {})
+        )
+    except ValidationError as error:
+        return jsonify({"errors": _validation_messages(error)}), 400
+
+    _require_organiser()
+    clarification = event_service.respond_to_event_clarification(
+        g.access_token, g.user_id, event_id, clarification_response
+    )
+    return jsonify({"clarification": clarification.model_dump(mode="json")}), 200
+
+
 @events_bp.get("/review")
 @require_auth
 def list_assigned_events():
@@ -103,6 +134,35 @@ def get_assigned_event(event_id):
             "organiser": organiser.model_dump(mode="json") if organiser else None,
         }
     ), 200
+
+
+@events_bp.get("/review/<event_id>/clarifications")
+@require_auth
+def list_assigned_event_clarifications(event_id):
+    _require_coordinator()
+    clarifications = event_service.list_event_clarifications(
+        g.access_token, event_id, coordinator_id=g.user_id
+    )
+    return jsonify(
+        {"clarifications": [item.model_dump(mode="json") for item in clarifications]}
+    ), 200
+
+
+@events_bp.post("/review/<event_id>/clarification")
+@require_auth
+def request_event_clarification(event_id):
+    try:
+        clarification_request = EventClarificationRequest(
+            **(request.get_json(silent=True) or {})
+        )
+    except ValidationError as error:
+        return jsonify({"errors": _validation_messages(error)}), 400
+
+    _require_coordinator()
+    clarification = event_service.request_event_clarification(
+        g.access_token, g.user_id, event_id, clarification_request
+    )
+    return jsonify({"clarification": clarification.model_dump(mode="json")}), 201
 
 
 @events_bp.post("/review/<event_id>/approve")
