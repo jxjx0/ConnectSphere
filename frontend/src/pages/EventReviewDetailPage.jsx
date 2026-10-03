@@ -247,6 +247,7 @@ export default function EventReviewDetailPage() {
                     rows={3}
                     maxLength={5000}
                     required
+                    autoFocus
                     placeholder="Describe the information or amendments needed."
                   />
                 </label>

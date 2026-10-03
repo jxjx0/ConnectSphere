@@ -50,7 +50,9 @@ export default function MyEventsPage() {
         <Link to="/dashboard" className="backlink">← Dashboard</Link>
         <div className="content__header">
           <h1>My event requests</h1>
-          <p className="lead">View your event requests by status, or continue a saved draft.</p>
+          <p className="lead">
+            View your event requests by status, or continue a saved draft.
+          </p>
         </div>
 
         <div className="form-actions" role="tablist" aria-label="Filter events by status">
@@ -63,7 +65,9 @@ export default function MyEventsPage() {
               className={tab.id === item.id
                 ? 'button button--small'
                 : 'button button--small button--secondary'}
-              onClick={() => setSearchParams(item.id === 'submitted' ? {} : { tab: item.id })}
+              onClick={() => setSearchParams(item.id === 'submitted'
+                ? {}
+                : { tab: item.id })}
             >
               {item.label} ({organiserTabCount(item.id, events, drafts)})
             </button>
@@ -76,11 +80,15 @@ export default function MyEventsPage() {
           <section className="stack stack--tight">
             <p className="note">{tab.empty}</p>
             {tab.id === 'drafts' && (
-              <p className="note">Use “Save as draft” on an event request to finish it later.</p>
+              <p className="note">
+                Use “Save as draft” on an event request to finish it later.
+              </p>
             )}
             {(tab.id === 'drafts' || tab.id === 'submitted') && (
               <div className="form-actions">
-                <Link to="/my-events/new" className="button">Request an Event</Link>
+                <Link to="/my-events/new" className="button">
+                  Request an Event
+                </Link>
               </div>
             )}
           </section>
