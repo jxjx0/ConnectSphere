@@ -42,10 +42,6 @@ export default function EventReviewDetailPage() {
   const [clarifying, setClarifying] = useState(false)
   const [showClarificationForm, setShowClarificationForm] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [clarificationNotes, setClarificationNotes] = useState('')
-  const [clarificationError, setClarificationError] = useState('')
-  const [clarifying, setClarifying] = useState(false)
-  const [showClarificationForm, setShowClarificationForm] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -114,24 +110,6 @@ export default function EventReviewDetailPage() {
       setDecisionError(caught.message)
     } finally {
       setDeciding(false)
-    }
-  }
-
-  async function requestClarification(eventTarget) {
-    eventTarget.preventDefault()
-    setClarificationError('')
-    setClarifying(true)
-    try {
-      const data = await requestEventClarification(
-        eventId, clarificationNotes, token,
-      )
-      setEvent(data.event)
-      setClarificationNotes('')
-      setShowClarificationForm(false)
-    } catch (caught) {
-      setClarificationError(caught.message)
-    } finally {
-      setClarifying(false)
     }
   }
 
