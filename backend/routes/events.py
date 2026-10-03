@@ -202,23 +202,6 @@ def submit_event_change_request(event_id):
     return jsonify({"message": "Change request submitted."}), 201
 
 
-@events_bp.post("/review/<event_id>/clarification")
-@require_auth
-def request_event_clarification(event_id):
-    try:
-        clarification = EventClarificationRequest(
-            **(request.get_json(silent=True) or {})
-        )
-    except ValidationError as error:
-        return jsonify({"errors": _validation_messages(error)}), 400
-
-    _require_coordinator()
-    event = event_service.request_event_clarification(
-        g.access_token, g.user_id, event_id, clarification
-    )
-    return jsonify({"event": event.model_dump(mode="json")}), 200
-
-
 # --- Draft event requests (T7-37) ------------------------------------------
 # Flask matches the fixed path /events/drafts before /events/<event_id>, so
 # "drafts" is never mistaken for an event id.
