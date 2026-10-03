@@ -55,6 +55,21 @@ export function rejectAssignedEvent(eventId, token) {
   })
 }
 
+export function approveAssignedChangeRequest(eventId, token) {
+  return request(`/events/review/${eventId}/change-request/approve`, {
+    method: 'POST',
+    token,
+  })
+}
+
+export function rejectAssignedChangeRequest(eventId, reason, token) {
+  return request(`/events/review/${eventId}/change-request/reject`, {
+    method: 'POST',
+    body: { reason },
+    token,
+  })
+}
+
 export function submitEventChangeRequest(eventId, changes, token) {
   return request(`/events/${eventId}/change-requests`, {
     method: 'POST',

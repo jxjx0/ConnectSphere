@@ -4,7 +4,7 @@
 --
 -- Agreed statuses:
 --   draft, under_review, rejected, planning, confirmed, completed,
---   change_requested
+--   change_requested, awaiting_clarification
 --
 -- Design notes:
 --   * 'submitted' is gone: a request goes straight to 'under_review' when
@@ -12,7 +12,7 @@
 --   * 'approved' is gone: a Coordinator approving a request moves it to
 --     'planning'. 'approved' had been added to the live database by hand
 --     and the backend could not read those rows.
---   * 'awaiting_clarification' and 'cancelled' are left out for now.
+--   * 'cancelled' is not part of the supported lifecycle.
 --   * Change requests are allowed from under_review, planning and
 --     confirmed -- every stage from submission until the event happens.
 --   * The Coordinator policies at the bottom were created directly in
@@ -35,7 +35,8 @@ alter table public.events
         'planning',
         'confirmed',
         'completed',
-        'change_requested'
+        'change_requested',
+        'awaiting_clarification'
     ));
 
 alter table public.events alter column status set default 'under_review';
@@ -90,16 +91,22 @@ create policy "Coordinators can decide their assigned events under review"
 
 drop policy if exists "Coordinators can view their assigned submitted events"
     on public.events;
+drop policy if exists "Coordinators can view their assigned reviewable events"
+    on public.events;
 drop policy if exists "Coordinators can view their assigned events under review"
     on public.events;
-create policy "Coordinators can view their assigned events under review"
+drop policy if exists "Coordinators can view assigned events"
+    on public.events;
+drop policy if exists "Coordinators can view their assigned events"
+    on public.events;
+create policy "Coordinators can view their assigned events"
     on public.events
     for select
     to authenticated
     using (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status = 'under_review'
+        and status <> 'draft'
     );
 
 -- 6. The change request function, with the new allowed statuses. Otherwise

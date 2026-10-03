@@ -151,6 +151,26 @@ export default function MyEventDetailPage() {
         </section>
 
         <section className="stack stack--tight">
+          {event.change_request && (
+            <>
+              <h2 className="section-title">Latest change request</h2>
+              <p className="note">
+                Status: {readableStatus(event.change_request.status)}.
+                {' '}Reason for change: {event.change_request.reason_for_change}
+              </p>
+              {event.change_request.rejection_reason && (
+                <p className="form-error" role="status">
+                  The Coordinator rejected this change request:
+                  {' '}{event.change_request.rejection_reason}
+                </p>
+              )}
+              {event.change_request.status === 'approved' && (
+                <p className="form-success" role="status">
+                  The Coordinator approved and applied the proposed changes.
+                </p>
+              )}
+            </>
+          )}
           {event.has_pending_change_request ? (
             <p className="notice" role="status">
               Your change request is waiting for review. You can submit another

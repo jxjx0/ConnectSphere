@@ -8,7 +8,13 @@ from pydantic import ValidationError
 from postgrest import APIError
 
 import config
-from models.event import Event, EventChangeRequestSubmit, EventStatus
+from models.event import (
+    Event,
+    EventChangeRequest,
+    EventChangeRequestDecision,
+    EventChangeRequestSubmit,
+    EventStatus,
+)
 from models.profile import Profile, Role
 from services import auth_service, event_service
 from services.auth_service import AuthError
@@ -91,6 +97,10 @@ class FakeQuery:
         self.calls.append(("in", column, tuple(values)))
         return self
 
+    def order(self, column, desc=False):
+        self.calls.append(("order", column, desc))
+        return self
+
     def execute(self):
         return SimpleNamespace(data=self.rows)
 
@@ -105,6 +115,21 @@ def _event_row(status="under_review") -> dict:
         organiser_id=ORGANISER_ID,
         status=status,
         **event_details,
+    ).model_dump(mode="json")
+
+
+def _change_request_row(status="pending") -> dict:
+    return EventChangeRequest(
+        id="44444444-4444-4444-4444-444444444444",
+        event_id=EVENT_ID,
+        organiser_id=ORGANISER_ID,
+        event_status_before_request="under_review",
+        status=status,
+        created_at=_in_days(-1),
+        rejection_reason="The revised date conflicts with the venue booking."
+        if status == "rejected"
+        else None,
+        **valid_change_request(),
     ).model_dump(mode="json")
 
 
@@ -364,9 +389,10 @@ def test_service_translates_database_rule_rejections(
 def test_event_detail_reports_if_change_request_is_pending(
     monkeypatch, pending_rows, expected
 ):
+    rows = [_change_request_row()] if pending_rows else []
     rows_by_table = {
         "events": [_event_row()],
-        "event_change_requests": pending_rows,
+        "event_change_requests": rows,
     }
     calls = []
 
@@ -382,5 +408,141 @@ def test_event_detail_reports_if_change_request_is_pending(
     event = event_service.get_my_event("organiser-token", ORGANISER_ID, EVENT_ID)
 
     assert event.has_pending_change_request is expected
+    assert (event.change_request is not None) is expected
     assert ("eq", "organiser_id", ORGANISER_ID) in calls
-    assert ("eq", "status", "pending") in calls
+    assert ("order", "created_at", True) in calls
+
+
+def test_rejection_reason_is_required_and_trimmed():
+    with pytest.raises(ValidationError):
+        EventChangeRequestDecision(reason="   ")
+
+    assert EventChangeRequestDecision(reason="  Venue unavailable  ").reason == (
+        "Venue unavailable"
+    )
+
+
+def test_coordinator_review_calls_atomic_approval_rpc(monkeypatch):
+    captured = {}
+    change_request = _change_request_row("approved")
+    updated_event = _event_row("under_review")
+
+    class FakeRPC:
+        def execute(self):
+            return SimpleNamespace(
+                data={"event": updated_event, "change_request": change_request}
+            )
+
+    def rpc(function_name, params):
+        captured.update(function_name=function_name, params=params)
+        return FakeRPC()
+
+    monkeypatch.setattr(
+        config,
+        "get_user_client",
+        lambda access_token: SimpleNamespace(rpc=rpc),
+    )
+
+    result = event_service.review_assigned_change_request(
+        "coordinator-token", COORDINATOR.id, EVENT_ID, "approve"
+    )
+
+    assert captured == {
+        "function_name": "approve_event_change_request",
+        "params": {"p_event_id": EVENT_ID},
+    }
+    assert result[1].status == "approved"
+
+
+def test_coordinator_review_calls_atomic_rejection_rpc_with_reason(monkeypatch):
+    captured = {}
+    change_request = _change_request_row("rejected")
+    updated_event = _event_row("under_review")
+
+    class FakeRPC:
+        def execute(self):
+            return SimpleNamespace(
+                data={"event": updated_event, "change_request": change_request}
+            )
+
+    def rpc(function_name, params):
+        captured.update(function_name=function_name, params=params)
+        return FakeRPC()
+
+    monkeypatch.setattr(
+        config,
+        "get_user_client",
+        lambda access_token: SimpleNamespace(rpc=rpc),
+    )
+    rejection = EventChangeRequestDecision(reason="Venue unavailable")
+
+    result = event_service.review_assigned_change_request(
+        "coordinator-token",
+        COORDINATOR.id,
+        EVENT_ID,
+        "reject",
+        rejection,
+    )
+
+    assert captured == {
+        "function_name": "reject_event_change_request",
+        "params": {
+            "p_event_id": EVENT_ID,
+            "p_rejection_reason": "Venue unavailable",
+        },
+    }
+    assert result[1].rejection_reason == (
+        "The revised date conflicts with the venue booking."
+    )
+
+
+def test_coordinator_can_reject_change_request_and_notify_organiser(
+    client, monkeypatch
+):
+    authenticate_as(monkeypatch, COORDINATOR)
+    captured = {}
+    reviewed_request = EventChangeRequest(**_change_request_row("rejected"))
+    reviewed_event = Event(**_event_row("under_review"))
+    monkeypatch.setattr(
+        event_service,
+        "review_assigned_change_request",
+        lambda access_token, coordinator_id, event_id, decision, rejection: (
+            reviewed_event,
+            reviewed_request,
+        ),
+    )
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: captured.setdefault("notification", args),
+    )
+
+    response = client.post(
+        f"/events/review/{EVENT_ID}/change-request/reject",
+        json={"reason": "Venue unavailable"},
+        headers={"Authorization": "Bearer coordinator-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["change_request"]["rejection_reason"]
+    assert captured["notification"][0] == ORGANISER_ID
+    assert "Reason:" in captured["notification"][3]
+
+
+def test_coordinator_must_provide_rejection_reason(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+    monkeypatch.setattr(
+        event_service,
+        "review_assigned_change_request",
+        lambda *args: pytest.fail("invalid request reached the service"),
+    )
+
+    response = client.post(
+        f"/events/review/{EVENT_ID}/change-request/reject",
+        json={"reason": " "},
+        headers={"Authorization": "Bearer coordinator-token"},
+    )
+
+    assert response.status_code == 400
+    assert "Give a reason for rejecting this change request" in (
+        response.get_json()["errors"]
+    )
