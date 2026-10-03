@@ -1,0 +1,11 @@
+[run]
+source = .
+omit =
+    tests/*
+    scripts/*
+    */venv/*
+    */.venv/*
+
+[report]
+# Include untouched modules in directories without __init__.py.
+include_namespace_packages = True

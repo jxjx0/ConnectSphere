@@ -4,4 +4,5 @@ supabase==2.31.0
 pydantic[email]==2.13.5
 python-dotenv==1.2.3
 pytest==9.1.1
+pytest-cov==7.1.0
 sendgrid==6.12.5
