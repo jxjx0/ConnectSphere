@@ -232,6 +232,13 @@ export default function MyEventDetailPage() {
           </dl>
         </section>
 
+        {event.clarification_notes && (
+          <section className="stack stack--tight">
+            <h2 className="section-title">Clarification requested</h2>
+            <p className="notice" role="status">{event.clarification_notes}</p>
+          </section>
+        )}
+
         <section className="stack stack--tight">
           {event.has_pending_change_request ? (
             <p className="notice" role="status">

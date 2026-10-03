@@ -331,6 +331,7 @@ class Event(BaseModel):
     updated_at: datetime | None = None
     coordinator_name: str | None = None
     has_pending_change_request: bool = False
+    clarification_notes: str | None = None
 
 
 class EventReviewSummary(BaseModel):

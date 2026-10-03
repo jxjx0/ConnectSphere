@@ -81,12 +81,12 @@ create policy "Coordinators can decide their assigned events under review"
     using (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status = 'under_review'
+        and status in ('under_review', 'planning', 'change_requested')
     )
     with check (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status in ('planning', 'rejected')
+        and status in ('planning', 'rejected', 'awaiting_clarification')
     );
 
 drop policy if exists "Coordinators can view their assigned submitted events"
