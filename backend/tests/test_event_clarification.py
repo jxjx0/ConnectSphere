@@ -1,0 +1,221 @@
+"""Coordinator clarification request validation, authorization and persistence."""
+
+from types import SimpleNamespace
+
+import pytest
+from pydantic import ValidationError
+
+import config
+from models.event import Event, EventClarificationRequest, EventStatus
+from models.profile import Profile, Role
+from services import auth_service, event_service
+from services.auth_service import AuthError
+
+COORDINATOR_ID = "22222222-2222-2222-2222-222222222222"
+ORGANISER_ID = "11111111-1111-1111-1111-111111111111"
+EVENT_ID = "33333333-3333-3333-3333-333333333333"
+
+
+class FakeQuery:
+    def __init__(self, result, calls):
+        self.result = result
+        self.calls = calls
+
+    def update(self, values):
+        self.calls.append(("update", values))
+        return self
+
+    def eq(self, column, value):
+        self.calls.append(("eq", column, value))
+        return self
+
+    def in_(self, column, values):
+        self.calls.append(("in", column, tuple(values)))
+        return self
+
+    def execute(self):
+        return SimpleNamespace(data=self.result)
+
+
+def fake_client(monkeypatch, rows, calls):
+    monkeypatch.setattr(
+        config,
+        "get_user_client",
+        lambda token: SimpleNamespace(
+            table=lambda table_name: FakeQuery(rows, calls)
+        ),
+    )
+
+
+def authenticate_as(monkeypatch, profile):
+    monkeypatch.setattr(auth_service, "get_user_id", lambda token: profile.id)
+    monkeypatch.setattr(auth_service, "get_profile", lambda token, user_id: profile)
+
+
+def test_clarification_notes_are_trimmed_and_required():
+    request = EventClarificationRequest(notes="  Confirm the room layout.  ")
+
+    assert request.notes == "Confirm the room layout."
+    with pytest.raises(ValidationError):
+        EventClarificationRequest(notes="   ")
+
+
+def test_assigned_event_in_supported_status_can_request_clarification(monkeypatch):
+    calls = []
+    saved_event = Event(
+        id=EVENT_ID,
+        organiser_id=ORGANISER_ID,
+        coordinator_id=COORDINATOR_ID,
+        name="Annual Client Summit",
+        status=EventStatus.AWAITING_CLARIFICATION,
+        clarification_notes="Confirm the room layout.",
+    )
+    fake_client(monkeypatch, [saved_event.model_dump(mode="json")], calls)
+
+    event = event_service.request_event_clarification(
+        "coordinator-token",
+        COORDINATOR_ID,
+        EVENT_ID,
+        EventClarificationRequest(notes="Confirm the room layout."),
+    )
+
+    allowed_statuses = (
+        EventStatus.UNDER_REVIEW.value,
+        EventStatus.PLANNING.value,
+        EventStatus.CHANGE_REQUESTED.value,
+    )
+    assert ("eq", "id", EVENT_ID) in calls
+    assert ("eq", "coordinator_id", COORDINATOR_ID) in calls
+    assert ("in", "status", allowed_statuses) in calls
+    assert calls[0][1]["status"] == EventStatus.AWAITING_CLARIFICATION.value
+    assert calls[0][1]["clarification_notes"] == "Confirm the room layout."
+    assert event.status is EventStatus.AWAITING_CLARIFICATION
+    assert event.clarification_notes == "Confirm the room layout."
+
+
+def test_event_in_unsupported_status_cannot_request_clarification(monkeypatch):
+    fake_client(monkeypatch, [], [])
+
+    with pytest.raises(AuthError) as caught:
+        event_service.request_event_clarification(
+            "coordinator-token",
+            COORDINATOR_ID,
+            EVENT_ID,
+            EventClarificationRequest(notes="Confirm the room layout."),
+        )
+
+    assert caught.value.status_code == 409
+
+
+def test_coordinator_route_saves_and_returns_clarification(client, monkeypatch):
+    coordinator = Profile(
+        id=COORDINATOR_ID,
+        full_name="Ben Lim",
+        role=Role.COORDINATOR,
+    )
+    authenticate_as(monkeypatch, coordinator)
+    saved_event = Event(
+        id=EVENT_ID,
+        organiser_id=ORGANISER_ID,
+        coordinator_id=COORDINATOR_ID,
+        name="Annual Client Summit",
+        status=EventStatus.AWAITING_CLARIFICATION,
+        clarification_notes="Confirm the room layout.",
+    )
+    captured = {}
+
+    def request_clarification(token, coordinator_id, event_id, request):
+        captured.update(
+            coordinator_id=coordinator_id,
+            event_id=event_id,
+            notes=request.notes,
+        )
+        return saved_event
+
+    monkeypatch.setattr(
+        event_service, "request_event_clarification", request_clarification
+    )
+
+    response = client.post(
+        f"/events/review/{EVENT_ID}/clarification",
+        headers={"Authorization": "Bearer coordinator-token"},
+        json={"notes": "  Confirm the room layout.  "},
+    )
+
+    assert response.status_code == 200
+    assert captured == {
+        "coordinator_id": COORDINATOR_ID,
+        "event_id": EVENT_ID,
+        "notes": "Confirm the room layout.",
+    }
+    assert response.get_json()["event"]["status"] == "awaiting_clarification"
+    assert response.get_json()["event"]["clarification_notes"] == "Confirm the room layout."
+
+
+def test_organiser_can_view_saved_clarification_on_event(client, monkeypatch):
+    organiser = Profile(
+        id=ORGANISER_ID,
+        full_name="Ada Tan",
+        role=Role.ORGANISER,
+    )
+    authenticate_as(monkeypatch, organiser)
+    event = Event(
+        id=EVENT_ID,
+        organiser_id=ORGANISER_ID,
+        coordinator_id=COORDINATOR_ID,
+        name="Annual Client Summit",
+        status=EventStatus.AWAITING_CLARIFICATION,
+        clarification_notes="Confirm the room layout.",
+    )
+    monkeypatch.setattr(event_service, "get_my_event", lambda *args: event)
+
+    response = client.get(
+        f"/events/{EVENT_ID}",
+        headers={"Authorization": "Bearer organiser-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["event"]["clarification_notes"] == "Confirm the room layout."
+    assert response.get_json()["event"]["status"] == "awaiting_clarification"
+
+
+def test_non_coordinator_cannot_request_clarification(client, monkeypatch):
+    organiser = Profile(
+        id=ORGANISER_ID,
+        full_name="Ada Tan",
+        role=Role.ORGANISER,
+    )
+    authenticate_as(monkeypatch, organiser)
+
+    def request_clarification(*args):
+        raise AssertionError("the service must not be reached")
+
+    monkeypatch.setattr(
+        event_service, "request_event_clarification", request_clarification
+    )
+
+    response = client.post(
+        f"/events/review/{EVENT_ID}/clarification",
+        headers={"Authorization": "Bearer organiser-token"},
+        json={"notes": "Please confirm the room layout."},
+    )
+
+    assert response.status_code == 403
+
+
+def test_clarification_route_rejects_blank_notes(client, monkeypatch):
+    coordinator = Profile(
+        id=COORDINATOR_ID,
+        full_name="Ben Lim",
+        role=Role.COORDINATOR,
+    )
+    authenticate_as(monkeypatch, coordinator)
+
+    response = client.post(
+        f"/events/review/{EVENT_ID}/clarification",
+        headers={"Authorization": "Bearer coordinator-token"},
+        json={"notes": "  "},
+    )
+
+    assert response.status_code == 400
+    assert "Clarification notes must not be blank" in response.get_json()["errors"]

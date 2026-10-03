@@ -55,6 +55,12 @@ export function rejectAssignedEvent(eventId, token) {
   })
 }
 
+export function requestEventClarification(eventId, notes, token) {
+  return request(`/events/review/${eventId}/clarification`, {
+    method: 'POST', body: { notes }, token,
+  })
+}
+
 export function submitEventChangeRequest(eventId, changes, token) {
   return request(`/events/${eventId}/change-requests`, {
     method: 'POST',
