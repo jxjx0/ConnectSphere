@@ -1,12 +1,18 @@
 """Coordinator clarification request validation, authorization and persistence."""
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
 
 import config
-from models.event import Event, EventClarificationRequest, EventStatus
+from models.event import (
+    Event,
+    EventClarification,
+    EventClarificationRequest,
+    EventStatus,
+)
 from models.profile import Profile, Role
 from services import auth_service, event_service
 from services.auth_service import AuthError
@@ -114,13 +120,14 @@ def test_coordinator_route_saves_and_returns_clarification(client, monkeypatch):
         role=Role.COORDINATOR,
     )
     authenticate_as(monkeypatch, coordinator)
-    saved_event = Event(
-        id=EVENT_ID,
+    saved_clarification = EventClarification(
+        id="44444444-4444-4444-4444-444444444444",
+        event_id=EVENT_ID,
         organiser_id=ORGANISER_ID,
         coordinator_id=COORDINATOR_ID,
-        name="Annual Client Summit",
-        status=EventStatus.AWAITING_CLARIFICATION,
-        clarification_notes="Confirm the room layout.",
+        coordinator_notes="Confirm the room layout.",
+        previous_status=EventStatus.PLANNING,
+        requested_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
     )
     captured = {}
 
@@ -130,7 +137,7 @@ def test_coordinator_route_saves_and_returns_clarification(client, monkeypatch):
             event_id=event_id,
             notes=request.notes,
         )
-        return saved_event
+        return saved_clarification
 
     monkeypatch.setattr(
         event_service, "request_event_clarification", request_clarification
@@ -142,14 +149,17 @@ def test_coordinator_route_saves_and_returns_clarification(client, monkeypatch):
         json={"notes": "  Confirm the room layout.  "},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 201
     assert captured == {
         "coordinator_id": COORDINATOR_ID,
         "event_id": EVENT_ID,
         "notes": "Confirm the room layout.",
     }
-    assert response.get_json()["event"]["status"] == "awaiting_clarification"
-    assert response.get_json()["event"]["clarification_notes"] == "Confirm the room layout."
+    assert response.get_json()["clarification"]["event_id"] == EVENT_ID
+    assert response.get_json()["clarification"]["coordinator_notes"] == (
+        "Confirm the room layout."
+    )
+    assert response.get_json()["clarification"]["previous_status"] == "planning"
 
 
 def test_organiser_can_view_saved_clarification_on_event(client, monkeypatch):
