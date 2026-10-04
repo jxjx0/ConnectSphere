@@ -33,12 +33,32 @@ export function getMyEvent(eventId, token) {
   return request(`/events/${eventId}`, { token })
 }
 
+export function getMyEventClarifications(eventId, token) {
+  return request(`/events/${eventId}/clarifications`, { token })
+}
+
+export function respondToEventClarification(eventId, response, token) {
+  return request(`/events/${eventId}/clarification-response`, {
+    method: 'POST', body: { response }, token,
+  })
+}
+
 export function getAssignedEventRequests(token) {
   return request('/events/review', { token })
 }
 
 export function getAssignedEventRequest(eventId, token) {
   return request(`/events/review/${eventId}`, { token })
+}
+
+export function getAssignedEventClarifications(eventId, token) {
+  return request(`/events/review/${eventId}/clarifications`, { token })
+}
+
+export function requestEventClarification(eventId, notes, token) {
+  return request(`/events/review/${eventId}/clarification`, {
+    method: 'POST', body: { notes }, token,
+  })
 }
 
 export function approveAssignedEvent(eventId, token) {
@@ -52,12 +72,6 @@ export function rejectAssignedEvent(eventId, token) {
   return request(`/events/review/${eventId}/reject`, {
     method: 'POST',
     token,
-  })
-}
-
-export function requestEventClarification(eventId, notes, token) {
-  return request(`/events/review/${eventId}/clarification`, {
-    method: 'POST', body: { notes }, token,
   })
 }
 

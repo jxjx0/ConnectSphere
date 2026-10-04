@@ -36,6 +36,30 @@ class EventClarificationRequest(BaseModel):
         return stripped
 
 
+class EventClarificationResponse(BaseModel):
+    response: str = Field(min_length=1, max_length=5000)
+
+    @field_validator("response")
+    @classmethod
+    def strip_response(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Your response must not be blank")
+        return stripped
+
+
+class EventClarification(BaseModel):
+    id: str
+    event_id: str
+    organiser_id: str
+    coordinator_id: str
+    coordinator_notes: str
+    previous_status: EventStatus | None = None
+    organiser_response: str | None = None
+    requested_at: datetime
+    responded_at: datetime | None = None
+
+
 class EventCategory(str, Enum):
     """The categories an Organiser may choose from.
 
@@ -307,7 +331,6 @@ class Event(BaseModel):
     updated_at: datetime | None = None
     coordinator_name: str | None = None
     has_pending_change_request: bool = False
-    clarification_notes: str | None = None
 
 
 class EventReviewSummary(BaseModel):

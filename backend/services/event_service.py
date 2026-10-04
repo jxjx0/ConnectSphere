@@ -8,7 +8,9 @@ import config
 from models.event import (
     Event,
     EventChangeRequestSubmit,
+    EventClarification,
     EventClarificationRequest,
+    EventClarificationResponse,
     EventDraftRequest,
     EventOrganiser,
     EventReviewSummary,
@@ -20,9 +22,9 @@ from services.auth_service import AuthError
 
 def _database_error(error: PostgrestAPIError) -> AuthError:
     """Translate known PostgREST constraint errors into API responses."""
-    if error.code in {"42703", "PGRST204"}:
+    if error.code in {"42703", "PGRST204", "PGRST205"}:
         return AuthError(
-            "The event database is missing the clarification field or its API schema cache is stale. Apply the event clarification database update, refresh the API schema cache if needed, and retry.",
+            "The database schema is missing a required field or table.",
             status_code=503,
         )
     if error.code in {"23502", "23514", "22P02"}:
@@ -51,6 +53,18 @@ def _review_read_error(error: PostgrestAPIError, resource: str) -> AuthError:
             status_code=403,
         )
     return AuthError(f"Unable to load {resource}.", status_code=502)
+
+
+def _clarification_database_error(error: PostgrestAPIError) -> AuthError:
+    """Give a direct setup hint when the clarification migration is missing."""
+    if error.code in {
+        "42P01", "42703", "PGRST202", "PGRST204", "PGRST205", "42883"
+    }:
+        return AuthError(
+            "Clarification history is not available yet. Apply database/event_clarifications.sql, then refresh the API schema cache if needed.",
+            status_code=503,
+        )
+    return _database_error(error)
 
 
 def submit_event(
@@ -436,6 +450,131 @@ def get_assigned_event(
     return Event(**result.data[0])
 
 
+def list_event_clarifications(
+    access_token: str,
+    event_id: str,
+    *,
+    organiser_id: str | None = None,
+    coordinator_id: str | None = None,
+) -> list[EventClarification]:
+    """Return clarification exchanges visible to the event's current user."""
+    if (organiser_id is None) == (coordinator_id is None):
+        raise AuthError("An event owner or assigned Coordinator is required.", 403)
+
+    client = config.get_user_client(access_token)
+    event_query = (
+        client.table("events")
+        .select("id")
+        .eq("id", event_id)
+        .neq("status", EventStatus.DRAFT.value)
+    )
+    if organiser_id:
+        event_query = event_query.eq("organiser_id", organiser_id)
+    else:
+        event_query = event_query.eq("coordinator_id", coordinator_id)
+
+    try:
+        event_result = event_query.execute()
+        if not event_result.data:
+            raise AuthError("Event request was not found.", status_code=404)
+        result = (
+            client.table("event_clarifications")
+            .select("*")
+            .eq("event_id", event_id)
+            .order("requested_at")
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _clarification_database_error(error) from error
+
+    return [EventClarification(**row) for row in result.data]
+
+
+def request_event_clarification(
+    access_token: str,
+    coordinator_id: str,
+    event_id: str,
+    request: EventClarificationRequest,
+) -> EventClarification:
+    """Save a Coordinator's clarification request and hold event planning."""
+    client = config.get_user_client(access_token)
+    try:
+        client.rpc(
+            "request_event_clarification",
+            {
+                "p_event_id": event_id,
+                "p_coordinator_id": coordinator_id,
+                "p_notes": request.notes,
+            },
+        ).execute()
+    except PostgrestAPIError as error:
+        message = str(error).lower()
+        if error.code in {"42P01", "PGRST202", "42883"}:
+            raise _clarification_database_error(error) from error
+        if "only the assigned coordinator" in message:
+            raise AuthError(
+                "Only the assigned Coordinator can request clarification.",
+                status_code=403,
+            ) from error
+        if "event request was not found" in message:
+            raise AuthError("Event request was not found.", status_code=404) from error
+        if "event cannot be clarified" in message:
+            raise AuthError(
+                "Only events under review, in planning, or with a change request can be sent for clarification.",
+                status_code=409,
+            ) from error
+        raise _database_error(error) from error
+
+    history = list_event_clarifications(
+        access_token, event_id, coordinator_id=coordinator_id
+    )
+    return history[-1]
+
+
+def respond_to_event_clarification(
+    access_token: str,
+    organiser_id: str,
+    event_id: str,
+    request: EventClarificationResponse,
+) -> EventClarification:
+    """Record the Organiser's response and return the event to review."""
+    client = config.get_user_client(access_token)
+    try:
+        client.rpc(
+            "respond_to_event_clarification",
+            {
+                "p_event_id": event_id,
+                "p_organiser_id": organiser_id,
+                "p_response": request.response,
+            },
+        ).execute()
+    except PostgrestAPIError as error:
+        message = str(error).lower()
+        if error.code in {"42P01", "PGRST202", "42883"}:
+            raise _clarification_database_error(error) from error
+        if "only the signed-in organiser" in message:
+            raise AuthError(
+                "Only the event Organiser can respond to clarification.",
+                status_code=403,
+            ) from error
+        if "event request was not found" in message:
+            raise AuthError("Event request was not found.", status_code=404) from error
+        if (
+            "no clarification is awaiting a response" in message
+            or "event is not awaiting clarification" in message
+        ):
+            raise AuthError(
+                "This event is not awaiting a clarification response.",
+                status_code=409,
+            ) from error
+        raise _database_error(error) from error
+
+    history = list_event_clarifications(
+        access_token, event_id, organiser_id=organiser_id
+    )
+    return history[-1]
+
+
 def get_event_organiser(
     access_token: str, organiser_id: str
 ) -> EventOrganiser | None:
@@ -507,38 +646,3 @@ def decide_assigned_event(
             status_code=409,
         )
     raise AuthError("Event request was not found.", status_code=404)
-
-
-def request_event_clarification(
-    access_token: str,
-    coordinator_id: str,
-    event_id: str,
-    request: EventClarificationRequest,
-) -> Event:
-    """Save coordinator notes and move an assigned event to clarification."""
-    client = config.get_user_client(access_token)
-    try:
-        result = (
-            client.table("events")
-            .update({
-                "clarification_notes": request.notes,
-                "status": EventStatus.AWAITING_CLARIFICATION.value,
-                "updated_at": _now(),
-            })
-            .eq("id", event_id)
-            .eq("coordinator_id", coordinator_id)
-            .in_("status", [
-                EventStatus.UNDER_REVIEW.value,
-                EventStatus.PLANNING.value,
-                EventStatus.CHANGE_REQUESTED.value,
-            ])
-            .execute()
-        )
-    except PostgrestAPIError as error:
-        raise _database_error(error) from error
-    if result.data:
-        return Event(**result.data[0])
-    raise AuthError(
-        "Only an assigned event under review, in planning, or with a change request can be sent for clarification.",
-        status_code=409,
-    )

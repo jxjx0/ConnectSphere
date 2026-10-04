@@ -1,12 +1,18 @@
 """Coordinator clarification request validation, authorization and persistence."""
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
+from postgrest import APIError
 from pydantic import ValidationError
 
 import config
-from models.event import Event, EventClarificationRequest, EventStatus
+from models.event import (
+    EventClarification,
+    EventClarificationRequest,
+    EventStatus,
+)
 from models.profile import Profile, Role
 from services import auth_service, event_service
 from services.auth_service import AuthError
@@ -17,32 +23,51 @@ EVENT_ID = "33333333-3333-3333-3333-333333333333"
 
 
 class FakeQuery:
-    def __init__(self, result, calls):
-        self.result = result
+    def __init__(self, rows, calls):
+        self.rows = rows
         self.calls = calls
 
-    def update(self, values):
-        self.calls.append(("update", values))
+    def select(self, *columns):
+        self.calls.append(("select", columns))
         return self
 
     def eq(self, column, value):
         self.calls.append(("eq", column, value))
         return self
 
-    def in_(self, column, values):
-        self.calls.append(("in", column, tuple(values)))
+    def neq(self, column, value):
+        self.calls.append(("neq", column, value))
+        return self
+
+    def order(self, column):
+        self.calls.append(("order", column))
         return self
 
     def execute(self):
-        return SimpleNamespace(data=self.result)
+        return SimpleNamespace(data=self.rows)
 
 
-def fake_client(monkeypatch, rows, calls):
+class FakeRpc:
+    def __init__(self, error=None):
+        self.error = error
+
+    def execute(self):
+        if self.error:
+            raise self.error
+        return SimpleNamespace(data=[])
+
+
+def fake_client(monkeypatch, rows_by_table, calls, rpc_calls, rpc_error=None):
+    def rpc(name, args):
+        rpc_calls.append((name, args))
+        return FakeRpc(rpc_error)
+
     monkeypatch.setattr(
         config,
         "get_user_client",
         lambda token: SimpleNamespace(
-            table=lambda table_name: FakeQuery(rows, calls)
+            rpc=rpc,
+            table=lambda table_name: FakeQuery(rows_by_table[table_name], calls),
         ),
     )
 
@@ -62,39 +87,67 @@ def test_clarification_notes_are_trimmed_and_required():
 
 def test_assigned_event_in_supported_status_can_request_clarification(monkeypatch):
     calls = []
-    saved_event = Event(
-        id=EVENT_ID,
-        organiser_id=ORGANISER_ID,
-        coordinator_id=COORDINATOR_ID,
-        name="Annual Client Summit",
-        status=EventStatus.AWAITING_CLARIFICATION,
-        clarification_notes="Confirm the room layout.",
+    rpc_calls = []
+    older_row = {
+        "id": "55555555-5555-5555-5555-555555555555",
+        "event_id": EVENT_ID,
+        "organiser_id": ORGANISER_ID,
+        "coordinator_id": COORDINATOR_ID,
+        "coordinator_notes": "Confirm the date.",
+        "previous_status": "under_review",
+        "organiser_response": "The date is confirmed.",
+        "requested_at": datetime(2026, 9, 1, tzinfo=timezone.utc).isoformat(),
+        "responded_at": datetime(2026, 9, 2, tzinfo=timezone.utc).isoformat(),
+    }
+    new_row = {
+        "id": "44444444-4444-4444-4444-444444444444",
+        "event_id": EVENT_ID,
+        "organiser_id": ORGANISER_ID,
+        "coordinator_id": COORDINATOR_ID,
+        "coordinator_notes": "Confirm the room layout.",
+        "previous_status": "planning",
+        "requested_at": datetime(2026, 10, 1, tzinfo=timezone.utc).isoformat(),
+    }
+    fake_client(
+        monkeypatch,
+        {
+            "events": [{"id": EVENT_ID}],
+            "event_clarifications": [older_row, new_row],
+        },
+        calls,
+        rpc_calls,
     )
-    fake_client(monkeypatch, [saved_event.model_dump(mode="json")], calls)
 
-    event = event_service.request_event_clarification(
+    clarification = event_service.request_event_clarification(
         "coordinator-token",
         COORDINATOR_ID,
         EVENT_ID,
         EventClarificationRequest(notes="Confirm the room layout."),
     )
 
-    allowed_statuses = (
-        EventStatus.UNDER_REVIEW.value,
-        EventStatus.PLANNING.value,
-        EventStatus.CHANGE_REQUESTED.value,
-    )
-    assert ("eq", "id", EVENT_ID) in calls
+    assert rpc_calls == [
+        (
+            "request_event_clarification",
+            {
+                "p_event_id": EVENT_ID,
+                "p_coordinator_id": COORDINATOR_ID,
+                "p_notes": "Confirm the room layout.",
+            },
+        )
+    ]
     assert ("eq", "coordinator_id", COORDINATOR_ID) in calls
-    assert ("in", "status", allowed_statuses) in calls
-    assert calls[0][1]["status"] == EventStatus.AWAITING_CLARIFICATION.value
-    assert calls[0][1]["clarification_notes"] == "Confirm the room layout."
-    assert event.status is EventStatus.AWAITING_CLARIFICATION
-    assert event.clarification_notes == "Confirm the room layout."
+    assert isinstance(clarification, EventClarification)
+    assert clarification.id == new_row["id"]
+    assert clarification.coordinator_notes == "Confirm the room layout."
+    assert clarification.previous_status is EventStatus.PLANNING
 
 
 def test_event_in_unsupported_status_cannot_request_clarification(monkeypatch):
-    fake_client(monkeypatch, [], [])
+    error = APIError({
+        "message": "Event cannot be clarified in its current status",
+        "code": "P0001",
+    })
+    fake_client(monkeypatch, {}, [], [], rpc_error=error)
 
     with pytest.raises(AuthError) as caught:
         event_service.request_event_clarification(
@@ -114,13 +167,14 @@ def test_coordinator_route_saves_and_returns_clarification(client, monkeypatch):
         role=Role.COORDINATOR,
     )
     authenticate_as(monkeypatch, coordinator)
-    saved_event = Event(
-        id=EVENT_ID,
+    saved_clarification = EventClarification(
+        id="44444444-4444-4444-4444-444444444444",
+        event_id=EVENT_ID,
         organiser_id=ORGANISER_ID,
         coordinator_id=COORDINATOR_ID,
-        name="Annual Client Summit",
-        status=EventStatus.AWAITING_CLARIFICATION,
-        clarification_notes="Confirm the room layout.",
+        coordinator_notes="Confirm the room layout.",
+        previous_status=EventStatus.PLANNING,
+        requested_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
     )
     captured = {}
 
@@ -130,7 +184,7 @@ def test_coordinator_route_saves_and_returns_clarification(client, monkeypatch):
             event_id=event_id,
             notes=request.notes,
         )
-        return saved_event
+        return saved_clarification
 
     monkeypatch.setattr(
         event_service, "request_event_clarification", request_clarification
@@ -142,41 +196,17 @@ def test_coordinator_route_saves_and_returns_clarification(client, monkeypatch):
         json={"notes": "  Confirm the room layout.  "},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 201
     assert captured == {
         "coordinator_id": COORDINATOR_ID,
         "event_id": EVENT_ID,
         "notes": "Confirm the room layout.",
     }
-    assert response.get_json()["event"]["status"] == "awaiting_clarification"
-    assert response.get_json()["event"]["clarification_notes"] == "Confirm the room layout."
-
-
-def test_organiser_can_view_saved_clarification_on_event(client, monkeypatch):
-    organiser = Profile(
-        id=ORGANISER_ID,
-        full_name="Ada Tan",
-        role=Role.ORGANISER,
+    assert response.get_json()["clarification"]["event_id"] == EVENT_ID
+    assert response.get_json()["clarification"]["coordinator_notes"] == (
+        "Confirm the room layout."
     )
-    authenticate_as(monkeypatch, organiser)
-    event = Event(
-        id=EVENT_ID,
-        organiser_id=ORGANISER_ID,
-        coordinator_id=COORDINATOR_ID,
-        name="Annual Client Summit",
-        status=EventStatus.AWAITING_CLARIFICATION,
-        clarification_notes="Confirm the room layout.",
-    )
-    monkeypatch.setattr(event_service, "get_my_event", lambda *args: event)
-
-    response = client.get(
-        f"/events/{EVENT_ID}",
-        headers={"Authorization": "Bearer organiser-token"},
-    )
-
-    assert response.status_code == 200
-    assert response.get_json()["event"]["clarification_notes"] == "Confirm the room layout."
-    assert response.get_json()["event"]["status"] == "awaiting_clarification"
+    assert response.get_json()["clarification"]["previous_status"] == "planning"
 
 
 def test_non_coordinator_cannot_request_clarification(client, monkeypatch):

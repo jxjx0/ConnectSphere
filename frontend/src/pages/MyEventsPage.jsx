@@ -47,10 +47,7 @@ export default function MyEventsPage() {
   return (
     <AppShell>
       <div className="content">
-        <Link to="/dashboard" className="backlink">
-          ← Dashboard
-        </Link>
-
+        <Link to="/dashboard" className="backlink">← Dashboard</Link>
         <div className="content__header">
           <h1>My event requests</h1>
           <p className="lead">

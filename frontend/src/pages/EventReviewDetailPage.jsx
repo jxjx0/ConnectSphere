@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 
 import {
   approveAssignedEvent,
+  getAssignedEventClarifications,
   getAssignedEventRequest,
   requestEventClarification,
   rejectAssignedEvent,
@@ -31,6 +32,8 @@ export default function EventReviewDetailPage() {
   const { eventId } = useParams()
   const [event, setEvent] = useState(null)
   const [organiser, setOrganiser] = useState(null)
+  const [clarifications, setClarifications] = useState([])
+  const [historyError, setHistoryError] = useState('')
   const [error, setError] = useState('')
   const [decisionError, setDecisionError] = useState('')
   const [deciding, setDeciding] = useState(false)
@@ -56,10 +59,40 @@ export default function EventReviewDetailPage() {
         if (active) setLoading(false)
       })
 
+    getAssignedEventClarifications(eventId, token)
+      .then((data) => {
+        if (active) setClarifications(data.clarifications)
+      })
+      .catch((caught) => {
+        if (active) setHistoryError(caught.message)
+      })
+
     return () => {
       active = false
     }
   }, [eventId, token])
+
+  async function requestClarification(eventTarget) {
+    eventTarget.preventDefault()
+    setClarificationError('')
+    setClarifying(true)
+    try {
+      const data = await requestEventClarification(
+        eventId, clarificationNotes, token,
+      )
+      setClarifications((history) => [...history, data.clarification])
+      setEvent((current) => ({
+        ...current,
+        status: 'awaiting_clarification',
+      }))
+      setClarificationNotes('')
+      setShowClarificationForm(false)
+    } catch (caught) {
+      setClarificationError(caught.message)
+    } finally {
+      setClarifying(false)
+    }
+  }
 
   async function decide(decision) {
     if (decision === 'reject' && !window.confirm('Reject this event request?')) {
@@ -77,24 +110,6 @@ export default function EventReviewDetailPage() {
       setDecisionError(caught.message)
     } finally {
       setDeciding(false)
-    }
-  }
-
-  async function requestClarification(eventTarget) {
-    eventTarget.preventDefault()
-    setClarificationError('')
-    setClarifying(true)
-    try {
-      const data = await requestEventClarification(
-        eventId, clarificationNotes, token,
-      )
-      setEvent(data.event)
-      setClarificationNotes('')
-      setShowClarificationForm(false)
-    } catch (caught) {
-      setClarificationError(caught.message)
-    } finally {
-      setClarifying(false)
     }
   }
 
@@ -150,12 +165,24 @@ export default function EventReviewDetailPage() {
           )}
         </section>
 
-        {event.clarification_notes && (
+        {clarifications.length > 0 && (
           <section className="stack stack--tight">
-            <h2 className="section-title">Clarification requested</h2>
-            <p className="notice">{event.clarification_notes}</p>
+            <h2 className="section-title">Clarification history</h2>
+            {clarifications.map((item) => (
+              <article className="notice" key={item.id}>
+                <p><strong>Coordinator · {formatDateTime(item.requested_at)}</strong></p>
+                <p>{item.coordinator_notes}</p>
+                {item.organiser_response && (
+                  <>
+                    <p><strong>Organiser · {formatDateTime(item.responded_at)}</strong></p>
+                    <p>{item.organiser_response}</p>
+                  </>
+                )}
+              </article>
+            ))}
           </section>
         )}
+        {historyError && <p className="note" role="status">{historyError}</p>}
 
         <section className="stack stack--tight">
           <h2 className="section-title">Request details</h2>
