@@ -62,8 +62,10 @@ export default function MyEventDetailPage() {
       setClarifications((history) => history.map((item) => (
         item.id === data.clarification.id ? data.clarification : item
       )))
-      setEvent((current) => ({ ...current, status: 'under_review' }))
       setResponseText('')
+      // The event returns to its status before clarification, so reload it.
+      const eventData = await getMyEvent(eventId, token)
+      setEvent(eventData.event)
     } catch (caught) {
       setResponseError(caught.message)
     } finally {
@@ -231,13 +233,6 @@ export default function MyEventDetailPage() {
             />
           </dl>
         </section>
-
-        {event.clarification_notes && (
-          <section className="stack stack--tight">
-            <h2 className="section-title">Clarification requested</h2>
-            <p className="notice" role="status">{event.clarification_notes}</p>
-          </section>
-        )}
 
         <section className="stack stack--tight">
           {event.has_pending_change_request ? (

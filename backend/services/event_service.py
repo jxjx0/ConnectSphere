@@ -646,38 +646,3 @@ def decide_assigned_event(
             status_code=409,
         )
     raise AuthError("Event request was not found.", status_code=404)
-
-
-def request_event_clarification(
-    access_token: str,
-    coordinator_id: str,
-    event_id: str,
-    request: EventClarificationRequest,
-) -> Event:
-    """Save coordinator notes and move an assigned event to clarification."""
-    client = config.get_user_client(access_token)
-    try:
-        result = (
-            client.table("events")
-            .update({
-                "clarification_notes": request.notes,
-                "status": EventStatus.AWAITING_CLARIFICATION.value,
-                "updated_at": _now(),
-            })
-            .eq("id", event_id)
-            .eq("coordinator_id", coordinator_id)
-            .in_("status", [
-                EventStatus.UNDER_REVIEW.value,
-                EventStatus.PLANNING.value,
-                EventStatus.CHANGE_REQUESTED.value,
-            ])
-            .execute()
-        )
-    except PostgrestAPIError as error:
-        raise _database_error(error) from error
-    if result.data:
-        return Event(**result.data[0])
-    raise AuthError(
-        "Only an assigned event under review, in planning, or with a change request can be sent for clarification.",
-        status_code=409,
-    )
