@@ -89,7 +89,7 @@ export default function EventReviewDetailPage() {
     }
   }, [eventId, token])
 
-<<<<<<< HEAD
+
   //   getAssignedEventRequest(eventId, token)
   //     .then((data) => {
   //       if (!active) return
@@ -107,7 +107,7 @@ export default function EventReviewDetailPage() {
   //     active = false
   //   }
   // }, [eventId, token])
-=======
+
   async function requestClarification(eventTarget) {
     eventTarget.preventDefault()
     setClarificationError('')
@@ -129,7 +129,7 @@ export default function EventReviewDetailPage() {
       setClarifying(false)
     }
   }
->>>>>>> 5716eff35c999faa6ba3e0235a50a8acc544d984
+
 
   async function decide(decision) {
     if (decision === 'reject' && !window.confirm('Reject this event request?')) {
@@ -150,7 +150,7 @@ export default function EventReviewDetailPage() {
     }
   }
 
-<<<<<<< HEAD
+
   async function requestClarification(eventTarget) {
     eventTarget.preventDefault()
     setClarificationError('')
@@ -220,8 +220,7 @@ export default function EventReviewDetailPage() {
     }
   }
 
-=======
->>>>>>> 5716eff35c999faa6ba3e0235a50a8acc544d984
+
   if (loading) {
     return (
       <AppShell>
