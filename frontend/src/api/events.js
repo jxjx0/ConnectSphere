@@ -117,3 +117,19 @@ export function submitDraft(draftId, event, token) {
 export function deleteDraft(draftId, token) {
   return request(`/events/drafts/${draftId}`, { method: 'DELETE', token })
 }
+
+export function getCoordinators(token) {
+  return request('/events/coordinators', { token })
+}
+
+export function getEventActivityLogs(eventId, token) {
+  return request(`/events/review/${eventId}/history`, { token })
+}
+
+export function reassignAssignedEvent(eventId, { newCoordinatorId, reason }, token) {
+  return request(`/events/review/${eventId}/reassign`, {
+    method: 'POST',
+    body: { new_coordinator_id: newCoordinatorId, reason },
+    token,
+  })
+}
