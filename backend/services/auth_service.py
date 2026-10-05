@@ -126,3 +126,14 @@ def get_profile(access_token: str, user_id: str) -> Profile:
         raise AuthError("No profile found for this user.", status_code=404)
 
     return Profile(**result.data[0])
+
+def get_coordinators(access_token: str):
+    """Fetch all staff members with role='coordinator'."""
+    client = config.get_user_client(access_token)
+    response = (
+        client.table("profiles")
+        .select("id, full_name")  
+        .eq("role", "coordinator")
+        .execute()
+    )
+    return response.data or []

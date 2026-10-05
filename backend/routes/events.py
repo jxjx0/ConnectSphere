@@ -346,3 +346,50 @@ def delete_draft(draft_id):
     _require_organiser()
     event_service.delete_draft(g.access_token, g.user_id, draft_id)
     return "", 204
+
+
+@events_bp.get("/coordinators")
+@require_auth
+def get_coordinators():
+    """Fetch all staff members with role='coordinator'."""
+    try:
+        coordinators = auth_service.get_coordinators(access_token=g.access_token)
+        return jsonify({"coordinators": coordinators}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@events_bp.get("/review/<event_id>/history")
+@require_auth
+def get_event_history(event_id):
+    """Fetch activity history / audit trail for an event."""
+    try:
+        logs = event_service.get_event_activity_logs(
+            event_id, access_token=g.access_token
+        )
+        return jsonify({"logs": logs}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@events_bp.post("/review/<event_id>/reassign")
+@require_auth
+def reassign_event(event_id):
+    """Reassign event coordinator with reason logging."""
+    data = request.get_json() or {}
+    new_coordinator_id = data.get("new_coordinator_id")
+    reason = data.get("reason", "").strip()
+
+    if not new_coordinator_id:
+        return jsonify({"error": "Please select a coordinator to reassign to."}), 400
+
+    try:
+        updated_event = event_service.reassign_event(
+            event_id=event_id,
+            new_coordinator_id=new_coordinator_id,
+            changed_by_id=g.user_id,
+            reason=reason,
+            access_token=g.access_token,
+        )
+        return jsonify({"event": updated_event}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
