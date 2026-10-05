@@ -337,7 +337,7 @@ export default function EventReviewDetailPage() {
                   <option value="">Choose a coordinator…</option>
                   {coordinators.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.full_name} ({c.email || 'Coordinator'})
+                      {c.full_name}
                     </option>
                   ))}
                 </select>
