@@ -13,6 +13,12 @@ const TABS = [
     empty: 'No requests are waiting for your decision.',
   },
   {
+    id: 'clarification',
+    label: 'Awaiting clarification',
+    statuses: ['awaiting_clarification'],
+    empty: 'No events are awaiting clarification.',
+  },
+  {
     id: 'ongoing',
     label: 'Ongoing',
     statuses: ['planning', 'confirmed'],

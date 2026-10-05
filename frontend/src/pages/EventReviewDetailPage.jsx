@@ -4,8 +4,10 @@ import { Link, useParams } from 'react-router-dom'
 import {
   approveAssignedChangeRequest,
   approveAssignedEvent,
+  getAssignedEventClarifications,
   getAssignedEventRequest,
   rejectAssignedChangeRequest,
+  requestEventClarification,
   rejectAssignedEvent,
 } from '../api/events'
 import AppShell from '../components/AppShell'
@@ -62,10 +64,16 @@ export default function EventReviewDetailPage() {
   const { eventId } = useParams()
   const [event, setEvent] = useState(null)
   const [organiser, setOrganiser] = useState(null)
+  const [clarifications, setClarifications] = useState([])
+  const [historyError, setHistoryError] = useState('')
   const [error, setError] = useState('')
   const [decisionError, setDecisionError] = useState('')
   const [deciding, setDeciding] = useState(false)
   const [rejectionReason, setRejectionReason] = useState('')
+  const [clarificationNotes, setClarificationNotes] = useState('')
+  const [clarificationError, setClarificationError] = useState('')
+  const [clarifying, setClarifying] = useState(false)
+  const [showClarificationForm, setShowClarificationForm] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -84,10 +92,40 @@ export default function EventReviewDetailPage() {
         if (active) setLoading(false)
       })
 
+    getAssignedEventClarifications(eventId, token)
+      .then((data) => {
+        if (active) setClarifications(data.clarifications)
+      })
+      .catch((caught) => {
+        if (active) setHistoryError(caught.message)
+      })
+
     return () => {
       active = false
     }
   }, [eventId, token])
+
+  async function requestClarification(eventTarget) {
+    eventTarget.preventDefault()
+    setClarificationError('')
+    setClarifying(true)
+    try {
+      const data = await requestEventClarification(
+        eventId, clarificationNotes, token,
+      )
+      setClarifications((history) => [...history, data.clarification])
+      setEvent((current) => ({
+        ...current,
+        status: 'awaiting_clarification',
+      }))
+      setClarificationNotes('')
+      setShowClarificationForm(false)
+    } catch (caught) {
+      setClarificationError(caught.message)
+    } finally {
+      setClarifying(false)
+    }
+  }
 
   async function decide(decision) {
     const reviewingChange = event.status === 'change_requested'
@@ -178,6 +216,25 @@ export default function EventReviewDetailPage() {
             <p className="note">Organiser details are not available.</p>
           )}
         </section>
+
+        {clarifications.length > 0 && (
+          <section className="stack stack--tight">
+            <h2 className="section-title">Clarification history</h2>
+            {clarifications.map((item) => (
+              <article className="notice" key={item.id}>
+                <p><strong>Coordinator · {formatDateTime(item.requested_at)}</strong></p>
+                <p>{item.coordinator_notes}</p>
+                {item.organiser_response && (
+                  <>
+                    <p><strong>Organiser · {formatDateTime(item.responded_at)}</strong></p>
+                    <p>{item.organiser_response}</p>
+                  </>
+                )}
+              </article>
+            ))}
+          </section>
+        )}
+        {historyError && <p className="note" role="status">{historyError}</p>}
 
         <section className="stack stack--tight">
           <h2 className="section-title">Request details</h2>
@@ -285,6 +342,54 @@ export default function EventReviewDetailPage() {
                 Reject change request
               </button>
             </div>
+          </section>
+        )}
+
+        {['under_review', 'planning', 'change_requested'].includes(event.status) && (
+          <section className="stack stack--tight">
+            {!showClarificationForm ? (
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => setShowClarificationForm(true)}
+              >
+                Request Clarification
+              </button>
+            ) : (
+              <form className="stack stack--tight" onSubmit={requestClarification}>
+                <label className="field">
+                  <span className="field__label">What needs clarification?</span>
+                  <textarea
+                    value={clarificationNotes}
+                    onChange={(e) => setClarificationNotes(e.target.value)}
+                    rows={3}
+                    maxLength={5000}
+                    required
+                    autoFocus
+                    placeholder="Describe the information or amendments needed."
+                  />
+                </label>
+                {clarificationError && (
+                  <p className="form-error" role="alert">{clarificationError}</p>
+                )}
+                <div className="form-actions">
+                  <button className="button" disabled={clarifying}>
+                    {clarifying ? 'Sending…' : 'Send request'}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button--secondary"
+                    disabled={clarifying}
+                    onClick={() => {
+                      setShowClarificationForm(false)
+                      setClarificationError('')
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
           </section>
         )}
       </div>

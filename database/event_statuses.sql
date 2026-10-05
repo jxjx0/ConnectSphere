@@ -69,7 +69,8 @@ create policy "Organisers can edit their own drafts"
     );
 
 -- 5. Coordinators review requests that are 'under_review', and approve one
---    by moving it to 'planning' (or reject it).
+--    by moving it to 'planning' (or reject it). They can view all assigned
+--    submitted requests as those requests move through later statuses.
 drop policy if exists "Coordinators can decide their assigned submitted events"
     on public.events;
 drop policy if exists "Coordinators can decide their assigned events under review"
@@ -81,12 +82,12 @@ create policy "Coordinators can decide their assigned events under review"
     using (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status = 'under_review'
+        and status in ('under_review', 'planning', 'change_requested')
     )
     with check (
         public.is_coordinator()
         and coordinator_id = (select auth.uid())
-        and status in ('planning', 'rejected')
+        and status in ('planning', 'rejected', 'awaiting_clarification')
     );
 
 drop policy if exists "Coordinators can view their assigned submitted events"
