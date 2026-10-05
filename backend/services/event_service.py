@@ -51,7 +51,7 @@ def get_event_activity_logs(event_id: str, access_token: str):
     if profile_ids:
         prof_data = (
             client.table("profiles")
-            .select("id, full_name, email")
+            .select("id, full_name")
             .in_("id", list(profile_ids))
             .execute()
             .data
@@ -68,7 +68,7 @@ def get_event_activity_logs(event_id: str, access_token: str):
 
 def reassign_event(event_id: str, new_coordinator_id: str, changed_by_id: str, reason: str, access_token: str):
     """Reassign event coordinator, log activity, send notifications, and set status to under_review."""
-    client = config.get_user_client(access_token)
+    client = config.get_admin_client()
 
     # 1. Fetch event details using existing service method or client query
     event_res = client.table("events").select("*").eq("id", event_id).execute()
