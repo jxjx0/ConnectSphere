@@ -26,6 +26,7 @@ create table public.event_change_requests (
     status text not null default 'pending',
     created_at timestamptz not null default now(),
     reviewed_at timestamptz,
+    rejection_reason text,
 
     constraint event_change_requests_name_not_blank
         check (length(btrim(name)) > 0),
@@ -51,7 +52,12 @@ create table public.event_change_requests (
     constraint event_change_requests_end_after_start
         check (end_time > start_time),
     constraint event_change_requests_status_valid
-        check (status in ('pending', 'approved', 'rejected'))
+        check (status in ('pending', 'approved', 'rejected')),
+    constraint event_change_requests_rejection_reason_not_blank
+        check (
+            rejection_reason is null
+            or length(btrim(rejection_reason)) > 0
+        )
 );
 
 create index event_change_requests_organiser_idx

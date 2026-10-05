@@ -4,6 +4,7 @@ from flask import Blueprint, g, jsonify, request
 from pydantic import ValidationError
 
 from models.event import (
+    EventChangeRequestDecision,
     EventChangeRequestSubmit,
     EventClarificationRequest,
     EventClarificationResponse,
@@ -13,7 +14,7 @@ from models.event import (
 )
 from models.profile import Role
 from routes.auth import require_auth
-from services import auth_service, event_service
+from services import auth_service, event_service, notification_service
 from services.auth_service import AuthError
 
 events_bp = Blueprint("events", __name__, url_prefix="/events")
@@ -132,8 +133,71 @@ def get_assigned_event(event_id):
         {
             "event": event.model_dump(mode="json"),
             "organiser": organiser.model_dump(mode="json") if organiser else None,
+            "change_request": (
+                event.change_request.model_dump(mode="json")
+                if event.change_request else None
+            ),
         }
     ), 200
+
+
+def _review_change_request(event_id, decision):
+    rejection = None
+    if decision == "reject":
+        try:
+            rejection = EventChangeRequestDecision(
+                **(request.get_json(silent=True) or {})
+            )
+        except ValidationError as error:
+            return jsonify({"errors": _validation_messages(error)}), 400
+
+    event, change_request = event_service.review_assigned_change_request(
+        g.access_token,
+        g.user_id,
+        event_id,
+        decision,
+        rejection,
+    )
+    approved = decision == "approve"
+    notification_service.notify(
+        change_request.organiser_id,
+        "event_change_approved" if approved else "event_change_rejected",
+        "Event change request approved" if approved else "Event change request rejected",
+        (
+            f"The proposed changes to '{change_request.name}' have been "
+            "approved and applied."
+            if approved
+            else f"The proposed changes to '{change_request.name}' were rejected. "
+            f"Reason: {change_request.rejection_reason}"
+        ),
+        change_request.event_id,
+    )
+    event = event.model_copy(
+        update={
+            "change_request": change_request,
+            "has_pending_change_request": False,
+        }
+    )
+    return jsonify(
+        {
+            "event": event.model_dump(mode="json"),
+            "change_request": change_request.model_dump(mode="json"),
+        }
+    ), 200
+
+
+@events_bp.post("/review/<event_id>/change-request/approve")
+@require_auth
+def approve_assigned_change_request(event_id):
+    _require_coordinator()
+    return _review_change_request(event_id, "approve")
+
+
+@events_bp.post("/review/<event_id>/change-request/reject")
+@require_auth
+def reject_assigned_change_request(event_id):
+    _require_coordinator()
+    return _review_change_request(event_id, "reject")
 
 
 @events_bp.get("/review/<event_id>/clarifications")

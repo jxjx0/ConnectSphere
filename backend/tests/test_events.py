@@ -319,7 +319,7 @@ class FakeQuery:
         self._calls.append(("in", column, tuple(values)))
         return self
 
-    def order(self, column):
+    def order(self, column, desc=False):
         self._calls.append(("order", column))
         return self
 

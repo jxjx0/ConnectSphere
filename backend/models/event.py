@@ -299,6 +299,47 @@ class EventChangeRequestSubmit(BaseModel):
             raise ValueError("End time must be after the start time")
         return self
 
+
+class EventChangeRequestDecision(BaseModel):
+    """A Coordinator's required reason for rejecting a proposed change."""
+
+    reason: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def strip_reason(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Give a reason for rejecting this change request")
+        return stripped
+
+
+class EventChangeRequest(BaseModel):
+    """A saved proposed event change and its Coordinator review outcome."""
+
+    id: str
+    event_id: str
+    organiser_id: str
+    event_status_before_request: EventStatus
+    name: str
+    description: str
+    reason_for_change: str
+    purpose: str
+    category: EventCategory
+    category_other: str | None = None
+    start_time: datetime
+    end_time: datetime
+    expected_attendance: int
+    location_preference: str | None = None
+    layout_preference: str | None = None
+    accessibility_requirements: str | None = None
+    equipment_requirements: str | None = None
+    status: str
+    created_at: datetime | None = None
+    reviewed_at: datetime | None = None
+    rejection_reason: str | None = None
+
+
 class Event(BaseModel):
     """A row of the `events` table.
 
@@ -331,6 +372,7 @@ class Event(BaseModel):
     updated_at: datetime | None = None
     coordinator_name: str | None = None
     has_pending_change_request: bool = False
+    change_request: EventChangeRequest | None = None
 
 
 class EventReviewSummary(BaseModel):
