@@ -160,6 +160,16 @@ export default function EventReviewDetailPage() {
       }
     } catch (caught) {
       setDecisionError(caught.message)
+      // 409: someone else already decided. Reload so the page shows the
+      // current state instead of buttons that will keep failing.
+      if (caught.status === 409) {
+        try {
+          const data = await getAssignedEventRequest(eventId, token)
+          setEvent(data.event)
+        } catch {
+          // Keep the decision error on screen; the page can be refreshed.
+        }
+      }
     } finally {
       setDeciding(false)
     }
@@ -252,8 +262,9 @@ export default function EventReviewDetailPage() {
           </dl>
         </section>
 
-        {event.status === 'change_requested'
-          && event.change_request?.status === 'pending' && (
+        {/* Shown while the change is pending, including while a clarification
+            is open, so the Coordinator can see what they asked about. */}
+        {event.change_request?.status === 'pending' && (
           <section className="stack stack--tight">
             <h2 className="section-title">Organiser's proposed changes</h2>
             <p><strong>Reason for change:</strong> {event.change_request.reason_for_change}</p>

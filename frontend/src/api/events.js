@@ -15,7 +15,11 @@ async function request(path, { method = 'GET', body, token } = {}) {
 
   if (!response.ok) {
     const message = data.errors ? data.errors.join(' ') : data.error
-    throw new Error(message || 'Something went wrong. Please try again.')
+    const error = new Error(message || 'Something went wrong. Please try again.')
+    // Lets a page react to a specific status, e.g. 409 when someone else
+    // has already changed the record.
+    error.status = response.status
+    throw error
   }
 
   return data
