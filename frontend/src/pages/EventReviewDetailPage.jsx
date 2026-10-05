@@ -88,6 +88,7 @@ export default function EventReviewDetailPage() {
   const [reassignReason, setReassignReason] = useState('')
   const [reassigning, setReassigning] = useState(false)
   const [reassignError, setReassignError] = useState('')
+  const [reassignedTo, setReassignedTo] = useState('')
 
   useEffect(() => {
     let active = true
@@ -212,34 +213,6 @@ export default function EventReviewDetailPage() {
     }
   }
 
-
-  async function requestClarification(eventTarget) {
-    eventTarget.preventDefault()
-    setClarificationError('')
-    setClarifying(true)
-    try {
-      const data = await requestEventClarification(
-        eventId, clarificationNotes, token,
-      )
-      setEvent(data.event)
-      setClarificationNotes('')
-      setShowClarificationForm(false)
-    } catch (caught) {
-      setClarificationError(caught.message)
-    } finally {
-      setClarifying(false)
-    }
-  }
-
-  async function loadAuditLogs() {
-    try {
-      const historyData = await getEventActivityLogs(eventId, token)
-      setActivityLogs(historyData.logs || [])
-    } catch (err) {
-      console.error('Failed to load activity logs:', err)
-    }
-  }
-
   async function handleOpenReassignModal() {
     setShowReassignModal(true)
     setReassignError('')
@@ -265,16 +238,15 @@ export default function EventReviewDetailPage() {
     setReassigning(true)
 
     try {
-      const data = await reassignAssignedEvent(
+      await reassignAssignedEvent(
         eventId,
         { newCoordinatorId: selectedCoordinator, reason: reassignReason },
         token
       )
-      setEvent(data.event)
-      setShowReassignModal(false)
-      setReassignReason('')
-      setSelectedCoordinator('')
-      await loadAuditLogs()
+      // The event now belongs to another Coordinator, so this page's
+      // actions would all fail. Replace the page with a confirmation.
+      const newCoordinator = coordinators.find((c) => c.id === selectedCoordinator)
+      setReassignedTo(newCoordinator?.full_name || 'another coordinator')
     } catch (caught) {
       setReassignError(caught.message)
     } finally {
@@ -296,6 +268,20 @@ export default function EventReviewDetailPage() {
       <AppShell>
         <div className="page-state">
           <p>{error}</p>
+          <Link to="/dashboard">Back to dashboard</Link>
+        </div>
+      </AppShell>
+    )
+  }
+
+  if (reassignedTo) {
+    return (
+      <AppShell>
+        <div className="page-state">
+          <p>
+            "{event.name}" has been reassigned to {reassignedTo}. It is no
+            longer in your queue.
+          </p>
           <Link to="/dashboard">Back to dashboard</Link>
         </div>
       </AppShell>
