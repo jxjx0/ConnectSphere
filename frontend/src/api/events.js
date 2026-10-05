@@ -15,7 +15,11 @@ async function request(path, { method = 'GET', body, token } = {}) {
 
   if (!response.ok) {
     const message = data.errors ? data.errors.join(' ') : data.error
-    throw new Error(message || 'Something went wrong. Please try again.')
+    const error = new Error(message || 'Something went wrong. Please try again.')
+    // Lets a page react to a specific status, e.g. 409 when someone else
+    // has already changed the record.
+    error.status = response.status
+    throw error
   }
 
   return data
@@ -71,6 +75,21 @@ export function approveAssignedEvent(eventId, token) {
 export function rejectAssignedEvent(eventId, token) {
   return request(`/events/review/${eventId}/reject`, {
     method: 'POST',
+    token,
+  })
+}
+
+export function approveAssignedChangeRequest(eventId, token) {
+  return request(`/events/review/${eventId}/change-request/approve`, {
+    method: 'POST',
+    token,
+  })
+}
+
+export function rejectAssignedChangeRequest(eventId, reason, token) {
+  return request(`/events/review/${eventId}/change-request/reject`, {
+    method: 'POST',
+    body: { reason },
     token,
   })
 }

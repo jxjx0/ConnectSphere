@@ -7,6 +7,8 @@ from postgrest import APIError as PostgrestAPIError
 import config
 from models.event import (
     Event,
+    EventChangeRequest,
+    EventChangeRequestDecision,
     EventChangeRequestSubmit,
     EventClarification,
     EventClarificationRequest,
@@ -180,28 +182,36 @@ def get_my_event(access_token: str, organiser_id: str, event_id: str) -> Event:
     if not result.data:
         raise AuthError("Event request was not found.", status_code=404)
     event = _with_coordinator_names(client, [Event(**result.data[0])])[0]
-    return _with_pending_change_requests(client, [event])[0]
+    return _with_change_request(client, [event])[0]
 
 
-def _with_pending_change_requests(client, events: list[Event]) -> list[Event]:
-    """Add whether an event is waiting for a change request review."""
+def _with_change_request(client, events: list[Event]) -> list[Event]:
+    """Attach each event's latest proposal and its review outcome."""
     if not events:
         return events
     try:
         result = (
             client.table("event_change_requests")
-            .select("event_id")
+            .select("*")
             .in_("event_id", [event.id for event in events])
-            .eq("status", "pending")
+            .order("created_at", desc=True)
             .execute()
         )
     except PostgrestAPIError as error:
-        raise _database_error(error) from error
+        raise _review_read_error(error, "event change requests") from error
 
-    pending_ids = {row["event_id"] for row in result.data}
+    latest_by_event = {}
+    for row in result.data:
+        latest_by_event.setdefault(row["event_id"], EventChangeRequest(**row))
     return [
         event.model_copy(
-            update={"has_pending_change_request": event.id in pending_ids}
+            update={
+                "change_request": latest_by_event.get(event.id),
+                "has_pending_change_request": (
+                    latest_by_event.get(event.id) is not None
+                    and latest_by_event[event.id].status == "pending"
+                ),
+            }
         )
         for event in events
     ]
@@ -447,7 +457,63 @@ def get_assigned_event(
 
     if not result.data:
         raise AuthError("Event request was not found.", status_code=404)
-    return Event(**result.data[0])
+    event = Event(**result.data[0])
+    return _with_change_request(client, [event])[0]
+
+
+def review_assigned_change_request(
+    access_token: str,
+    coordinator_id: str,
+    event_id: str,
+    decision: str,
+    rejection: EventChangeRequestDecision | None = None,
+) -> tuple[Event, EventChangeRequest]:
+    """Approve or reject the pending proposal through an atomic database RPC."""
+    if decision not in {"approve", "reject"}:
+        raise AuthError("Invalid change request decision.", status_code=400)
+    if decision == "reject" and rejection is None:
+        raise AuthError("A rejection reason is required.", status_code=400)
+
+    client = config.get_user_client(access_token)
+    function_name = (
+        "approve_event_change_request"
+        if decision == "approve"
+        else "reject_event_change_request"
+    )
+    params = {"p_event_id": event_id}
+    if rejection is not None:
+        params["p_rejection_reason"] = rejection.reason
+
+    try:
+        result = client.rpc(function_name, params).execute()
+    except PostgrestAPIError as error:
+        message = str(error).lower()
+        if error.code in {"42501", "PGRST301"}:
+            raise _review_read_error(error, "the event change request") from error
+        if "not assigned" in message or "not found" in message:
+            raise AuthError(
+                "Change request was not found for an event assigned to you.",
+                status_code=404,
+            ) from error
+        if (
+            "no longer pending" in message
+            or "not awaiting" in message
+        ):
+            raise AuthError(
+                "This change request has already been reviewed.",
+                status_code=409,
+            ) from error
+        raise _database_error(error) from error
+
+    if not result.data:
+        raise AuthError(
+            "The change request was reviewed but its details could not be loaded.",
+            status_code=502,
+        )
+    return (
+        Event(**result.data["event"]),
+        EventChangeRequest(**result.data["change_request"]),
+    )
 
 
 def list_event_clarifications(
