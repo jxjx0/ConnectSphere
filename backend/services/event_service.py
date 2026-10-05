@@ -87,7 +87,6 @@ def reassign_event(event_id: str, new_coordinator_id: str, changed_by_id: str, r
         client.table("events")
         .update({
             "coordinator_id": new_coordinator_id,
-            "status": "under_review"
         })
         .eq("id", event_id)
         .execute()
