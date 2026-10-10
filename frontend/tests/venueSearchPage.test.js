@@ -19,7 +19,7 @@ const { code } = await transformWithEsbuild(source, 'VenueSearchPage.jsx', {
 function pageHarness(result, form = searchHelpers.EMPTY_VENUE_FILTERS, search = async () => ({ venues: [], warnings: [] }), options = {}) {
   let stateIndex = 0
   const eventId = options.eventId ?? null
-  const states = [form, result, { loading: false, error: '', options: ['Banquet', 'Theatre'], accessibilityOptions: ['Wheelchair access'] },
+  const states = [form, result, { loading: false, error: '', options: ['Banquet', 'Theatre'], accessibilityOptions: ['Wheelchair access'], facilityOptions: ['Wi-Fi'] },
     options.context || { eventId, phase: eventId === null ? 'standalone' : 'loading', event: null, error: '' }]
   const effects = []
   const generation = { current: 0 }
@@ -76,7 +76,7 @@ const empty = { phase: 'success', error: '', venues: [], warnings: [] }
 
 test('search page has optional period filters and a catalogue layout dropdown', () => {
   const html = renderPage({ ...empty, phase: 'idle' })
-  for (const id of ['searchDate', 'searchEndDate', 'searchStart', 'searchEnd', 'searchAttendance', 'searchLayout']) {
+  for (const id of ['searchDate', 'searchEndDate', 'searchStart', 'searchEnd', 'searchAttendance', 'searchLayout', 'searchFacility']) {
     assert.ok(html.includes(`id="${id}"`))
   }
   assert.match(html, /<select id="searchLayout"/)
@@ -126,7 +126,7 @@ test('loading disables search inputs and shows progress', () => {
   const html = renderPage({ ...empty, phase: 'loading' })
   assert.match(html, /Searching venues/)
   assert.match(html, /aria-busy="true"/)
-  assert.equal((html.match(/disabled=""/g) || []).length, 9)
+  assert.equal((html.match(/disabled=""/g) || []).length, 10)
 })
 
 const assignedEvent = Object.freeze({
@@ -327,6 +327,34 @@ test('accessibility selection updates the search payload and Clear Filters reset
   assert.equal(payload.required_accessibility, 'Wheelchair access')
   findElement(harness.tree(), (node) => node.type === 'button' && node.props.type === 'button').props.onClick()
   assert.equal(harness.states[0].required_accessibility, '')
+})
+
+test('facility single-select submits the selection and Clear Filters restores Any facility', async () => {
+  let payload
+  const harness = pageHarness(searchHelpers.INITIAL_VENUE_SEARCH, undefined, async (data) => { payload = data; return { venues: [], warnings: [] } })
+  const select = findElement(harness.tree(), (node) => node.props.id === 'searchFacility')
+  assert.equal(select.props.multiple, undefined)
+  assert.equal(select.props.value, '')
+  await findElement(harness.tree(), (node) => node.type === 'form').props.onSubmit({ preventDefault() {} })
+  assert.ok(!('required_facility' in payload))
+  select.props.onChange({ target: { value: 'Wi-Fi' } })
+  await findElement(harness.tree(), (node) => node.type === 'form').props.onSubmit({ preventDefault() {} })
+  assert.equal(payload.required_facility, 'Wi-Fi')
+  findElement(harness.tree(), (node) => node.type === 'button' && node.props.type === 'button').props.onClick()
+  assert.equal(harness.states[0].required_facility, '')
+  assert.match(harness.html(), /<option value="" selected="">Any facility/)
+})
+
+test('facility catalogue aliases render one option and empty catalogue keeps the default', async () => {
+  for (const venues of [[{ facilities: ['Wi-Fi', ' wifi ', 'WI-FI'] }], []]) {
+    const harness = pageHarness(searchHelpers.INITIAL_VENUE_SEARCH, undefined, undefined, {
+      getVenues: async () => ({ venues }),
+    })
+    await harness.load()
+    const html = harness.html()
+    assert.equal((html.match(/Any facility/g) || []).length, 1)
+    assert.equal((html.match(/<option value="Wi-Fi">/g) || []).length, venues.length ? 1 : 0)
+  }
 })
 
 test('catalogue accessibility aliases render one single-select option and one default', async () => {

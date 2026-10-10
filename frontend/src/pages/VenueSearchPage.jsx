@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   EMPTY_VENUE_FILTERS, INITIAL_VENUE_SEARCH, runVenueSearch,
   validateVenueSearch, venueAvailabilityLabel, venueLayoutOptions, eventVenueFilters,
-  venueAccessibilityOptions, venueAvailabilitySummary,
+  venueAccessibilityOptions, venueAvailabilitySummary, venueFacilityOptions,
 } from '../venueSearch.js'
 
 function formatPeriod(start, end) {
@@ -30,7 +30,7 @@ export default function VenueSearchPage() {
   const eventId = searchParams.get('eventId')
   const [form, setForm] = useState(EMPTY_VENUE_FILTERS)
   const [result, setResult] = useState(INITIAL_VENUE_SEARCH)
-  const [layouts, setLayouts] = useState({ options: [], accessibilityOptions: [], loading: true, error: '' })
+  const [layouts, setLayouts] = useState({ options: [], accessibilityOptions: [], facilityOptions: [], loading: true, error: '' })
   const [context, setContext] = useState({ eventId, phase: eventId === null ? 'standalone' : 'loading', event: null, error: '' })
   const searchGeneration = useRef(0)
   const contextBlocked = eventId !== null && (context.eventId !== eventId || context.phase !== 'success')
@@ -46,11 +46,11 @@ export default function VenueSearchPage() {
     searchGeneration.current += 1
     setForm({ ...EMPTY_VENUE_FILTERS })
     setResult(INITIAL_VENUE_SEARCH)
-    setLayouts({ options: [], accessibilityOptions: [], loading: true, error: '' })
+    setLayouts({ options: [], accessibilityOptions: [], facilityOptions: [], loading: true, error: '' })
     setContext({ eventId, phase: eventId === null ? 'standalone' : 'loading', event: null, error: '' })
     const catalogue = getVenues(token)
-      .then((data) => ({ options: venueLayoutOptions(data.venues), accessibilityOptions: venueAccessibilityOptions(data.venues), loading: false, error: '' }))
-      .catch(() => ({ options: [], accessibilityOptions: [], loading: false, error: 'Catalogue filter options could not be loaded. You can still search using the other filters.' }))
+      .then((data) => ({ options: venueLayoutOptions(data.venues), accessibilityOptions: venueAccessibilityOptions(data.venues), facilityOptions: venueFacilityOptions(data.venues), loading: false, error: '' }))
+      .catch(() => ({ options: [], accessibilityOptions: [], facilityOptions: [], loading: false, error: 'Catalogue filter options could not be loaded. You can still search using the other filters.' }))
     catalogue.then((data) => { if (active) setLayouts(data) })
     if (eventId !== null) {
       const assignedEvent = eventId.trim()
@@ -148,11 +148,19 @@ export default function VenueSearchPage() {
               <input id="searchEnd" type="time" disabled={disabled} value={form.end_time}
                 aria-describedby="searchTimeHint" onChange={(event) => updateField('end_time', event.target.value)} />
             </div>
-            <div className="field venue-search__wide">
+            <div className="field">
               <label htmlFor="searchEndDate">End date (optional)</label>
               <input id="searchEndDate" type="date" disabled={disabled} value={form.end_date}
                 aria-describedby="searchTimeHint" onChange={(event) => updateField('end_date', event.target.value)} />
               <p className="field__hint">Leave blank for the same day as the start date.</p>
+            </div>
+            <div className="field">
+              <label htmlFor="searchFacility">Required Facility</label>
+              <select id="searchFacility" disabled={disabled || layouts.loading || Boolean(layouts.error)} value={form.required_facility}
+                onChange={(event) => updateField('required_facility', event.target.value)}>
+                <option value="">Any facility</option>
+                {(layouts.facilityOptions || []).map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
             </div>
             <div className="field">
               <label htmlFor="searchLayout">Required layout</label>

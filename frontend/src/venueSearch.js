@@ -2,7 +2,7 @@
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/
 
 export const EMPTY_VENUE_FILTERS = {
-  date: '', end_date: '', start_time: '', end_time: '', expected_attendance: '', required_layout: '', required_accessibility: '',
+  date: '', end_date: '', start_time: '', end_time: '', expected_attendance: '', required_layout: '', required_accessibility: '', required_facility: '',
 }
 export const INITIAL_VENUE_SEARCH = { phase: 'idle', error: '', venues: [], warnings: [] }
 
@@ -48,6 +48,7 @@ export function venueSearchPayload(form) {
   if (String(form.expected_attendance ?? '').trim()) payload.expected_attendance = Number(form.expected_attendance)
   if (form.required_layout?.trim()) payload.required_layout = form.required_layout.trim()
   if (form.required_accessibility?.trim()) payload.required_accessibility = normalizeAccessibility(form.required_accessibility)
+  if (form.required_facility?.trim()) payload.required_facility = normalizeFacility(form.required_facility)
   return payload
 }
 
@@ -107,6 +108,32 @@ export function normalizeAccessibility(value) {
   // Only merge explicit equivalents; retain distinctions such as ramps and lifts.
   return ['wheelchair access', 'wheelchair accessible'].includes(name.toLowerCase())
     ? 'Wheelchair access' : name
+}
+
+export function normalizeFacility(value) {
+  const name = value.trim().replace(/\s+/g, ' ')
+  return ['wi-fi', 'wifi', 'wi fi'].includes(name.toLowerCase()) ? 'Wi-Fi' : name
+}
+
+export function venueFacilityOptions(venues) {
+  const names = new Map()
+  for (const venue of venues) {
+    const value = venue.facilities
+    let features = []
+    if (Array.isArray(value)) features = value.filter((name) => typeof name === 'string')
+    else if (typeof value === 'string') features = [value]
+    else if (value && typeof value === 'object') {
+      // Match backend handling of legacy availability flags/positive quantities.
+      features = Object.entries(value)
+        .filter(([, available]) => available === true || (typeof available === 'number' && available > 0))
+        .map(([name]) => name)
+    }
+    for (const feature of features) {
+      const name = normalizeFacility(feature)
+      if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), name)
+    }
+  }
+  return [...names.values()].sort((a, b) => a.localeCompare(b))
 }
 
 export function venueAccessibilityOptions(venues) {

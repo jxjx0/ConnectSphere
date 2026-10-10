@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process'
 
 import {
   EMPTY_VENUE_FILTERS, runVenueSearch, validateVenueSearch, venueSearchPayload,
-  venueAvailabilityLabel, venueLayoutOptions, eventVenueFilters, venueAccessibilityOptions, venueAvailabilitySummary,
+  venueAvailabilityLabel, venueLayoutOptions, eventVenueFilters, venueAccessibilityOptions, venueAvailabilitySummary, venueFacilityOptions,
 } from '../src/venueSearch.js'
 
 const form = {
@@ -53,6 +53,29 @@ for (const filters of [
 
 test('empty search sends an empty object, not zero attendance or invalid timestamps', () => {
   assert.deepEqual(venueSearchPayload(EMPTY_VENUE_FILTERS), {})
+})
+
+test('facility options normalize safe aliases and support existing catalogue formats without mutation', () => {
+  const venues = [
+    { facilities: [' Wi-Fi ', 'wifi', 'WI   FI', ' Projector ', 'PROJECTOR', 'Wi-Fi hotspot', '', null] },
+    { facilities: 'wifi' }, { facilities: { parking: true, projectors: 2, wifi: false, pool: 0, gym: -1, unknown: 'maybe' } },
+    { facilities: null }, {}, { facilities: [] }, { facilities: 5 },
+  ]
+  const before = JSON.stringify(venues)
+  assert.deepEqual(venueFacilityOptions(venues), ['parking', 'Projector', 'projectors', 'Wi-Fi', 'Wi-Fi hotspot'])
+  assert.equal(JSON.stringify(venues), before)
+  assert.deepEqual(venueFacilityOptions([]), [])
+})
+
+test('facility is optional and combines with existing filter payloads', () => {
+  assert.deepEqual(venueSearchPayload({ ...EMPTY_VENUE_FILTERS, required_facility: ' ' }), {})
+  const payload = venueSearchPayload({ ...form, required_accessibility: 'Wheelchair access', required_facility: ' WIFI ' })
+  assert.equal(payload.required_facility, 'Wi-Fi')
+  assert.equal(payload.required_accessibility, 'Wheelchair access')
+  assert.equal(payload.required_layout, 'Theatre')
+  assert.equal(payload.expected_attendance, 100)
+  assert.equal(payload.date, form.date)
+  assert.equal(eventVenueFilters({ start_time: '2026-11-07T10:00Z', end_time: '2026-11-07T12:00Z', equipment_requirements: 'Wi-Fi' }, []).required_facility, '')
 })
 
 test('layout options come from catalogue data, with case-insensitive deduplication', () => {
