@@ -37,6 +37,10 @@ export function getVenues(token) {
   return request('/venues', { token })
 }
 
+export function searchVenues(criteria, token) {
+  return request('/venues/search', { method: 'POST', body: criteria, token })
+}
+
 export function createVenueBlock(venueId, block, token) {
   return request(`/venues/${venueId}/blocks`, {
     method: 'POST',

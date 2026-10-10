@@ -67,6 +67,9 @@ export default function DashboardPage() {
           {!assignedLoading && !assignedError && (
             <AssignedRequestTabs events={assignedEvents} />
           )}
+          <p className="note">
+            <Link to="/venues/search" className="backlink">Browse Venues</Link>
+          </p>
         </section>
       )}
 
