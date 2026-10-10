@@ -6,11 +6,26 @@ from pydantic import ValidationError
 from models.profile import Role
 from models.venue import VenueCreateRequest, VenueUpdateRequest
 from models.venue_block import VenueBlockCreateRequest
+from models.venue_search import VenueSearchRequest
 from routes.auth import require_auth
 from services import auth_service, venue_service, venue_block_service
 from services.auth_service import AuthError
+from services import venue_search_service
 
 venues_bp = Blueprint("venues", __name__, url_prefix="/venues")
+
+
+@venues_bp.post("/search")
+@require_auth
+def search_venues():
+    profile = auth_service.get_profile(g.access_token, g.user_id)
+    if profile.role != Role.COORDINATOR:
+        raise AuthError("Only Event Coordinators can search venues.", status_code=403)
+    try:
+        search_request = VenueSearchRequest.model_validate(request.get_json(silent=True))
+    except ValidationError as error:
+        return jsonify({"errors": _validation_messages(error)}), 400
+    return jsonify(venue_search_service.search_venues(g.access_token, search_request)), 200
 
 
 def _validation_messages(error: ValidationError) -> list[str]:
