@@ -2,7 +2,7 @@
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/
 
 export const EMPTY_VENUE_FILTERS = {
-  date: '', end_date: '', start_time: '', end_time: '', expected_attendance: '', required_layout: '',
+  date: '', end_date: '', start_time: '', end_time: '', expected_attendance: '', required_layout: '', required_accessibility: '',
 }
 export const INITIAL_VENUE_SEARCH = { phase: 'idle', error: '', venues: [], warnings: [] }
 
@@ -47,6 +47,7 @@ export function venueSearchPayload(form) {
   }
   if (String(form.expected_attendance ?? '').trim()) payload.expected_attendance = Number(form.expected_attendance)
   if (form.required_layout?.trim()) payload.required_layout = form.required_layout.trim()
+  if (form.required_accessibility?.trim()) payload.required_accessibility = normalizeAccessibility(form.required_accessibility)
   return payload
 }
 
@@ -74,7 +75,12 @@ export async function runVenueSearch(form, token, search) {
   if (error) return { phase: 'error', error, venues: [], warnings: [] }
   try {
     const data = await search(venueSearchPayload(form), token)
-    return { phase: 'success', error: '', venues: data.venues, warnings: data.warnings || [] }
+    return {
+      phase: 'success', error: '', venues: data.venues, warnings: data.warnings || [],
+      requested_period: form.date ? {
+        start: `${form.date}T${form.start_time}`, end: `${form.end_date || form.date}T${form.end_time}`,
+      } : null,
+    }
   } catch (error) {
     return { phase: 'error', error: error.message, venues: [], warnings: [] }
   }
@@ -84,7 +90,34 @@ export function venueAvailabilityLabel(venue) {
   if (venue.availability_status === 'not_checked') return 'Availability not checked'
   return venue.availability_status === 'available'
     ? 'Available for the requested period'
-    : 'Availability not verified — no conflict found in the periods checked'
+    : 'Partially verified'
+}
+
+export function venueAvailabilitySummary(result) {
+  const timed = result.requested_period || result.venues.some((venue) => venue.requested_start)
+  if (!timed || (!result.warnings.length && !result.venues.some((venue) => venue.availability_status === 'unverified'))) return ''
+  // TODO: Revisit this temporary summary when real booking/hold occupancy,
+  // hold expiry and persisted venue buffers are integrated. Fully verified
+  // responses already omit it; keep partial responses honest during integration.
+  return 'Availability is partially verified. Operational venue blocks have been checked, but confirmed bookings, tentative holds and setup/turnaround buffers have not all been verified.'
+}
+
+export function normalizeAccessibility(value) {
+  const name = value.trim().replace(/\s+/g, ' ')
+  // Only merge explicit equivalents; retain distinctions such as ramps and lifts.
+  return ['wheelchair access', 'wheelchair accessible'].includes(name.toLowerCase())
+    ? 'Wheelchair access' : name
+}
+
+export function venueAccessibilityOptions(venues) {
+  const names = new Map()
+  for (const venue of venues) {
+    for (const feature of venue.accessibility || []) {
+      const name = normalizeAccessibility(feature)
+      if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), name)
+    }
+  }
+  return [...names.values()].sort((a, b) => a.localeCompare(b))
 }
 
 export function venueLayoutOptions(venues) {

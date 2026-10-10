@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   EMPTY_VENUE_FILTERS, INITIAL_VENUE_SEARCH, runVenueSearch,
   validateVenueSearch, venueAvailabilityLabel, venueLayoutOptions, eventVenueFilters,
+  venueAccessibilityOptions, venueAvailabilitySummary,
 } from '../venueSearch.js'
 
 function formatPeriod(start, end) {
@@ -29,23 +30,27 @@ export default function VenueSearchPage() {
   const eventId = searchParams.get('eventId')
   const [form, setForm] = useState(EMPTY_VENUE_FILTERS)
   const [result, setResult] = useState(INITIAL_VENUE_SEARCH)
-  const [layouts, setLayouts] = useState({ options: [], loading: true, error: '' })
+  const [layouts, setLayouts] = useState({ options: [], accessibilityOptions: [], loading: true, error: '' })
   const [context, setContext] = useState({ eventId, phase: eventId === null ? 'standalone' : 'loading', event: null, error: '' })
   const searchGeneration = useRef(0)
   const contextBlocked = eventId !== null && (context.eventId !== eventId || context.phase !== 'success')
   const loading = result.phase === 'loading'
   const disabled = loading || contextBlocked
+  const availabilitySummary = venueAvailabilitySummary(result)
+  const requestedPeriod = result.requested_period || (result.venues[0]?.requested_start ? {
+    start: result.venues[0].requested_start, end: result.venues[0].requested_end,
+  } : null)
 
   useEffect(() => {
     let active = true
     searchGeneration.current += 1
     setForm({ ...EMPTY_VENUE_FILTERS })
     setResult(INITIAL_VENUE_SEARCH)
-    setLayouts({ options: [], loading: true, error: '' })
+    setLayouts({ options: [], accessibilityOptions: [], loading: true, error: '' })
     setContext({ eventId, phase: eventId === null ? 'standalone' : 'loading', event: null, error: '' })
     const catalogue = getVenues(token)
-      .then((data) => ({ options: venueLayoutOptions(data.venues), loading: false, error: '' }))
-      .catch(() => ({ options: [], loading: false, error: 'Layout options could not be loaded. You can still search using the other filters.' }))
+      .then((data) => ({ options: venueLayoutOptions(data.venues), accessibilityOptions: venueAccessibilityOptions(data.venues), loading: false, error: '' }))
+      .catch(() => ({ options: [], accessibilityOptions: [], loading: false, error: 'Catalogue filter options could not be loaded. You can still search using the other filters.' }))
     catalogue.then((data) => { if (active) setLayouts(data) })
     if (eventId !== null) {
       const assignedEvent = eventId.trim()
@@ -149,7 +154,7 @@ export default function VenueSearchPage() {
                 aria-describedby="searchTimeHint" onChange={(event) => updateField('end_date', event.target.value)} />
               <p className="field__hint">Leave blank for the same day as the start date.</p>
             </div>
-            <div className="field venue-search__wide">
+            <div className="field">
               <label htmlFor="searchLayout">Required layout</label>
               <select id="searchLayout" disabled={disabled || layouts.loading || Boolean(layouts.error)} value={form.required_layout}
                 onChange={(event) => updateField('required_layout', event.target.value)}>
@@ -158,6 +163,14 @@ export default function VenueSearchPage() {
               </select>
               {layouts.loading && <p className="field__hint">Loading layout options…</p>}
               {layouts.error && <p className="field__error" role="alert">{layouts.error}</p>}
+            </div>
+            <div className="field">
+              <label htmlFor="searchAccessibility">Accessibility</label>
+              <select id="searchAccessibility" disabled={disabled || layouts.loading || Boolean(layouts.error)} value={form.required_accessibility}
+                onChange={(event) => updateField('required_accessibility', event.target.value)}>
+                <option value="">Any accessibility</option>
+                {(layouts.accessibilityOptions || []).map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
             </div>
           </div>
           <p className="field__hint" id="searchTimeHint">To check availability, enter date, start and end time together. Times use your local timezone.</p>
@@ -176,7 +189,8 @@ export default function VenueSearchPage() {
               <h2 className="section-title">Search results</h2>
               <p className="note">{result.venues.length} {result.venues.length === 1 ? 'venue' : 'venues'}</p>
             </div>
-            {result.warnings.map((warning) => <p className="note" key={warning}>{warning}</p>)}
+            {requestedPeriod && <p className="note">Requested period: {formatPeriod(requestedPeriod.start, requestedPeriod.end)}</p>}
+            {availabilitySummary && <p className="note" role="status">{availabilitySummary}</p>}
             {result.venues.length === 0 && <p className="note">No venues match the selected filters.</p>}
             {result.venues.length > 0 && (
               <div className="table-wrapper" tabIndex={0} role="region" aria-label="Venue search results">
@@ -199,7 +213,7 @@ export default function VenueSearchPage() {
                         <span className="venue-search__detail">Accessibility: {formatFeatures(venue.accessibility)}</span></td>
                       {venue.requested_start && <td>
                         <span className="venue-search__availability">{venueAvailabilityLabel(venue)}</span>
-                        <span className="venue-search__detail">Requested: {formatPeriod(venue.requested_start, venue.requested_end)}</span>
+                        {venue.availability_status === 'unverified' && <span className="venue-search__detail">No operational block conflict</span>}
                         {venue.effective_start && venue.effective_end && <span className="venue-search__detail">Including setup and turnaround: {formatPeriod(venue.effective_start, venue.effective_end)}</span>}
                       </td>}
                     </tr>
