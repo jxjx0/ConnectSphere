@@ -219,11 +219,14 @@ export default function VenuePage({ createMode = false }) {
 
   return (
     <AppShell>
-      <Link to="/dashboard" className="button button--secondary button--small">
+      {editMode && <Link to="/dashboard" className="button button--secondary button--small">
         ← Back to Dashboard
-      </Link>
+      </Link>}
 
-      <div className="content__header">
+      <div className={`content__header${!editMode ? ' venue-search__header' : ''}`}>
+        {!editMode && <Link to="/dashboard" className="venue-search__back">
+          ← Back to Dashboard
+        </Link>}
         <h1>{createMode ? 'Create Venue Profile' : editMode ? 'Edit Venue Profile' : 'Venue Catalogue'}</h1>
         <p className="lead">{createMode
           ? 'Add a venue so organisers can include it in event planning.'
