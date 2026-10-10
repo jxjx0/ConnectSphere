@@ -17,6 +17,24 @@ def _normalize_accessibility(value: str) -> str:
     return "wheelchair access" if name in {"wheelchair access", "wheelchair accessible"} else name
 
 
+def _facility_names(value) -> list[str]:
+    if isinstance(value, list):
+        return [name for name in value if isinstance(name, str) and name.strip()]
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, dict):
+        # Legacy catalogue objects represent availability flags or quantities.
+        return [name for name, available in value.items() if name.strip() and (
+            available is True or (type(available) in {int, float} and available > 0)
+        )]
+    return []
+
+
+def _normalize_facility(value: str) -> str:
+    name = " ".join(value.split()).casefold()
+    return "wi-fi" if name in {"wi-fi", "wifi", "wi fi"} else name
+
+
 def search_venues(access_token: str, request: VenueSearchRequest) -> dict:
     client = config.get_user_client(access_token)
     try:
@@ -34,6 +52,11 @@ def _search(client, records, request):
     candidates = []
     for record in records:
         venue = Venue(**record)
+        if request.required_facility is not None and not any(
+            _normalize_facility(name) == _normalize_facility(request.required_facility)
+            for name in _facility_names(venue.facilities)
+        ):
+            continue
         if request.required_accessibility is not None and not any(
             _normalize_accessibility(feature) == _normalize_accessibility(request.required_accessibility)
             for feature in (venue.accessibility or [])
