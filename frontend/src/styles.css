@@ -383,6 +383,55 @@ a:hover {
 
 /* --- Forms ----------------------------------------------------------- */
 
+.venue-block-dialog {
+  width: min(32rem, calc(100% - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  padding: var(--space-5);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.venue-block-dialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+
+.venue-block-dialog__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.venue-block-dialog__title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.venue-block-dialog__venue {
+  font-size: 1.125rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.venue-block-dialog__period-line {
+  display: block;
+}
+
+.venue-block-dialog__reason {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.venue-block-dialog .venue-block-dialog__impact {
+  padding: var(--space-3);
+  gap: var(--space-2);
+  background: var(--sunken);
+}
+
 .form {
   display: flex;
   flex-direction: column;
@@ -770,6 +819,41 @@ a:hover {
 
 .venue-table tbody td {
   color: var(--ink-muted);
+}
+
+.venue-table__actions {
+  width: 1%;
+}
+
+.venue-table__action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  width: 8rem;
+  max-width: 100%;
+}
+
+/* Catalogue content wraps within the page; other venue tables keep their layout. */
+.venue-catalogue-table {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.venue-catalogue-table th,
+.venue-catalogue-table td,
+.venue-catalogue-table .table-values li {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.venue-catalogue-table__hours { width: 7rem; }
+.venue-catalogue-table__capacity { width: 6.5rem; }
+.venue-catalogue-table .venue-table__actions { width: 9rem; }
+.venue-catalogue-table .venue-table__action-buttons { width: auto; }
+
+@media (max-width: 36rem) {
+  .venue-catalogue-table { min-width: 34rem; }
 }
 
 .table-values {

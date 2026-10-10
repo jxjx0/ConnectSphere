@@ -506,41 +506,24 @@ export default function VenuePage({ createMode = false }) {
           {!loading && venues.length === 0 && <p className="note">No venues have been added yet.</p>}
           {!loading && venues.length > 0 && (
             <div className="table-wrapper">
-              <table className="venue-table">
+              <table className="venue-table venue-catalogue-table">
                 <caption className="visually-hidden">Venue catalogue</caption>
                 <thead>
                   <tr>
                     <th scope="col">Venue</th>
                     <th scope="col">Location</th>
-                    <th scope="col">Operating hours</th>
-                    <th scope="col">Overall capacity</th>
+                    <th scope="col" className="venue-catalogue-table__hours">Operating hours</th>
+                    <th scope="col" className="venue-catalogue-table__capacity">Overall capacity</th>
                     <th scope="col">Supported layouts</th>
                     <th scope="col">Accessibility</th>
                     <th scope="col">Facilities</th>
+                    <th scope="col" className="venue-table__actions">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {venues.map((venue) => (
                     <tr key={venue.id}>
-                      <th scope="row">{venue.name}
-                        {/* Button to initiate Blocking of venue */}
-                        <br />
-                        <Link
-                          to={`/venues/${venue.id}/edit`}
-                          className="button button--secondary button--small"
-                        >
-                          Edit
-                        </Link>
-                        {' '}
-                        <button
-                          type="button"
-                          className="button button--secondary button--small"
-                          disabled={blockingVenue !== null}
-                          onClick={() => setBlockingVenue(venue)}
-                        >
-                          Block
-                        </button>
-                      </th>
+                      <th scope="row">{venue.name}</th>
                       <td>{venue.location || 'Not provided'}</td>
                       <td>
                         {venue.operating_hours.open}–{venue.operating_hours.close}
@@ -567,6 +550,24 @@ export default function VenuePage({ createMode = false }) {
                         </ul>
                       </td>
                       <td>{formatFacilities(venue.facilities)}</td>
+                      <td className="venue-table__actions">
+                        <div className="venue-table__action-buttons">
+                          <Link
+                            to={`/venues/${venue.id}/edit`}
+                            className="button button--secondary button--small"
+                          >
+                            Edit
+                          </Link>
+                          <button
+                            type="button"
+                            className="button button--secondary button--small"
+                            disabled={blockingVenue !== null}
+                            onClick={() => setBlockingVenue(venue)}
+                          >
+                            Block
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
