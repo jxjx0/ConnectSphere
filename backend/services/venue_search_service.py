@@ -11,6 +11,12 @@ from services.auth_service import AuthError
 from services.venue_service import _database_error
 
 
+def _normalize_accessibility(value: str) -> str:
+    name = " ".join(value.split()).casefold()
+    # Keep this narrow alias rule aligned with the search dropdown, not venue CRUD.
+    return "wheelchair access" if name in {"wheelchair access", "wheelchair accessible"} else name
+
+
 def search_venues(access_token: str, request: VenueSearchRequest) -> dict:
     client = config.get_user_client(access_token)
     try:
@@ -28,6 +34,11 @@ def _search(client, records, request):
     candidates = []
     for record in records:
         venue = Venue(**record)
+        if request.required_accessibility is not None and not any(
+            _normalize_accessibility(feature) == _normalize_accessibility(request.required_accessibility)
+            for feature in (venue.accessibility or [])
+        ):
+            continue
         layout = next((layout for layout in venue.layouts
                        if request.required_layout is not None
                        and layout.name.casefold() == request.required_layout.casefold()), None)
