@@ -12,6 +12,7 @@ import EventChangeRequestPage from './pages/EventChangeRequestPage'
 import MyEventDetailPage from './pages/MyEventDetailPage'
 import MyEventsPage from './pages/MyEventsPage'
 import VenuePage from './pages/VenuePage'
+import VenueSearchPage from './pages/VenueSearchPage'
 import EquipmentPage from './pages/EquipmentPage'
 import EventReviewDetailPage from './pages/EventReviewDetailPage'
 
@@ -109,6 +110,15 @@ export default function App() {
         element={
           <AuthGuard allowedRoles={['venue_staff']}>
             <VenuePage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/venues/search"
+        element={
+          <AuthGuard allowedRoles={['coordinator']}>
+            <VenueSearchPage />
           </AuthGuard>
         }
       />

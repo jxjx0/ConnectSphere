@@ -308,6 +308,13 @@ export default function EventReviewDetailPage() {
           </p>
 
           {/* --- ADD THIS BUTTON & MODAL RIGHT HERE --- */}
+          {event.status === 'planning' && (
+            <div className="form-actions">
+              <Link to={`/venues/search?eventId=${encodeURIComponent(eventId)}`} className="button">
+                Find Venue
+              </Link>
+            </div>
+          )}
           {!['completed', 'rejected'].includes(event.status) && (
             <div className="form-actions" style={{ marginTop: '1rem' }}>
               <button

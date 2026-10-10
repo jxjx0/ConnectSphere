@@ -390,6 +390,31 @@ a:hover {
   max-width: var(--measure);
 }
 
+/* Venue search keeps filters and catalogue results in one full-width panel. */
+.venue-search {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.venue-search__header { display: flex; flex-direction: column; gap: var(--space-2); }
+.venue-search__back { align-self: flex-start; color: var(--ink-muted); font-size: 0.8125rem; margin-bottom: var(--space-2); }
+.venue-search__form { max-width: none; padding: var(--space-5); background: var(--sunken); }
+.venue-search__filter-heading { display: flex; flex-direction: column; gap: var(--space-2); }
+.venue-search__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
+.venue-search__results { padding: var(--space-5); border-top: 1px solid var(--rule); }
+.venue-search__results-heading { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.venue-search__detail { display: block; margin-top: var(--space-2); font-size: 0.75rem; font-weight: 400; color: var(--ink-muted); }
+.venue-search__availability { color: var(--ink); }
+.venue-search__table { min-width: 44rem; }
+.venue-search__table .table-values li { white-space: normal; }
+
+@media (min-width: 40rem) {
+  .venue-search__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .venue-search__wide { grid-column: 1 / -1; }
+}
+
 .field {
   display: flex;
   flex-direction: column;
