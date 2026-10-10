@@ -33,12 +33,12 @@ def _validation_messages(error: ValidationError) -> list[str]:
     return [item["msg"].removeprefix("Value error, ") for item in error.errors()]
 
 
-def _require_venue_staff() -> None:
+def _require_venue_staff(message: str = "Only Venue Staff can create venues.") -> None:
     """Require the authenticated profile to have the venue_staff role."""
     profile = auth_service.get_profile(g.access_token, g.user_id)
     if profile.role != Role.VENUE_STAFF:
         raise AuthError(
-            "Only Venue Staff can create venues.",
+            message,
             status_code=403,
         )
 
@@ -90,23 +90,25 @@ def get_venue_history(venue_id):
 @venues_bp.post("/<venue_id>/blocks")
 @require_auth
 def create_venue_block(venue_id):
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"errors": ["Venue block request must be a JSON object."]}), 400
+
     try:
-        block_request = VenueBlockCreateRequest(
-            **(request.get_json(silent=True) or {})
-        )
+        block_request = VenueBlockCreateRequest(**payload)
     except ValidationError as error:
         return jsonify({"errors": _validation_messages(error)}), 400
 
-    _require_venue_staff()
+    _require_venue_staff("Only Venue Staff can block venues.")
 
-    block = venue_block_service.create_venue_block(
+    outcome = venue_block_service.create_venue_block_outcome(
         access_token=g.access_token,
         venue_id=venue_id,
         request=block_request,
         block_issuer=g.user_id,
     )
 
-    return jsonify({"block": block}), 201
+    return jsonify(outcome), 201
 
 @venues_bp.get("")
 @require_auth

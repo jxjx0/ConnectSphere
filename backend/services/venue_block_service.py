@@ -7,6 +7,28 @@ from models.venue_block import VenueBlockCreateRequest
 from services.auth_service import AuthError
 
 
+def check_booking_impact(access_token: str, venue_id: str, request: VenueBlockCreateRequest) -> dict:
+    """Integration boundary: unavailable is not a verified empty booking list.
+
+    TODO T7-90/T7-33: use authoritative booking reads with booking/event/
+    coordinator identities and configured effective periods. Compare with
+    availability.overlaps(), then reuse notification_service.notify(). A
+    verified result carries affected_bookings (an empty list means none).
+    Do not claim verification without persisted buffers or notification success
+    when notify() fails. No booking/event writes belong here.
+    """
+    return {"status": "unavailable", "affected_bookings": None}
+
+
+def create_venue_block_outcome(access_token, venue_id, request, block_issuer) -> dict:
+    # Operational unavailability must be saved even when bookings overlap.
+    block = create_venue_block(access_token, venue_id, request, block_issuer)
+    return {
+        "block": block,
+        "booking_impact": check_booking_impact(access_token, venue_id, request),
+    }
+
+
 def _database_error(error: PostgrestAPIError) -> AuthError:
     """Translate known PostgREST constraint errors into API responses."""
     if error.code in {"23502", "23514", "22P02"}:
