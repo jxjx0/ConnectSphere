@@ -49,6 +49,48 @@ def set_blocks(database, records):
     database[2].select.return_value.in_.return_value.lt.return_value.gt.return_value.execute.return_value = SimpleNamespace(data=records)
 
 
+@pytest.mark.parametrize("accessibility", [None, "", "  ", " wheelchair ACCESS "])
+def test_optional_accessibility_matches_normalized_feature(database, catalogue, accessibility):
+    catalogue[0]["accessibility"] = ["Wheelchair access"]
+    request = VenueSearchRequest(required_accessibility=accessibility)
+    assert len(venue_search_service.search_venues("token", request)["venues"]) == 1
+
+
+@pytest.mark.parametrize("selected", ["Wheelchair access", " Wheelchair Accessible ", "WHEELCHAIR   ACCESSIBLE"])
+@pytest.mark.parametrize("stored", ["Wheelchair access", " Wheelchair Accessible ", "WHEELCHAIR   ACCESSIBLE"])
+def test_accessibility_aliases_match_in_both_directions_without_mutation(database, catalogue, selected, stored):
+    catalogue[0]["accessibility"] = [stored, stored.lower()]
+    request = VenueSearchRequest(required_accessibility=selected)
+    result = venue_search_service.search_venues("token", request)
+    assert len(result["venues"]) == 1
+    assert result["venues"][0]["accessibility"] == [stored, stored.lower()]
+    assert catalogue[0]["accessibility"] == [stored, stored.lower()]
+
+
+@pytest.mark.parametrize("features", [None, [], [""], ["Step-free"], ["Wheelchair access ramp"]])
+def test_accessibility_excludes_missing_or_nonmatching_features(database, catalogue, features):
+    catalogue[0]["accessibility"] = features
+    request = VenueSearchRequest(required_accessibility="Wheelchair access")
+    assert venue_search_service.search_venues("token", request)["venues"] == []
+
+
+def test_accessibility_combines_with_suitability_and_blocks(database, catalogue):
+    catalogue[0]["accessibility"] = ["Wheelchair access"]
+    request = VenueSearchRequest(**PAYLOAD, required_accessibility="Wheelchair access")
+    assert len(venue_search_service.search_venues("token", request)["venues"]) == 1
+    catalogue[0]["capacity"] = 99
+    assert venue_search_service.search_venues("token", request)["venues"] == []
+    catalogue[0]["capacity"] = 180
+    set_blocks(database, [{"venue_id": "hall", "start_at": "2026-11-07T11:00:00+08:00", "end_at": "2026-11-07T12:00:00+08:00"}])
+    assert venue_search_service.search_venues("token", request)["venues"] == []
+
+
+@pytest.mark.parametrize("features", [None, [], [""]])
+def test_empty_accessibility_data_does_not_filter_default_search(database, catalogue, features):
+    catalogue[0]["accessibility"] = features
+    assert len(venue_search_service.search_venues("token", VenueSearchRequest())["venues"]) == 1
+
+
 @pytest.mark.parametrize("changes", [
     {"date": "2026-02-30"}, {"date": "07-11-2026"}, {"date": "2026-11-07T00:00:00"},
     {"start_time": "25:00"}, {"end_time": "12:60"}, {"start_time": "9:00"},

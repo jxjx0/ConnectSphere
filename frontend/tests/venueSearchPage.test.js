@@ -19,7 +19,7 @@ const { code } = await transformWithEsbuild(source, 'VenueSearchPage.jsx', {
 function pageHarness(result, form = searchHelpers.EMPTY_VENUE_FILTERS, search = async () => ({ venues: [], warnings: [] }), options = {}) {
   let stateIndex = 0
   const eventId = options.eventId ?? null
-  const states = [form, result, { loading: false, error: '', options: ['Banquet', 'Theatre'] },
+  const states = [form, result, { loading: false, error: '', options: ['Banquet', 'Theatre'], accessibilityOptions: ['Wheelchair access'] },
     options.context || { eventId, phase: eventId === null ? 'standalone' : 'loading', event: null, error: '' }]
   const effects = []
   const generation = { current: 0 }
@@ -100,8 +100,10 @@ test('successful page displays venue name, selected layout, capacity and unverif
   })
   assert.match(html, /Grand Hall/)
   assert.match(html, /Theatre.*capacity 100/)
-  assert.match(html, /Availability not verified/)
-  assert.match(html, /Bookings cannot yet be verified/)
+  assert.match(html, /Partially verified/)
+  assert.match(html, /Availability is partially verified/)
+  assert.match(html, /No operational block conflict/)
+  assert.ok(!html.includes('Bookings cannot yet be verified.'))
   assert.match(html, /Campus West/)
   assert.match(html, /<table/)
   assert.ok(!html.includes('No venues match'))
@@ -124,7 +126,7 @@ test('loading disables search inputs and shows progress', () => {
   const html = renderPage({ ...empty, phase: 'loading' })
   assert.match(html, /Searching venues/)
   assert.match(html, /aria-busy="true"/)
-  assert.equal((html.match(/disabled=""/g) || []).length, 8)
+  assert.equal((html.match(/disabled=""/g) || []).length, 9)
 })
 
 const assignedEvent = Object.freeze({
@@ -313,4 +315,42 @@ test('untimed results show all layouts without implying availability', () => {
   assert.match(html, /Banquet \(80\)/)
   assert.ok(!html.includes('Requested:'))
   assert.ok(!html.includes('Available for the requested period'))
+})
+
+test('accessibility selection updates the search payload and Clear Filters resets it', async () => {
+  let payload
+  const harness = pageHarness(searchHelpers.INITIAL_VENUE_SEARCH, undefined, async (data) => { payload = data; return { venues: [], warnings: [] } })
+  assert.match(harness.html(), /Any accessibility/)
+  assert.match(harness.html(), /<option value="Wheelchair access">/)
+  findElement(harness.tree(), (node) => node.props.id === 'searchAccessibility').props.onChange({ target: { value: 'Wheelchair access' } })
+  await findElement(harness.tree(), (node) => node.type === 'form').props.onSubmit({ preventDefault() {} })
+  assert.equal(payload.required_accessibility, 'Wheelchair access')
+  findElement(harness.tree(), (node) => node.type === 'button' && node.props.type === 'button').props.onClick()
+  assert.equal(harness.states[0].required_accessibility, '')
+})
+
+test('catalogue accessibility aliases render one single-select option and one default', async () => {
+  const harness = pageHarness(searchHelpers.INITIAL_VENUE_SEARCH, undefined, undefined, {
+    getVenues: async () => ({ venues: [
+      { accessibility: ['Wheelchair Accessible', ' wheelchair ACCESS ', 'Wheelchair accessible'] },
+    ] }),
+  })
+  await harness.load()
+  const selector = findElement(harness.tree(), (node) => node.props.id === 'searchAccessibility')
+  assert.equal(selector.props.multiple, undefined)
+  const html = harness.html()
+  assert.equal((html.match(/<option value="Wheelchair access">/g) || []).length, 1)
+  assert.equal((html.match(/Any accessibility/g) || []).length, 1)
+  assert.ok(!html.includes('Wheelchair Accessible'))
+})
+
+test('timed results show one summary warning and one requested period across multiple rows', () => {
+  const venue = { id: 'hall', name: 'Hall', capacity: 150, layouts: [], availability_status: 'unverified', requested_start: '2026-11-07T10:00:00+08:00', requested_end: '2026-11-07T12:00:00+08:00' }
+  const html = renderPage({ ...empty, warnings: ['Bookings missing', 'Buffers missing'], venues: [venue, { ...venue, id: 'hall-2', name: 'Hall 2' }] })
+  assert.equal((html.match(/Availability is partially verified/g) || []).length, 1)
+  assert.equal((html.match(/Requested period:/g) || []).length, 1)
+  assert.equal((html.match(/No operational block conflict/g) || []).length, 2)
+  assert.ok(!html.includes('Requested:'))
+  assert.ok(!html.includes('No conflict found'))
+  assert.ok(!renderPage({ ...empty, venues: [{ ...venue, requested_start: null, requested_end: null, availability_status: 'not_checked' }] }).includes('Availability is partially verified'))
 })

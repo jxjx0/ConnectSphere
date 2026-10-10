@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process'
 
 import {
   EMPTY_VENUE_FILTERS, runVenueSearch, validateVenueSearch, venueSearchPayload,
-  venueAvailabilityLabel, venueLayoutOptions, eventVenueFilters,
+  venueAvailabilityLabel, venueLayoutOptions, eventVenueFilters, venueAccessibilityOptions, venueAvailabilitySummary,
 } from '../src/venueSearch.js'
 
 const form = {
@@ -84,7 +84,7 @@ test('successful results preserve availability warnings and selected layout capa
   assert.equal(result.phase, 'success')
   assert.deepEqual(result.venues, venues)
   assert.equal(result.warnings.length, 1)
-  assert.match(venueAvailabilityLabel(venues[0]), /not verified/)
+  assert.equal(venueAvailabilityLabel(venues[0]), 'Partially verified')
 })
 
 test('no results is a successful empty search, not a request error', async () => {
@@ -133,4 +133,31 @@ test('event prefill converts UTC timestamps into local dates, including overnigh
 
 test('invalid event periods cannot be used for contextual prefill', () => {
   assert.throws(() => eventVenueFilters({ start_time: 'bad', end_time: 'bad' }, []), /invalid scheduled period/)
+})
+
+test('accessibility options use catalogue values and ignore empty data', () => {
+  assert.deepEqual(venueAccessibilityOptions([
+    { accessibility: ['Wheelchair access', ' Step-free ', ''] },
+    { accessibility: ['wheelchair access'] }, { accessibility: null }, {},
+  ]), ['Step-free', 'Wheelchair access'])
+  assert.deepEqual(venueSearchPayload({ ...EMPTY_VENUE_FILTERS, required_accessibility: ' ' }), {})
+  assert.equal(venueSearchPayload({ ...EMPTY_VENUE_FILTERS, required_accessibility: ' Wheelchair access ' }).required_accessibility, 'Wheelchair access')
+  assert.equal(eventVenueFilters({ start_time: '2026-11-07T10:00Z', end_time: '2026-11-07T12:00Z', expected_attendance: 100, accessibility_requirements: 'Wheelchair access' }, []).required_accessibility, '')
+})
+
+test('accessibility aliases and case variants produce one option without changing catalogue data', () => {
+  const venues = [{ accessibility: [' Wheelchair Accessible ', 'wheelchair access', ' WHEELCHAIR   ACCESSIBLE ', ' Hearing loop ', 'HEARING LOOP', 'Wheelchair access ramp'] }]
+  const before = JSON.stringify(venues)
+  assert.deepEqual(venueAccessibilityOptions(venues), ['Hearing loop', 'Wheelchair access', 'Wheelchair access ramp'])
+  assert.equal(JSON.stringify(venues), before)
+  assert.equal(venueSearchPayload({ ...EMPTY_VENUE_FILTERS, required_accessibility: ' WHEELCHAIR Accessible ' }).required_accessibility, 'Wheelchair access')
+  assert.deepEqual(venueAccessibilityOptions([{ accessibility: ['wheelchair accessible'] }]), ['Wheelchair access'])
+})
+
+test('availability summary appears only for timed partial responses', () => {
+  const partial = { venues: [], warnings: ['Bookings missing', 'Buffers missing'], requested_period: { start: '2026-11-07T10:00', end: '2026-11-07T12:00' } }
+  assert.match(venueAvailabilitySummary(partial), /Operational venue blocks have been checked/)
+  assert.equal(venueAvailabilitySummary({ venues: [], warnings: [] }), '')
+  assert.equal(venueAvailabilitySummary({ ...partial, warnings: [], venues: [{ availability_status: 'available' }] }), '')
+  assert.equal(venueAvailabilitySummary({ venues: [{ availability_status: 'not_checked' }], warnings: ['irrelevant'] }), '')
 })
