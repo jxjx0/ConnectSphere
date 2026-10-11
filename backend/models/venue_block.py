@@ -1,6 +1,6 @@
 """Data shapes and validation for venue blocks."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -11,6 +11,13 @@ class VenueBlockCreateRequest(BaseModel):
     start_at: datetime
     end_at: datetime
     block_reason: str = Field(min_length=1, max_length=500)
+
+    @field_validator("start_at", "end_at")
+    @classmethod
+    def require_timezone(cls, value: datetime) -> datetime:
+        if value.utcoffset() is None:
+            raise ValueError("block timestamps must include a timezone offset")
+        return value.astimezone(timezone.utc)
 
     @field_validator("block_reason")
     @classmethod

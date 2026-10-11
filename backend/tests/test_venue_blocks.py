@@ -6,9 +6,9 @@ from postgrest import APIError as PostgrestAPIError
 from pydantic import ValidationError
 
 from models.profile import Profile, Role
-from models.venue import Venue
 from models.venue_block import VenueBlockCreateRequest
-from services import auth_service, venue_block_service
+from services import auth_service, venue_block_service, venue_search_service
+from models.venue_search import VenueSearchRequest
 from services.auth_service import AuthError
 
 
@@ -90,6 +90,40 @@ def test_venue_block_request_rejects_start_time_after_end_time():
         VenueBlockCreateRequest(**payload)
 
 
+@pytest.mark.parametrize("start,end", [
+    ("2026-11-07T10:00:00+08:00", "2026-11-07T12:00:00+08:00"),
+    ("2026-11-07T22:00:00+08:00", "2026-11-08T02:00:00+08:00"),
+    ("2026-11-07T22:00:00+08:00", "2026-11-09T02:00:00+08:00"),
+    ("2026-11-07T10:00:00+08:00", "2026-11-07T03:00:00Z"),
+])
+def test_block_periods_are_normalized_to_utc(start, end):
+    request = VenueBlockCreateRequest(start_at=start, end_at=end, block_reason="Maintenance")
+    assert request.start_at.utcoffset().total_seconds() == 0
+    assert request.end_at.utcoffset().total_seconds() == 0
+    assert request.end_at > request.start_at
+
+
+@pytest.mark.parametrize("changes", [
+    {"start_at": "2026-10-01T09:00"}, {"end_at": "2026-10-01T17:00"},
+    {"start_at": "bad"}, {"end_at": "2026-02-30T12:00:00Z"},
+    {"start_at": "2026-10-01T10:00:00+08:00", "end_at": "2026-10-01T02:00:00Z"},
+    {"start_at": "2026-10-01T10:00:00+08:00", "end_at": "2026-10-01T01:00:00Z"},
+    {"block_reason": ""}, {"block_reason": None},
+])
+def test_invalid_block_inputs_are_validation_errors(changes):
+    with pytest.raises(ValidationError):
+        VenueBlockCreateRequest(**{**VALID_BLOCK_PAYLOAD, **changes})
+
+
+def test_route_rejects_mixed_naive_aware_times_without_server_error(client, monkeypatch):
+    authenticate_as_venue_staff(monkeypatch)
+    response = client.post(f"/venues/{VENUE_ID}/blocks", json={
+        **VALID_BLOCK_PAYLOAD, "start_at": "2026-10-01T09:00",
+    }, headers={"Authorization": "Bearer venue-token"})
+    assert response.status_code == 400
+    assert "timezone offset" in response.get_json()["errors"][0]
+
+
 # ============================================================================
 # 2. HTTP Route Tests (POST /venues/<venue_id>/blocks)
 # ============================================================================
@@ -115,6 +149,7 @@ def test_venue_staff_can_create_venue_block(client, monkeypatch):
 
     assert response.status_code == 201
     assert response.get_json()["block"]["id"] == BLOCK_ID
+    assert response.get_json()["booking_impact"] == {"status": "unavailable", "affected_bookings": None}
     assert captured["access_token"] == "venue-token"
     assert captured["venue_id"] == VENUE_ID
     assert captured["block_issuer"] == VENUE_STAFF_PROFILE.id
@@ -146,6 +181,28 @@ def test_create_venue_block_rejects_invalid_json(client, monkeypatch):
     assert len(errors) > 0
     assert any("block end time must be after start time" in err for err in errors)
 
+@pytest.mark.parametrize("body", [[], ["bad"], "hello", 123])
+def test_create_venue_block_rejects_non_object_json(client, monkeypatch, body):
+    authenticate_as_venue_staff(monkeypatch)
+    monkeypatch.setattr(
+        venue_block_service,
+        "create_venue_block_outcome",
+        lambda **kwargs: pytest.fail("invalid JSON must not reach block persistence"),
+    )
+
+    response = client.post(
+        f"/venues/{VENUE_ID}/blocks",
+        json=body,
+        headers={"Authorization": "Bearer venue-token"},
+    )
+
+    assert response.status_code == 400
+    assert response.is_json
+    assert response.get_json() == {
+        "errors": ["Venue block request must be a JSON object."],
+    }
+
+
 def test_non_venue_staff_cannot_create_venue_block(
     client, monkeypatch, organiser_profile
 ):
@@ -170,7 +227,7 @@ def test_non_venue_staff_cannot_create_venue_block(
     )
 
     assert response.status_code == 403
-    assert response.get_json()["error"] == "Only Venue Staff can create venues."
+    assert response.get_json()["error"] == "Only Venue Staff can block venues."
 
 
 def test_create_venue_block_without_token_is_rejected(client):
@@ -289,3 +346,72 @@ def test_service_create_venue_block_empty_response_raises_502(monkeypatch):
 
     assert exc_info.value.status_code == 502
     assert exc_info.value.message == "Venue block was not created."
+
+
+def test_block_saves_without_reading_or_mutating_other_arrangements(monkeypatch):
+    # Missing booking integration is explicit; only operational blocks are written.
+    writes = []
+
+    class Query:
+        def insert(self, data):
+            writes.append(data)
+            return self
+
+        def execute(self):
+            return SimpleNamespace(data=[BLOCK_RECORD])
+
+    class Client:
+        def table(self, name):
+            assert name == "venue_blocks", "block creation must not mutate booking/event tables"
+            return Query()
+
+    monkeypatch.setattr("config.get_user_client", lambda token: Client())
+    result = venue_block_service.create_venue_block_outcome(
+        "token", VENUE_ID, VenueBlockCreateRequest(**VALID_BLOCK_PAYLOAD), VENUE_STAFF_PROFILE.id,
+    )
+    assert result["block"] == BLOCK_RECORD
+    assert result["booking_impact"]["affected_bookings"] is None
+    assert len(writes) == 1
+
+
+@pytest.mark.parametrize("search_start,search_end,expected", [
+    ("09:30", "10:30", ["other"]),  # overlap
+    ("08:00", "09:00", ["hall", "other"]),  # touches start
+    ("10:00", "11:00", ["hall", "other"]),  # touches end
+    ("11:00", "12:00", ["hall", "other"]),  # block has ended
+])
+def test_saved_block_is_consumed_by_timed_search(monkeypatch, venue_payload, search_start, search_end, expected):
+    stored = []
+
+    class Query:
+        def __init__(self, name):
+            self.name = name
+
+        def insert(self, data):
+            stored.append({"block_id": BLOCK_ID, **data})
+            return self
+
+        def select(self, *args): return self
+        def order(self, *args): return self
+        def in_(self, *args): return self
+        def lt(self, *args): return self
+        def gt(self, *args): return self
+
+        def execute(self):
+            return SimpleNamespace(data=stored if self.name == "venue_blocks" else [
+                {"id": "hall", **venue_payload}, {"id": "other", **venue_payload},
+            ])
+
+    class Client:
+        def table(self, name):
+            assert name in {"venues", "venue_blocks"}
+            return Query(name)
+
+    monkeypatch.setattr("config.get_user_client", lambda token: Client())
+    request = VenueBlockCreateRequest(start_at="2026-11-07T09:00:00+08:00", end_at="2026-11-07T10:00:00+08:00", block_reason="Maintenance")
+    venue_block_service.create_venue_block_outcome("token", "hall", request, VENUE_STAFF_PROFILE.id)
+    assert stored[0]["start_at"] == "2026-11-07T01:00:00+00:00"
+    response = venue_search_service.search_venues("token", VenueSearchRequest(
+        date="2026-11-07", start_time=search_start, end_time=search_end, timezone_offset_minutes=480,
+    ))
+    assert [venue["id"] for venue in response["venues"]] == expected
