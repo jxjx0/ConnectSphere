@@ -19,6 +19,7 @@ const { code } = await transformWithEsbuild(source, 'VenueSearchPage.jsx', {
 function pageHarness(result, form = searchHelpers.EMPTY_VENUE_FILTERS, search = async () => ({ venues: [], warnings: [] }), options = {}) {
   let stateIndex = 0
   const eventId = options.eventId ?? null
+  let params = new URLSearchParams(options.query || (eventId === null ? '' : `eventId=${encodeURIComponent(eventId)}`))
   const states = [form, result, { loading: false, error: '', options: ['Banquet', 'Theatre'], accessibilityOptions: ['Wheelchair access'], facilityOptions: ['Wi-Fi'] },
     options.context || { eventId, phase: eventId === null ? 'standalone' : 'loading', event: null, error: '' }]
   const effects = []
@@ -35,7 +36,7 @@ function pageHarness(result, form = searchHelpers.EMPTY_VENUE_FILTERS, search = 
     'react/jsx-runtime': jsxRuntime,
     'react-router-dom': {
       Link: ({ children, to, ...props }) => React.createElement('a', { ...props, href: to }, children),
-      useSearchParams: () => [new URLSearchParams(eventId === null ? '' : `eventId=${encodeURIComponent(eventId)}`)],
+      useSearchParams: () => [params, (next) => { params = next }],
     },
     '../api/venues': { searchVenues: search, getVenues: options.getVenues || (async () => ({ venues: [{ layouts: [{ name: 'Theatre' }] }] })) },
     '../api/events': { getAssignedEventRequest: options.getEvent || (() => { assert.fail('standalone search must not load an event') }) },
@@ -52,6 +53,7 @@ function pageHarness(result, form = searchHelpers.EMPTY_VENUE_FILTERS, search = 
   )
   return {
     states,
+    params: () => params,
     load: async () => {
       stateIndex = 0; effects.length = 0; module.exports.default()
       const cleanup = effects[0]()
@@ -73,6 +75,88 @@ function findElement(node, predicate) {
 }
 
 const empty = { phase: 'success', error: '', venues: [], warnings: [] }
+
+test('search retains filters in the URL and calendar links carry venue, date and event context', async () => {
+  const result = { ...empty, venues: [{ id: 'hall', name: 'Hall', capacity: 100, layouts: [] }] }
+  const page = pageHarness(result, { ...searchHelpers.EMPTY_VENUE_FILTERS, date: '2026-11-20' }, undefined, { eventId: 'event-1' })
+  findElement(page.tree(), (node) => node.props.id === 'searchAttendance').props.onChange({ target: { value: '120' } })
+  assert.equal(page.params().get('expected_attendance'), '120')
+  page.states[1] = result
+  const link = findElement(page.tree(), (node) => node.props.children === 'View Availability')
+  const url = new URL(link.props.to, 'http://localhost')
+  assert.equal(url.searchParams.get('venueId'), 'hall')
+  assert.equal(url.searchParams.get('date'), '2026-11-20')
+  const returnedQuery = url.searchParams.get('search')
+  const returned = pageHarness(searchHelpers.INITIAL_VENUE_SEARCH, undefined, undefined, {
+    eventId: 'event-1', query: returnedQuery,
+    getEvent: async () => ({ event: { id: 'event-1', name: 'Workshop' } }),
+  })
+  await returned.load()
+  assert.equal(returned.states[0].date, '2026-11-20')
+  assert.equal(returned.states[0].expected_attendance, '120')
+  assert.equal(returned.states[3].phase, 'success')
+  assert.equal(returned.states[1].phase, 'idle')
+  findElement(returned.tree(), (node) => node.type === 'button' && node.props.type === 'button').props.onClick()
+  assert.equal(returned.params().get('eventId'), 'event-1')
+  assert.equal(returned.params().get('expected_attendance'), null)
+})
+
+test('standalone search restores saved filters without loading an event or trusting old results', async () => {
+  const page = pageHarness(searchHelpers.INITIAL_VENUE_SEARCH, undefined, () => assert.fail('returning must not silently search'), {
+    query: 'filters=1&required_layout=Theatre&required_accessibility=Wheelchair+access&required_facility=Wi-Fi&date=2026-11-20&end_date=2026-11-21&start_time=22%3A00&end_time=02%3A00',
+  })
+  await page.load()
+  assert.equal(page.states[0].required_layout, 'Theatre')
+  assert.equal(page.states[0].required_accessibility, 'Wheelchair access')
+  assert.equal(page.states[0].required_facility, 'Wi-Fi')
+  assert.equal(page.states[0].end_date, '2026-11-21')
+  assert.equal(page.states[0].start_time, '22:00')
+  assert.equal(page.states[1].phase, 'idle')
+})
+
+test('returning to results rechecks availability after validating the assigned event', async () => {
+  const calls = []
+  const options = { eventId: 'event-1', query: 'eventId=event-1&filters=1&resume=1&expected_attendance=120',
+    getEvent: async () => { calls.push('event'); return { event: { id: 'event-1', name: 'Workshop' } } } }
+  const page = pageHarness(searchHelpers.INITIAL_VENUE_SEARCH, undefined, async (payload) => {
+    calls.push(payload); return { venues: [], warnings: [] }
+  }, options)
+  await page.load()
+  assert.deepEqual(calls, ['event', { expected_attendance: 120 }])
+  assert.equal(page.states[1].phase, 'success')
+  const failed = pageHarness(searchHelpers.INITIAL_VENUE_SEARCH, undefined, () => assert.fail('failed event must not resume search'), {
+    ...options, getEvent: async () => { throw new Error('Not assigned') },
+  })
+  await failed.load()
+  assert.equal(failed.states[3].phase, 'error')
+})
+
+test('standalone resume refreshes results, while invalid filters do not request availability', async () => {
+  const page = pageHarness(searchHelpers.INITIAL_VENUE_SEARCH, undefined, async () => ({ venues: [], warnings: [] }), {
+    query: 'filters=1&resume=1&expected_attendance=100',
+  })
+  await page.load()
+  assert.equal(page.states[1].phase, 'success')
+  const invalid = pageHarness(searchHelpers.INITIAL_VENUE_SEARCH, undefined, () => assert.fail('invalid filters must not search'), {
+    query: 'filters=1&resume=1&expected_attendance=-1',
+  })
+  await invalid.load()
+  assert.equal(invalid.states[1].phase, 'error')
+})
+
+test('editing filters discards a pending resumed result', async () => {
+  let resolve
+  const page = pageHarness(searchHelpers.INITIAL_VENUE_SEARCH, undefined, () => new Promise((done) => { resolve = done }), {
+    query: 'filters=1&resume=1&expected_attendance=100',
+  })
+  await page.load()
+  assert.equal(page.states[1].phase, 'loading')
+  findElement(page.tree(), (node) => node.props.id === 'searchAttendance').props.onChange({ target: { value: '120' } })
+  resolve({ venues: [{ name: 'Stale Hall' }], warnings: [] })
+  await new Promise((done) => setImmediate(done))
+  assert.equal(page.states[1].phase, 'idle')
+  assert.equal(page.params().get('resume'), null)
+})
 
 test('search page has optional period filters and a catalogue layout dropdown', () => {
   const html = renderPage({ ...empty, phase: 'idle' })

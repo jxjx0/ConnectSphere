@@ -6,7 +6,7 @@ import { venueBlockPayload } from '../venueBlock.js'
 import { formatDateRange } from '../eventDisplay.js'
 
 
-export default function BlockForm({ venue, onClose }) {
+export default function BlockForm({ venue, onClose, onCreated }) {
   const { token } = useAuth()
   const dialogRef = useRef(null)
 
@@ -52,6 +52,7 @@ export default function BlockForm({ venue, onClose }) {
       )
       if (!data?.block) throw new Error('Block creation could not be confirmed. Check before submitting again.')
       setOutcome({ ...data, block: { ...payload, ...data.block } })
+      onCreated?.()
     } catch (error) {
       setError(error.message)
     } finally {

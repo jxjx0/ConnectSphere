@@ -40,7 +40,7 @@ for (const changes of [
 const source = await readFile(new URL('../src/components/BlockForm.jsx', import.meta.url), 'utf8')
 const { code } = await transformWithEsbuild(source, 'BlockForm.jsx', { jsx: 'automatic', format: 'cjs', tsconfigRaw: '{}' })
 
-function harness(create = async () => ({ block: { block_id: 'block-1' }, booking_impact: { status: 'unavailable', affected_bookings: null } }), input = form) {
+function harness(create = async () => ({ block: { block_id: 'block-1' }, booking_impact: { status: 'unavailable', affected_bookings: null } }), input = form, onCreated) {
   let index = 0
   let closed = 0
   const states = [input.startDate, input.startTime, input.endDate, input.endTime, input.reason, '', false, null]
@@ -62,7 +62,7 @@ function harness(create = async () => ({ block: { block_id: 'block-1' }, booking
     assert.ok(name in imports, `unexpected import: ${name}`)
     return imports[name]
   }, module, module.exports)
-  const props = { venue: { id: 'hall', name: 'Grand Hall' }, onClose: () => { closed++ } }
+  const props = { venue: { id: 'hall', name: 'Grand Hall' }, onClose: () => { closed++ }, onCreated }
   return {
     states,
     closed: () => closed,
@@ -86,6 +86,23 @@ function find(node, predicate) {
 async function submit(page) {
   await find(page.tree(), (node) => node.type === 'form').props.onSubmit({ preventDefault() {} })
 }
+
+test('creation callback runs after confirmed persistence, never for errors or cancellation', async () => {
+  let created = 0
+  const callback = () => { created++ }
+  const success = harness(undefined, form, callback)
+  await submit(success)
+  assert.equal(created, 1)
+  for (const create of [async () => { throw new Error('Failed') }, async () => ({})]) {
+    const failed = harness(create, form, callback)
+    await submit(failed)
+    assert.equal(created, 1)
+    assert.match(failed.html(), /role="alert"/)
+  }
+  const cancelled = harness(undefined, form, callback)
+  find(cancelled.tree(), (node) => node.props.children === 'Cancel').props.onClick()
+  assert.equal(created, 1)
+})
 
 test('saved block stays visible without unavailable impact information and can be closed', async () => {
   let payload
@@ -263,6 +280,11 @@ test('catalogue Block action selects the correct venue and closing unmounts the 
   const row = find(tree(), (node) => node.type === 'tr' && node.key === 'venue-1')
   const blockButton = find(row, (node) => node.type === 'button' && node.props.children === 'Block')
   const editLink = find(row, (node) => node.props.children === 'Edit')
+  const availabilityLink = find(row, (node) => node.props.children === 'View Availability')
+  const availabilityUrl = new URL(availabilityLink.props.to, 'http://localhost')
+  assert.equal(availabilityUrl.pathname, '/venues/availability')
+  assert.equal(availabilityUrl.searchParams.get('venueId'), 'venue-1')
+  assert.equal(availabilityUrl.searchParams.get('from'), 'catalogue')
   assert.equal(blockButton.props.className, editLink.props.className)
   assert.equal(blockButton.props.disabled, false)
   blockButton.props.onClick()
@@ -273,7 +295,7 @@ test('catalogue Block action selects the correct venue and closing unmounts the 
   assert.equal(find(tree(), (node) => node.type === BlockForm), undefined)
   const createHeader = find(tree({ createMode: true }), (node) => node.props.className === 'content__header venue-search__header')
   const createBackLink = find(createHeader, (node) => node.props.className === 'venue-search__back')
-  assert.equal(createBackLink.props.to, '/dashboard')
+  assert.equal(createBackLink.props.to, '/venues')
   assert.equal(createHeader.props.children[0], createBackLink)
   assert.equal(find(createHeader, (node) => node.type === 'h1').props.children, 'Create Venue Profile')
 })
