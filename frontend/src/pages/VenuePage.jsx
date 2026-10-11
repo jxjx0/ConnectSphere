@@ -219,14 +219,10 @@ export default function VenuePage({ createMode = false }) {
 
   return (
     <AppShell>
-      {editMode && <Link to="/dashboard" className="button button--secondary button--small">
-        ← Back to Dashboard
-      </Link>}
-
-      <div className={`content__header${!editMode ? ' venue-search__header' : ''}`}>
-        {!editMode && <Link to="/dashboard" className="venue-search__back">
-          ← Back to Dashboard
-        </Link>}
+      <div className="content__header venue-search__header">
+        <Link to={createMode || editMode ? '/venues' : '/dashboard'} className="venue-search__back">
+          {createMode || editMode ? '← Back to Venue Catalogue' : '← Back to Dashboard'}
+        </Link>
         <h1>{createMode ? 'Create Venue Profile' : editMode ? 'Edit Venue Profile' : 'Venue Catalogue'}</h1>
         <p className="lead">{createMode
           ? 'Add a venue so organisers can include it in event planning.'
@@ -552,6 +548,8 @@ export default function VenuePage({ createMode = false }) {
                       <td>{formatFacilities(venue.facilities)}</td>
                       <td className="venue-table__actions">
                         <div className="venue-table__action-buttons">
+                          <Link to={`/venues/availability?${new URLSearchParams({ venueId: venue.id, from: 'catalogue' })}`}
+                            className="button button--secondary button--small">View Availability</Link>
                           <Link
                             to={`/venues/${venue.id}/edit`}
                             className="button button--secondary button--small"

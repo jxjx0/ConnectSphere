@@ -13,12 +13,18 @@ import MyEventDetailPage from './pages/MyEventDetailPage'
 import MyEventsPage from './pages/MyEventsPage'
 import VenuePage from './pages/VenuePage'
 import VenueSearchPage from './pages/VenueSearchPage'
+import VenueAvailabilityPage from './pages/VenueAvailabilityPage'
 import EquipmentPage from './pages/EquipmentPage'
 import EventReviewDetailPage from './pages/EventReviewDetailPage'
 
 export default function App() {
   return (
     <Routes>
+      <Route path="/venues/availability" element={
+        <AuthGuard allowedRoles={['venue_staff', 'coordinator']}>
+          <VenueAvailabilityPage />
+        </AuthGuard>
+      } />
       <Route path="/" element={<LandingPage />} />
       <Route path="/signup/organiser" element={<SignupOrganiserPage />} />
       <Route path="/signup/attendee" element={<SignupAttendeePage />} />

@@ -1,7 +1,3 @@
-// Placeholder for Sprint 0. It exists to prove the whole auth loop works:
-// the user signed in, the token survived, and the backend told us who they
-// are. Real dashboard content arrives in Sprint 1.
-
 import { useEffect, useState } from 'react'
 
 import { getAssignedEventRequests } from '../api/events'
@@ -36,8 +32,7 @@ export default function DashboardPage() {
       <div className="content__header">
         <h1>Dashboard</h1>
         <p className="lead">
-          You are signed in. Events, venues and bookings arrive in the next
-          release.
+          Access your tasks and manage the arrangements relevant to your role.
         </p>
       </div>
 
@@ -82,6 +77,9 @@ export default function DashboardPage() {
             </Link>
             <Link to="/venues/create" className="button button--secondary">
               Create Venue Profile
+            </Link>
+            <Link to="/venues/availability" className="button button--secondary">
+              View Venue Availability
             </Link>
           </div>
         </section>
