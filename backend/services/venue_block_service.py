@@ -1,10 +1,40 @@
 """Venue block persistence through Supabase."""
 
 from postgrest import APIError as PostgrestAPIError
+from pydantic import ValidationError
 
 import config
 from models.venue_block import VenueBlockCreateRequest
+from models.venue_availability import OperationalBlockItem
 from services.auth_service import AuthError
+
+
+def read_operational_blocks(client, venue_id, start, end) -> list[OperationalBlockItem]:
+    """Read half-open overlapping blocks through the caller's RLS client."""
+    from services.venue_availability_service import overlaps
+
+    try:
+        records = (client.table("venue_blocks")
+                   .select("block_id, venue_id, start_at, end_at, block_reason")
+                   .eq("venue_id", venue_id)
+                   .lt("start_at", end.isoformat())
+                   .gt("end_at", start.isoformat())
+                   .order("start_at").execute().data)
+        items = []
+        for record in records:
+            if record["venue_id"] != venue_id:
+                continue
+            item = OperationalBlockItem(
+                id=record["block_id"], start_at=record["start_at"],
+                end_at=record["end_at"], reason=record["block_reason"],
+            )
+            if overlaps(start, end, item):
+                items.append(item)
+        return sorted(items, key=lambda item: item.start_at)
+    except PostgrestAPIError as error:
+        raise AuthError("Unable to load venue blocks.", status_code=502) from error
+    except (ValidationError, KeyError, TypeError) as error:
+        raise AuthError("Unable to verify venue block data.", status_code=502) from error
 
 
 def check_booking_impact(access_token: str, venue_id: str, request: VenueBlockCreateRequest) -> dict:
