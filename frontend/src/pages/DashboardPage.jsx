@@ -65,7 +65,6 @@ export default function DashboardPage() {
           <p className="note">
             <Link to="/venues/search" className="backlink">Browse Venues</Link>
           </p>
-          <p className="note"><Link to="/venues/availability" className="backlink">Venue Availability</Link></p>
         </section>
       )}
 

@@ -453,7 +453,7 @@ test('calendar route and dashboard expose venue tasks only to the established ro
     }
     new Function('require', 'module', 'exports', dashboardCode.code)((name) => imports[name], module, module.exports)
     const html = renderToStaticMarkup(React.createElement(module.exports.default))
-    assert.equal(html.includes('href="/venues/availability"'), ['venue_staff', 'coordinator'].includes(role))
+    assert.equal(html.includes('href="/venues/availability"'), role === 'venue_staff')
     assert.equal(html.includes('href="/venues/search"'), role === 'coordinator')
     assert.equal(html.includes('View Venue Catalogue'), role === 'venue_staff')
     assert.doesNotMatch(html, /arrive in the next/)
