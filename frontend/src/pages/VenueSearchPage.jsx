@@ -42,6 +42,7 @@ export default function VenueSearchPage() {
     start: result.venues[0].requested_start, end: result.venues[0].requested_end,
   } : null)
   const [quickBookingVenue, setQuickBookingVenue] = useState(null)
+  const [successMessage, setSuccessMessage] = useState('')
 
   useEffect(() => {
     let active = true
@@ -136,6 +137,23 @@ export default function VenueSearchPage() {
         </Link>
         <h1>Search Venues</h1>
         <p className="lead">Find a suitable venue for your event.</p>
+
+        {/* SUCCESS BANNER IN HEADER */}
+        {successMessage && (
+          <div
+            className="notice"
+            style={{
+              backgroundColor: 'var(--accent-faint)',
+              borderColor: 'var(--accent)',
+              color: 'var(--accent)',
+              marginTop: 'var(--space-3)'
+            }}
+            role="status"
+          >
+            <p><strong>✓ {successMessage}</strong></p>
+          </div>
+        )}
+
         {eventId !== null && contextBlocked && context.phase !== 'error' && <p className="note">Loading assigned event…</p>}
         {eventId !== null && context.eventId === eventId && context.phase === 'error' && (
           <p className="form-error" role="alert">Unable to load event context: {context.error}</p>
@@ -285,22 +303,26 @@ export default function VenueSearchPage() {
           )}
         </section>
       </div>
-      {/*Render BookingForm modal at bottom of page component */}
+
+      {/* Render BookingForm modal at bottom of page component */}
       {quickBookingVenue && (
         <BookingForm
           venue={quickBookingVenue}
           eventId={eventId}
           initialValues={{
-            date: form.date,
-            startTime: form.start_time,
-            endTime: form.end_time,
-            endDate: form.end_date || form.date,
+            eventId: eventId || '',
+            eventName: context.event?.name || '',
+            startDate: form.date || '',
+            endDate: form.end_date || form.date || '',
+            startTime: form.start_time || '',
+            endTime: form.end_time || '',
             layout: quickBookingVenue.selected_layout || form.required_layout || (context.event?.layout_preference || ''),
           }}
           onClose={() => setQuickBookingVenue(null)}
           onCreated={() => {
-            setQuickBookingVenue(null)
-            // Re-run search if you want results to update immediately
+            const venueName = quickBookingVenue.name
+            setQuickBookingVenue(null) // Closes modal
+            setSuccessMessage(`Booking request for ${venueName} successfully submitted!`)
           }}
         />
       )}

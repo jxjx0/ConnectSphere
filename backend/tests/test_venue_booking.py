@@ -1,7 +1,12 @@
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass
 from typing import List, Optional
+
+from models.profile import Profile, Role
+import services.auth_service
+import services.event_service
+import services.venue_booking_service
 
 
 # ==========================================
@@ -35,20 +40,16 @@ class VenueBookingService:
         self.venues[venue.venue_id] = venue
 
     def create_booking(self, request: BookingRequest) -> bool:
-        # Validate venue exists and is active
         venue = self.venues.get(request.venue_id)
         if not venue or not venue.is_active:
             raise ValueError("Venue not available or does not exist.")
 
-        # Validate time slot
         if request.start_time >= request.end_time:
             raise ValueError("Start time must be before end time.")
 
-        # Validate capacity
         if request.attendees > venue.capacity:
             raise ValueError(f"Attendees exceed venue capacity of {venue.capacity}.")
 
-        # Check for scheduling overlap
         for existing in self.bookings:
             if existing.venue_id == request.venue_id:
                 if max(existing.start_time, request.start_time) < min(existing.end_time, request.end_time):
@@ -77,12 +78,36 @@ def base_time():
     return datetime.now() + timedelta(days=1)
 
 
+@pytest.fixture
+def mock_coordinator_auth(monkeypatch):
+    """Bypasses backend require_auth decorator and returns a Coordinator profile."""
+    mock_profile = Profile(id="coord_1", role=Role.COORDINATOR, full_name="Test Coordinator")
+    
+    # 1. Patch auth_service.get_profile
+    monkeypatch.setattr(services.auth_service, "get_profile", lambda token: mock_profile)
+    
+    # 2. Patch require_auth decorator / token verifier in routes if present
+    try:
+        import routes.auth
+        monkeypatch.setattr(routes.auth, "require_auth", lambda f: f)
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        import config
+        if hasattr(config, "supabase"):
+            monkeypatch.setattr(config.supabase.auth, "get_user", lambda token: type("UserObj", (), {"user": type("U", (), {"id": "coord_1"})()})())
+    except (ImportError, AttributeError):
+        pass
+
+    return mock_profile
+
+
 # ==========================================
 # Automated Pytest Suite
 # ==========================================
 
 def test_successful_booking(booking_service, base_time):
-    """Test creating a valid booking without conflicts."""
     request = BookingRequest(
         booking_id="b_001",
         venue_id="v_101",
@@ -97,27 +122,25 @@ def test_successful_booking(booking_service, base_time):
 
 
 def test_booking_exceeds_capacity(booking_service, base_time):
-    """Test rejection when attendees exceed venue capacity."""
     request = BookingRequest(
         booking_id="b_002",
         venue_id="v_101",
         user_id="user_2",
         start_time=base_time,
         end_time=base_time + timedelta(hours=1),
-        attendees=150  # Capacity is 100
+        attendees=150
     )
     with pytest.raises(ValueError, match="exceed venue capacity"):
         booking_service.create_booking(request)
 
 
 def test_booking_invalid_time_range(booking_service, base_time):
-    """Test rejection when start time is equal to or after end time."""
     request = BookingRequest(
         booking_id="b_003",
         venue_id="v_101",
         user_id="user_3",
         start_time=base_time + timedelta(hours=2),
-        end_time=base_time,  # End before start
+        end_time=base_time,
         attendees=10
     )
     with pytest.raises(ValueError, match="Start time must be before end time"):
@@ -125,8 +148,6 @@ def test_booking_invalid_time_range(booking_service, base_time):
 
 
 def test_booking_overlap_conflict(booking_service, base_time):
-    """Test rejection when attempting to double-book an overlapping slot."""
-    # Initial successful booking (10:00 - 12:00)
     b1 = BookingRequest(
         booking_id="b_004",
         venue_id="v_101",
@@ -137,7 +158,6 @@ def test_booking_overlap_conflict(booking_service, base_time):
     )
     booking_service.create_booking(b1)
 
-    # Overlapping booking attempt (11:00 - 13:00)
     b2 = BookingRequest(
         booking_id="b_005",
         venue_id="v_101",
@@ -151,10 +171,9 @@ def test_booking_overlap_conflict(booking_service, base_time):
 
 
 def test_booking_nonexistent_venue(booking_service, base_time):
-    """Test rejection when booking a venue that does not exist."""
     request = BookingRequest(
         booking_id="b_006",
-        venue_id="v_999",  # Invalid ID
+        venue_id="v_999",
         user_id="user_1",
         start_time=base_time,
         end_time=base_time + timedelta(hours=1),
@@ -165,7 +184,6 @@ def test_booking_nonexistent_venue(booking_service, base_time):
 
 
 def test_booking_inactive_venue(booking_service, base_time):
-    """Test rejection when booking an inactive venue."""
     inactive_venue = Venue(venue_id="v_102", name="Room B", capacity=20, is_active=False)
     booking_service.add_venue(inactive_venue)
 
@@ -179,3 +197,5 @@ def test_booking_inactive_venue(booking_service, base_time):
     )
     with pytest.raises(ValueError, match="Venue not available or does not exist"):
         booking_service.create_booking(request)
+
+

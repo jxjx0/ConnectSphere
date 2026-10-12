@@ -25,17 +25,24 @@ export default function VenueAvailabilityPage() {
   const [activeVenue, setActiveVenue] = useState(0)
   const [blockingVenue, setBlockingVenue] = useState(null)
   const [eventContext, setEventContext] = useState({ id: '', event: null, error: '' })
+  const [successMessage, setSuccessMessage] = useState('')
+
   const fromSearch = searchParams.get('from') === 'search' && user.role === 'coordinator'
   const fromCatalogue = searchParams.get('from') === 'catalogue' && user.role === 'venue_staff'
   const returnSearch = new URLSearchParams(searchParams.get('search') || '')
   if (fromSearch) returnSearch.set('resume', '1')
+
   const backTo = fromSearch ? `/venues/search?${returnSearch}` : fromCatalogue ? '/venues' : '/dashboard'
   const backLabel = fromSearch ? 'Back to Search Results' : fromCatalogue ? 'Back to Venue Catalogue' : 'Back to Dashboard'
-  const eventId = fromSearch ? returnSearch.get('eventId') : null
+
+  // Resolve eventId from search params or search context
+  const eventId = searchParams.get('eventId') || (fromSearch ? returnSearch.get('eventId') : null)
+
   const filters = Object.fromEntries(Object.keys(EMPTY_VENUE_FILTERS).map((field) => [field, returnSearch.get(field) || '']))
   const requestedPeriod = fromSearch && filters.date && !validateVenueSearch(filters)
     ? formatDateRange(new Date(`${filters.date}T${filters.start_time}`).toISOString(),
       new Date(`${filters.end_date || filters.date}T${filters.end_time}`).toISOString()) : null
+
   let week
   let dateError = ''
   try { week = calendarWeek(date) } catch (error) { dateError = error.message }
@@ -88,29 +95,55 @@ export default function VenueAvailabilityPage() {
   const canShowCalendar = week && !catalogue.loading && !catalogue.error && venueId && current.data
   const matches = calendarVenueOptions(catalogue.venues, venueSearch || '')
   const selectedVenue = catalogue.venues.find((venue) => venue.id === venueId)
+
   function closeVenues(event) {
     setVenueOpen(false)
     setVenueSearch(null)
     event.currentTarget?.closest('.venue-picker')?.querySelector('button')?.focus()
   }
+
   function chooseVenue(venue, event) {
     setVenueId(venue.id)
     closeVenues(event)
   }
+
   function openVenues() {
     setVenueSearch('')
     setActiveVenue(Math.max(0, catalogue.venues.findIndex((venue) => venue.id === venueId)))
     setVenueOpen(true)
   }
+
   const blockDetails = selectedBlock?.key === key && current.data
     ? current.data.items.find((item) => item.id === selectedBlock.id) : null
   const formatDay = (value) => value.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+
+  // Derived date values for initial form values
+  const derivedStartDate = searchParams.get('date') || filters?.date || date || ''
+  const derivedEndDate = searchParams.get('end_date') || filters?.end_date || derivedStartDate
+
   return (
     <AppShell>
       <div className="content__header venue-search__header">
         <Link to={backTo} className="venue-search__back">← {backLabel}</Link>
         <h1>Venue Availability</h1>
         <p className="lead">{fromSearch ? 'Review this venue’s schedule, then return to your matching venues.' : 'View recorded venue occupancy across dates and times.'}</p>
+        
+        {/* SUCCESS BANNER IN HEADER */}
+        {successMessage && (
+          <div
+            className="notice"
+            style={{
+              backgroundColor: 'var(--accent-faint)',
+              borderColor: 'var(--accent)',
+              color: 'var(--accent)',
+              marginTop: 'var(--space-3)'
+            }}
+            role="status"
+          >
+            <p><strong>✓ {successMessage}</strong></p>
+          </div>
+        )}
+
         {fromSearch && <div className="notice stack stack--tight">
           {eventId && (eventContext.id !== eventId || (!eventContext.event && !eventContext.error)) && <p className="note">Loading event context…</p>}
           {eventContext.id === eventId && eventContext.event && <p>Finding a venue for: <strong>{eventContext.event.name}</strong></p>}
@@ -182,40 +215,44 @@ export default function VenueAvailabilityPage() {
             <button className="button button--secondary button--small" onClick={() => setDate(localDateValue())}>This week</button>
             <button className="button button--secondary button--small" disabled={!week} onClick={() => setDate(shiftCalendarDate(date, 7))}>Next week</button>
             <button className="button button--secondary button--small" onClick={() => setRefresh((value) => value + 1)}>Refresh</button>
+
             {/* Action button toolbar */}
-            <div className="venue-availability__actions" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-              {user?.role === 'coordinator' && selectedVenue && (
-                <button
-                  type="button"
-                  className="button button--primary"
-                  onClick={() => setBookingVenue(selectedVenue)}
-                >
-                  Request Venue Booking
-                </button>
-              )}
-            </div>
-            <div>
-              {/* Render BookingForm modal */}
-              {bookingVenue && (
-              <BookingForm
-                venue={bookingVenue}
-                eventId={eventId}
-                initialValues={{
-                  date: searchParams.get('date') || filters?.date || '',
-                  startTime: searchParams.get('start_time') || filters?.start_time || '',
-                  endTime: searchParams.get('end_time') || filters?.end_time || '',
-                  layout: searchParams.get('required_layout') || '',
-                }}
-                onClose={() => setBookingVenue(null)}
-                onCreated={() => {
-                  setBookingVenue(null)
-                  // Refresh calendar availability blocks
-                }}
-              />
+            {user?.role === 'coordinator' && selectedVenue && (
+              <button
+                type="button"
+                className="button button--primary button--small"
+                onClick={() => setBookingVenue(selectedVenue)}
+              >
+                Request Venue Booking
+              </button>
             )}
-            </div>
           </div>
         </div>
+
+        {/* Render BookingForm modal */}
+        {bookingVenue && (
+          <BookingForm
+            venue={bookingVenue}
+            eventId={eventId}
+            initialValues={{
+              eventId: eventId || '',
+              eventName: eventContext.event?.name || '',
+              startDate: derivedStartDate,
+              endDate: derivedEndDate,
+              startTime: searchParams.get('start_time') || filters?.start_time || '',
+              endTime: searchParams.get('end_time') || filters?.end_time || '',
+              layout: searchParams.get('required_layout') || filters?.required_layout || (eventContext.event?.layout_preference || ''),
+            }}
+            onClose={() => setBookingVenue(null)}
+            onCreated={() => {
+              const venueName = bookingVenue.name
+              setBookingVenue(null) // Closes modal
+              setSuccessMessage(`Booking request for ${venueName} successfully submitted!`)
+              setRefresh((val) => val + 1) // Refresh calendar data
+            }}
+          />
+        )}
+
         {venueId && <div className="venue-calendar__notice" role="status">
           <strong>Availability not fully verified.</strong>
           <p className="note">Additional reservations may not be shown.</p>
