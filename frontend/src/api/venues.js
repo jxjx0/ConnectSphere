@@ -70,6 +70,6 @@ export function reviewVenueBooking(bookingId, review, token) {
   })
 }
 
-export function getVenueBookingForEvent(eventId, token) {
+export function getVenueBookingsForEvent(eventId, token) {
   return request(`/venues/bookings/event/${encodeURIComponent(eventId)}`, { token })
 }

@@ -203,7 +203,6 @@ def get_venue_booking_for_event(event_id: str):
         .select("*, venues(name)")
         .eq("event_id", event_id)
         .order("created_at", desc=True)
-        .limit(1)
         .execute()
     )
 

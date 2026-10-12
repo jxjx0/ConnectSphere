@@ -23,6 +23,7 @@ import {
   optional,
   readableStatus,
 } from '../eventDisplay'
+import { getVenueBookingsForEvent } from '../api/venues'
 
 const CHANGE_FIELDS = [
   { key: 'name', label: 'Event name' },
@@ -63,6 +64,31 @@ function Answer({ label, value }) {
   )
 }
 
+function getBookingCardStyle(status) {
+  switch (status) {
+    case 'APPROVED':
+      return {
+        borderLeft: '3px solid var(--accent)',
+        backgroundColor: 'var(--accent-faint)',
+      }
+    case 'PENDING_VENUE_APPROVAL':
+      return {
+        borderLeft: '3px solid var(--rule-strong)',
+        backgroundColor: 'var(--surface)',
+      }
+    case 'REJECTED':
+      return {
+        borderLeft: '3px solid var(--danger)',
+        backgroundColor: 'var(--danger-faint)',
+      }
+    default:
+      return {
+        borderLeft: '3px solid var(--rule)',
+        backgroundColor: 'var(--sunken)',
+      }
+  }
+}
+
 export default function EventReviewDetailPage() {
   const { token } = useAuth()
   const { eventId } = useParams()
@@ -79,6 +105,7 @@ export default function EventReviewDetailPage() {
   const [clarifying, setClarifying] = useState(false)
   const [showClarificationForm, setShowClarificationForm] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [venueBookings, setVenueBookings] = useState([])
 
   // --- ADD THIS STATE FOR AUDIT TRAIL & REASSIGNMENT ---
   const [activityLogs, setActivityLogs] = useState([])
@@ -96,12 +123,14 @@ export default function EventReviewDetailPage() {
     Promise.all([
       getAssignedEventRequest(eventId, token),
       getEventActivityLogs(eventId, token).catch(() => ({ logs: [] })),
+      getVenueBookingsForEvent(eventId, token).catch(() => ({ bookings: [] })),
     ])
-      .then(([data, historyData]) => {
+      .then(([data, historyData, bookingData]) => {
         if (!active) return
         setEvent(data.event)
         setOrganiser(data.organiser)
         setActivityLogs(historyData.logs || [])
+        setVenueBookings(bookingData.bookings || (bookingData.booking ? [bookingData.booking] : []))
       })
       .catch((caught) => {
         if (active) setError(caught.message)
@@ -311,7 +340,7 @@ export default function EventReviewDetailPage() {
           {event.status === 'planning' && (
             <div className="form-actions">
               <Link to={`/venues/search?eventId=${encodeURIComponent(eventId)}`} className="button">
-                Find Venue
+                {venueBookings.length > 0 ? 'Find / Request Additional Venue' : 'Find Venue'}
               </Link>
             </div>
           )}
@@ -382,6 +411,82 @@ export default function EventReviewDetailPage() {
             </form>
           </section>
         )}
+
+        <section className="stack stack--tight">
+          <h2 className="section-title">
+            Venue Booking Requests ({venueBookings.length})
+          </h2>
+          {venueBookings.length === 0 ? (
+            <p className="note">No venue booking requests have been submitted for this event yet.</p>
+          ) : (
+            <ul className="stack stack--tight" style={{ listStyle: 'none', paddingLeft: 0, margin: 0 }}>
+              {venueBookings.map((booking) => {
+                const cardStyle = getBookingCardStyle(booking.status)
+                return (
+                  <li
+                    key={booking.booking_id}
+                    style={{
+                      ...cardStyle,
+                      borderTop: '1px solid var(--rule)',
+                      borderRight: '1px solid var(--rule)',
+                      borderBottom: '1px solid var(--rule)',
+                      borderRadius: 'var(--radius)',
+                      padding: 'var(--space-4)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)' }}>
+                      <strong style={{ fontSize: '0.9375rem', color: 'var(--ink)' }}>
+                        {booking.venues?.name || `Venue ID: ${booking.venue_id}`}
+                      </strong>
+                      <span className="tag">
+                        {readableStatus(booking.status)}
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 'var(--space-3)',
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(12rem, 1fr))',
+                        gap: 'var(--space-3)',
+                        fontSize: '0.8125rem',
+                      }}
+                    >
+                      <div>
+                        <span className="note" style={{ display: 'block' }}>Requested Layout:</span>
+                        <span style={{ color: 'var(--ink)' }}>{booking.room_layout}</span>
+                      </div>
+                      <div>
+                        <span className="note" style={{ display: 'block' }}>Submitted On:</span>
+                        <span style={{ color: 'var(--ink)' }}>{formatDateTime(booking.created_at)}</span>
+                      </div>
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <span className="note" style={{ display: 'block' }}>Event Period:</span>
+                        <span style={{ color: 'var(--ink)' }}>
+                          {formatDateTime(booking.start_at)} – {formatDateTime(booking.end_at)}
+                        </span>
+                      </div>
+                      {(booking.setup_buffer_minutes > 0 || booking.teardown_buffer_minutes > 0) && (
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <span className="note" style={{ display: 'block' }}>Operational Buffers:</span>
+                          <span style={{ color: 'var(--ink)' }}>
+                            {booking.setup_buffer_minutes}m setup · {booking.teardown_buffer_minutes}m teardown
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {booking.status === 'REJECTED' && booking.rejection_reason && (
+                      <div className="form-error" style={{ marginTop: 'var(--space-3)', maxWidth: 'none' }}>
+                        <strong>Rejection Reason:</strong> {booking.rejection_reason}
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
 
         <section className="stack stack--tight">
           <h2 className="section-title">Organiser</h2>
@@ -526,42 +631,42 @@ export default function EventReviewDetailPage() {
 
         {event.status === 'change_requested'
           && event.change_request?.status === 'pending' && (
-          <section className="stack stack--tight">
-            <h2 className="section-title">Review proposed changes</h2>
-            {decisionError && (
-              <p className="form-error" role="alert">{decisionError}</p>
-            )}
-            <label className="field">
-              <span>Reason for rejection (required if rejecting)</span>
-              <textarea
-                value={rejectionReason}
-                onChange={(change) => {
-                  setRejectionReason(change.target.value)
-                  setDecisionError('')
-                }}
-                maxLength={2000}
-              />
-            </label>
-            <div className="form-actions">
-              <button
-                type="button"
-                className="button"
-                onClick={() => decide('approve')}
-                disabled={deciding}
-              >
-                {deciding ? 'Saving…' : 'Approve and apply changes'}
-              </button>
-              <button
-                type="button"
-                className="button button--secondary"
-                onClick={() => decide('reject')}
-                disabled={deciding}
-              >
-                Reject change request
-              </button>
-            </div>
-          </section>
-        )}
+            <section className="stack stack--tight">
+              <h2 className="section-title">Review proposed changes</h2>
+              {decisionError && (
+                <p className="form-error" role="alert">{decisionError}</p>
+              )}
+              <label className="field">
+                <span>Reason for rejection (required if rejecting)</span>
+                <textarea
+                  value={rejectionReason}
+                  onChange={(change) => {
+                    setRejectionReason(change.target.value)
+                    setDecisionError('')
+                  }}
+                  maxLength={2000}
+                />
+              </label>
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() => decide('approve')}
+                  disabled={deciding}
+                >
+                  {deciding ? 'Saving…' : 'Approve and apply changes'}
+                </button>
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  onClick={() => decide('reject')}
+                  disabled={deciding}
+                >
+                  Reject change request
+                </button>
+              </div>
+            </section>
+          )}
 
         {['under_review', 'planning', 'change_requested'].includes(event.status) && (
           <section className="stack stack--tight">
@@ -609,6 +714,7 @@ export default function EventReviewDetailPage() {
               </form>
             )}
           </section>
+
         )}
       </div>
     </AppShell>

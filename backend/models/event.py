@@ -383,6 +383,7 @@ class EventReviewSummary(BaseModel):
     start_time: datetime
     end_time: datetime
     status: EventStatus
+    venue_bookings: list[dict] = Field(default_factory=list)
 
 
 class EventOrganiser(BaseModel):
