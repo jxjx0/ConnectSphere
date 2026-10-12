@@ -14,8 +14,9 @@ from models.event import (
 )
 from models.profile import Role
 from routes.auth import require_auth
-from services import auth_service, event_service, notification_service
+from services import auth_service, event_service, notification_service, overview_coordinator_events_service
 from services.auth_service import AuthError
+from models.event import Event
 
 events_bp = Blueprint("events", __name__, url_prefix="/events")
 
@@ -391,5 +392,18 @@ def reassign_event(event_id):
             access_token=g.access_token,
         )
         return jsonify({"event": updated_event}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    
+
+@events_bp.get("/lead-overview")
+@require_auth
+def get_lead_overview():
+    try:
+        raw_events = overview_coordinator_events_service.get_lead_coordinator_events(
+            access_token=g.access_token
+        )
+        formatted_events = Event.format_lead_overview(raw_events)
+        return jsonify(formatted_events), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400

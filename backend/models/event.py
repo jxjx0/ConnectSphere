@@ -391,3 +391,46 @@ class EventOrganiser(BaseModel):
     full_name: str | None = None
     contact_number: str | None = None
     organization: str | None = None
+
+
+
+class Event:
+    # ... your existing Event class fields and methods ...
+
+    @classmethod
+    def format_lead_overview(cls, raw_events):
+        """
+        Sanitizes, validates, and formats raw event dicts for the
+        Event Coordinator Lead overview dashboard.
+        Excludes completed and rejected status events.
+        """
+        if not isinstance(raw_events, list):
+            return []
+
+        formatted_events = []
+        for evt in raw_events:
+            if not evt or evt.get("status") in ["completed", "rejected"]:
+                continue
+
+            # Safely extract venue from venue_bookings array
+            venue_bookings = evt.get("venue_bookings") or []
+            venue_info = venue_bookings[0].get("venue", {}) if venue_bookings else {}
+            
+            coordinator = evt.get("coordinator") or {}
+
+            formatted_events.append({
+                "id": evt.get("id"),
+                "name": evt.get("name", "Untitled Event"),
+                "start_time": str(evt.get("start_time")) if evt.get("start_time") else None,
+                "end_time": str(evt.get("end_time")) if evt.get("end_time") else None,
+                "status": evt.get("status"),
+                "equipment_requirements": evt.get("equipment_requirements") or "No specific equipment requested.",
+                "venue_id": venue_bookings[0].get("venue_id") if venue_bookings else None,
+                "venue_name": venue_info.get("name", "No venue assigned"),
+                "venue_location": venue_info.get("location"),
+                "coordinator_id": evt.get("coordinator_id"),
+                "coordinator_name": coordinator.get("full_name", "Unassigned"),
+                "expected_attendance": evt.get("expected_attendance", 0),
+            })
+
+        return formatted_events

@@ -152,3 +152,25 @@ export function reassignAssignedEvent(eventId, { newCoordinatorId, reason }, tok
     token,
   })
 }
+
+// export async function getLeadCoordinatorEvents(token) {
+//   const response = await fetch('/lead-overview', {
+//     method: 'GET',
+//     headers: {
+//       'Content-Type': 'application/json',
+//       Authorization: `Bearer ${token}`,
+//     },
+//   })
+
+//   if (!response.ok) {
+//     const errorData = await response.json().catch(() => ({}))
+//     throw new Error(errorData.error || 'Failed to fetch coordinator events')
+//   }
+
+//   return response.json()
+// }
+
+// REPLACE getLeadCoordinatorEvents WITH THIS:
+export function getLeadCoordinatorEvents(token) {
+  return request('/events/lead-overview', { token })
+}

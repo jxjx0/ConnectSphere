@@ -16,6 +16,7 @@ import VenueSearchPage from './pages/VenueSearchPage'
 import VenueAvailabilityPage from './pages/VenueAvailabilityPage'
 import EquipmentPage from './pages/EquipmentPage'
 import EventReviewDetailPage from './pages/EventReviewDetailPage'
+import LeadDashboardPage from './pages/LeadDashboardPage'
 
 export default function App() {
   return (
@@ -147,6 +148,15 @@ export default function App() {
         }
       />
 
+      <Route
+        path="/lead/dashboard"
+        element={
+          <AuthGuard allowedRoles={['event_coordinator_lead']}>
+            <LeadDashboardPage />
+          </AuthGuard>
+        }
+      />
+      
       <Route
         path="*"
         element={
