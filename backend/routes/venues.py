@@ -3,6 +3,7 @@
 from flask import Blueprint, g, jsonify, request
 from pydantic import ValidationError
 
+import config
 from models.profile import Role
 from models.venue import VenueCreateRequest, VenueUpdateRequest
 from models.venue_block import VenueBlockCreateRequest
@@ -13,10 +14,18 @@ from services import auth_service, venue_service, venue_block_service
 from services.auth_service import AuthError
 from services import venue_search_service
 from services import venue_availability_service
+from models.venue_booking import VenueBookingCreateRequest, VenueBookingReviewRequest
+from services import venue_booking_service
 
 venues_bp = Blueprint("venues", __name__, url_prefix="/venues")
 
+def _require_coordinator(message: str = "Only Event Coordinators can perform this action.") -> None:
+    """Require the authenticated profile to have the coordinator role."""
+    profile = auth_service.get_profile(g.access_token, g.user_id)
+    if profile.role != Role.COORDINATOR:
+        raise AuthError(message, status_code=403)
 
+    
 @venues_bp.get("/<venue_id>/availability")
 @require_auth
 def get_venue_availability(venue_id):
@@ -136,3 +145,67 @@ def list_venues():
     return jsonify(
         {"venues": [venue.model_dump(mode="json") for venue in venues]}
     ), 200
+
+@venues_bp.post("/<venue_id>/bookings")
+@require_auth
+def create_venue_booking(venue_id: str):
+    """Allow Coordinators to submit a venue booking request."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"errors": ["Venue booking request must be a JSON object."]}), 400
+
+    try:
+        booking_request = VenueBookingCreateRequest(**payload)
+    except ValidationError as error:
+        return jsonify({"errors": _validation_messages(error)}), 400
+
+    _require_coordinator("Only Event Coordinators can submit venue booking requests.")
+
+    booking = venue_booking_service.create_venue_booking(
+        access_token=g.access_token,
+        venue_id=venue_id,
+        request=booking_request,
+        coordinator_id=g.user_id,
+    )
+    return jsonify({"booking": booking}), 201
+
+
+@venues_bp.patch("/bookings/<booking_id>/review")
+@require_auth
+def review_venue_booking(booking_id: str):
+    """Allow Venue Staff to approve or reject a pending request."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"errors": ["Review request must be a JSON object."]}), 400
+
+    try:
+        review_request = VenueBookingReviewRequest(**payload)
+    except ValidationError as error:
+        return jsonify({"errors": _validation_messages(error)}), 400
+
+    _require_venue_staff("Only Venue Staff can approve or reject venue bookings.")
+
+    updated_booking = venue_booking_service.review_venue_booking(
+        access_token=g.access_token,
+        booking_id=booking_id,
+        reviewer_id=g.user_id,
+        review=review_request,
+    )
+    return jsonify({"booking": updated_booking}), 200
+
+@venues_bp.get("/bookings/event/<event_id>")
+@require_auth
+def get_venue_booking_for_event(event_id: str):
+    client = config.get_user_client(g.access_token)
+    
+    result = (
+        client.table("venue_bookings")
+        .select("*, venues(name)")
+        .eq("event_id", event_id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+
+    booking = result.data[0] if result.data else None
+    return jsonify({"booking": booking}), 200

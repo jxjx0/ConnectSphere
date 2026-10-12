@@ -11,6 +11,7 @@ import {
   validateVenueSearch, venueAvailabilityLabel, venueLayoutOptions, eventVenueFilters,
   venueAccessibilityOptions, venueAvailabilitySummary, venueFacilityOptions,
 } from '../venueSearch.js'
+import BookingForm from '../components/BookingForm'
 
 function formatPeriod(start, end) {
   return `${new Date(start).toLocaleString()} – ${new Date(end).toLocaleString()}`
@@ -25,7 +26,7 @@ function formatFeatures(value) {
 }
 
 export default function VenueSearchPage() {
-  const { token } = useAuth()
+  const { token, user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const eventId = searchParams.get('eventId')
   const [form, setForm] = useState(EMPTY_VENUE_FILTERS)
@@ -40,6 +41,7 @@ export default function VenueSearchPage() {
   const requestedPeriod = result.requested_period || (result.venues[0]?.requested_start ? {
     start: result.venues[0].requested_start, end: result.venues[0].requested_end,
   } : null)
+  const [quickBookingVenue, setQuickBookingVenue] = useState(null)
 
   useEffect(() => {
     let active = true
@@ -219,58 +221,89 @@ export default function VenueSearchPage() {
             <button type="button" className="button button--secondary" disabled={disabled} onClick={clearFilters}>Clear filters</button>
           </div>
         </form>
-      <section className="stack stack--tight venue-search__results" aria-live="polite" aria-busy={loading}>
-        {result.phase === 'idle' && <p className="note">Choose filters, or search to view all venues.</p>}
-        {loading && <p className="note">Searching venues…</p>}
-        {result.phase === 'error' && <p className="form-error" role="alert">{result.error}</p>}
-        {result.phase === 'success' && (
-          <>
-            <div className="venue-search__results-heading">
-              <h2 className="section-title">Search results</h2>
-              <p className="note">{result.venues.length} {result.venues.length === 1 ? 'venue' : 'venues'}</p>
-            </div>
-            {requestedPeriod && <p className="note">Requested period: {formatPeriod(requestedPeriod.start, requestedPeriod.end)}</p>}
-            {availabilitySummary && <p className="note" role="status">{availabilitySummary}</p>}
-            {result.venues.length === 0 && <p className="note">No venues match the selected filters.</p>}
-            {result.venues.length > 0 && (
-              <div className="table-wrapper" tabIndex={0} role="region" aria-label="Venue search results">
-                <table className="venue-table venue-search__table">
-                  <caption className="visually-hidden">Venues matching the submitted filters</caption>
-                  <thead><tr>
-                    <th scope="col">Venue</th><th scope="col">Overall capacity</th>
-                    <th scope="col">Layouts</th><th scope="col">Facilities &amp; accessibility</th>
-                    {result.venues.some((venue) => venue.requested_start) && <th scope="col">Availability</th>}
-                    <th scope="col">Actions</th>
-                  </tr></thead>
-                  <tbody>{result.venues.map((venue) => (
-                    <tr key={venue.id}>
-                      <th scope="row">{venue.name}<span className="venue-search__detail">{venue.location || 'Location not provided'}</span></th>
-                      <td>{venue.capacity}</td>
-                      <td>{venue.selected_layout
-                        ? `${venue.selected_layout} — capacity ${venue.layout_capacity}`
-                        : <ul className="table-values">{venue.layouts.map((layout) => <li key={layout.name}>{layout.name} ({layout.capacity})</li>)}</ul>}
-                      </td>
-                      <td><span>{formatFeatures(venue.facilities)}</span>
-                        <span className="venue-search__detail">Accessibility: {formatFeatures(venue.accessibility)}</span></td>
-                      {venue.requested_start && <td>
-                        <span className="venue-search__availability">{venueAvailabilityLabel(venue)}</span>
-                        {venue.availability_status === 'unverified' && <span className="venue-search__detail">No operational block conflict</span>}
-                        {venue.effective_start && venue.effective_end && <span className="venue-search__detail">Including setup and turnaround: {formatPeriod(venue.effective_start, venue.effective_end)}</span>}
-                      </td>}
-                      <td><Link className="button button--secondary button--small"
-                        to={`/venues/availability?${new URLSearchParams({ venueId: venue.id, from: 'search',
-                          ...(form.date ? { date: form.date } : {}), search: searchParams.toString() })}`}>
-                        View Availability
-                      </Link></td>
-                    </tr>
-                  ))}</tbody>
-                </table>
+        <section className="stack stack--tight venue-search__results" aria-live="polite" aria-busy={loading}>
+          {result.phase === 'idle' && <p className="note">Choose filters, or search to view all venues.</p>}
+          {loading && <p className="note">Searching venues…</p>}
+          {result.phase === 'error' && <p className="form-error" role="alert">{result.error}</p>}
+          {result.phase === 'success' && (
+            <>
+              <div className="venue-search__results-heading">
+                <h2 className="section-title">Search results</h2>
+                <p className="note">{result.venues.length} {result.venues.length === 1 ? 'venue' : 'venues'}</p>
               </div>
-            )}
-          </>
-        )}
-      </section>
+              {requestedPeriod && <p className="note">Requested period: {formatPeriod(requestedPeriod.start, requestedPeriod.end)}</p>}
+              {availabilitySummary && <p className="note" role="status">{availabilitySummary}</p>}
+              {result.venues.length === 0 && <p className="note">No venues match the selected filters.</p>}
+              {result.venues.length > 0 && (
+                <div className="table-wrapper" tabIndex={0} role="region" aria-label="Venue search results">
+                  <table className="venue-table venue-search__table">
+                    <caption className="visually-hidden">Venues matching the submitted filters</caption>
+                    <thead><tr>
+                      <th scope="col">Venue</th><th scope="col">Overall capacity</th>
+                      <th scope="col">Layouts</th><th scope="col">Facilities &amp; accessibility</th>
+                      {result.venues.some((venue) => venue.requested_start) && <th scope="col">Availability</th>}
+                      <th scope="col">Actions</th>
+                    </tr></thead>
+                    <tbody>{result.venues.map((venue) => (
+                      <tr key={venue.id}>
+                        <th scope="row">{venue.name}<span className="venue-search__detail">{venue.location || 'Location not provided'}</span></th>
+                        <td>{venue.capacity}</td>
+                        <td>{venue.selected_layout
+                          ? `${venue.selected_layout} — capacity ${venue.layout_capacity}`
+                          : <ul className="table-values">{venue.layouts.map((layout) => <li key={layout.name}>{layout.name} ({layout.capacity})</li>)}</ul>}
+                        </td>
+                        <td><span>{formatFeatures(venue.facilities)}</span>
+                          <span className="venue-search__detail">Accessibility: {formatFeatures(venue.accessibility)}</span></td>
+                        {venue.requested_start && <td>
+                          <span className="venue-search__availability">{venueAvailabilityLabel(venue)}</span>
+                          {venue.availability_status === 'unverified' && <span className="venue-search__detail">No operational block conflict</span>}
+                          {venue.effective_start && venue.effective_end && <span className="venue-search__detail">Including setup and turnaround: {formatPeriod(venue.effective_start, venue.effective_end)}</span>}
+                        </td>}
+                        <td>
+                          <Link className="button button--secondary button--small"
+                            to={`/venues/availability?${new URLSearchParams({
+                              venueId: venue.id, from: 'search',
+                              ...(form.date ? { date: form.date } : {}), search: searchParams.toString()
+                            })}`}>
+                            View Availability
+                          </Link>
+                          <button
+                            type="button"
+                            className="button button--primary button--small"
+                            disabled={!venue.requested_start || venue.availability_status === 'conflict'}
+                            title={!venue.requested_start ? 'Enter search date & times to enable quick booking' : ''}
+                            onClick={() => setQuickBookingVenue(venue)}>
+                            Quick Book
+                          </button>
+                        </td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </section>
       </div>
+      {/*Render BookingForm modal at bottom of page component */}
+      {quickBookingVenue && (
+        <BookingForm
+          venue={quickBookingVenue}
+          eventId={eventId}
+          initialValues={{
+            date: form.date,
+            startTime: form.start_time,
+            endTime: form.end_time,
+            endDate: form.end_date || form.date,
+            layout: quickBookingVenue.selected_layout || form.required_layout || (context.event?.layout_preference || ''),
+          }}
+          onClose={() => setQuickBookingVenue(null)}
+          onCreated={() => {
+            setQuickBookingVenue(null)
+            // Re-run search if you want results to update immediately
+          }}
+        />
+      )}
     </AppShell>
   )
 }
