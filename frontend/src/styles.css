@@ -272,6 +272,47 @@ a:hover {
   gap: var(--space-7);
 }
 
+.equipment-request-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 8rem;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--rule);
+}
+
+.equipment-request-item__name,
+.equipment-request-item__quantity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.equipment-request-item__quantity {
+  flex-direction: column;
+  align-items: stretch;
+  font-size: 0.8125rem;
+}
+
+.equipment-request-item__quantity input {
+  width: 100%;
+}
+
+.equipment-request-card {
+  display: block;
+  border-bottom: 1px solid var(--rule);
+}
+
+@media (max-width: 35rem) {
+  .equipment-request-item {
+    grid-template-columns: 1fr;
+  }
+
+  .equipment-request-item__quantity {
+    max-width: 8rem;
+  }
+}
+
 /* --- Choices: the account types on the landing page ------------------- */
 
 .choices {
@@ -501,6 +542,8 @@ a:hover {
 .venue-search__back { align-self: flex-start; color: var(--ink-muted); font-size: 0.8125rem; margin-bottom: var(--space-2); }
 .venue-search__form { max-width: none; padding: var(--space-5); background: var(--sunken); }
 .venue-search__filter-heading { display: flex; flex-direction: column; gap: var(--space-2); }
+.venue-search__filter-group { min-width: 0; margin: 0; padding: 0; border: 0; }
+.venue-search__filter-group legend { padding: 0; margin-bottom: var(--space-4); }
 .venue-search__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
 .venue-search__results { padding: var(--space-5); border-top: 1px solid var(--rule); }
 .venue-search__results-heading { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }

@@ -103,12 +103,13 @@ test('search retains filters in the URL and calendar links carry venue, date and
 
 test('standalone search restores saved filters without loading an event or trusting old results', async () => {
   const page = pageHarness(searchHelpers.INITIAL_VENUE_SEARCH, undefined, () => assert.fail('returning must not silently search'), {
-    query: 'filters=1&required_layout=Theatre&required_accessibility=Wheelchair+access&required_facility=Wi-Fi&date=2026-11-20&end_date=2026-11-21&start_time=22%3A00&end_time=02%3A00',
+    query: 'filters=1&location=Campus+West&required_layout=Theatre&required_accessibility=Wheelchair+access&required_facility=Wi-Fi&date=2026-11-20&end_date=2026-11-21&start_time=22%3A00&end_time=02%3A00',
   })
   await page.load()
   assert.equal(page.states[0].required_layout, 'Theatre')
   assert.equal(page.states[0].required_accessibility, 'Wheelchair access')
   assert.equal(page.states[0].required_facility, 'Wi-Fi')
+  assert.equal(page.states[0].location, 'Campus West')
   assert.equal(page.states[0].end_date, '2026-11-21')
   assert.equal(page.states[0].start_time, '22:00')
   assert.equal(page.states[1].phase, 'idle')
@@ -116,13 +117,13 @@ test('standalone search restores saved filters without loading an event or trust
 
 test('returning to results rechecks availability after validating the assigned event', async () => {
   const calls = []
-  const options = { eventId: 'event-1', query: 'eventId=event-1&filters=1&resume=1&expected_attendance=120',
+  const options = { eventId: 'event-1', query: 'eventId=event-1&filters=1&resume=1&expected_attendance=120&location=West',
     getEvent: async () => { calls.push('event'); return { event: { id: 'event-1', name: 'Workshop' } } } }
   const page = pageHarness(searchHelpers.INITIAL_VENUE_SEARCH, undefined, async (payload) => {
     calls.push(payload); return { venues: [], warnings: [] }
   }, options)
   await page.load()
-  assert.deepEqual(calls, ['event', { expected_attendance: 120 }])
+  assert.deepEqual(calls, ['event', { expected_attendance: 120, location: 'West' }])
   assert.equal(page.states[1].phase, 'success')
   const failed = pageHarness(searchHelpers.INITIAL_VENUE_SEARCH, undefined, () => assert.fail('failed event must not resume search'), {
     ...options, getEvent: async () => { throw new Error('Not assigned') },
@@ -210,7 +211,7 @@ test('loading disables search inputs and shows progress', () => {
   const html = renderPage({ ...empty, phase: 'loading' })
   assert.match(html, /Searching venues/)
   assert.match(html, /aria-busy="true"/)
-  assert.equal((html.match(/disabled=""/g) || []).length, 10)
+  assert.equal((html.match(/disabled=""/g) || []).length, 11)
 })
 
 const assignedEvent = Object.freeze({
@@ -378,6 +379,25 @@ test('layout dropdown updates the filter without entering free text', () => {
   const harness = pageHarness(searchHelpers.INITIAL_VENUE_SEARCH)
   findElement(harness.tree(), (node) => node.props.id === 'searchLayout').props.onChange({ target: { value: 'Theatre' } })
   assert.equal(harness.states[0].required_layout, 'Theatre')
+})
+
+test('location input submits trimmed text, persists in URL and clears', async () => {
+  let payload
+  const page = pageHarness(searchHelpers.INITIAL_VENUE_SEARCH, undefined, async (data) => {
+    payload = data; return { venues: [], warnings: [] }
+  })
+  assert.match(page.html(), /<label for="searchLocation">Location<\/label>/)
+  const input = findElement(page.tree(), (node) => node.props.id === 'searchLocation')
+  assert.equal(input.props.value, '')
+  input.props.onChange({ target: { value: '  Campus West  ' } })
+  assert.equal(page.params().get('location'), '  Campus West  ')
+  await findElement(page.tree(), (node) => node.type === 'form').props.onSubmit({ preventDefault() {} })
+  assert.equal(payload.location, 'Campus West')
+  findElement(page.tree(), (node) => node.type === 'button' && node.props.type === 'button').props.onClick()
+  assert.equal(page.states[0].location, '')
+  assert.equal(page.params().get('location'), null)
+  await findElement(page.tree(), (node) => node.type === 'form').props.onSubmit({ preventDefault() {} })
+  assert.ok(!('location' in payload))
 })
 
 test('backend failure preserves entered filters', async () => {

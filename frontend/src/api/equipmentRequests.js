@@ -1,0 +1,37 @@
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
+
+async function request(path, token, options = {}) {
+  const headers = { Authorization: `Bearer ${token}` }
+  if (options.body) headers['Content-Type'] = 'application/json'
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  })
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    const message = data.errors
+      ? data.errors.join(' ')
+      : data.error || 'Unable to access equipment requests.'
+    throw new Error(message)
+  }
+
+  return data
+}
+
+export function getEquipmentCatalog(token) {
+  return request('/api/equipment', token)
+}
+
+export function getEquipmentRequests(token) {
+  return request('/equipment-requests', token)
+}
+
+export function submitEquipmentRequest(equipmentRequest, token) {
+  return request('/equipment-requests', token, {
+    method: 'POST',
+    body: equipmentRequest,
+  })
+}

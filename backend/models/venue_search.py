@@ -15,11 +15,12 @@ class VenueSearchRequest(BaseModel):
     required_layout: str | None = Field(default=None, max_length=120)
     required_accessibility: str | None = None
     required_facility: str | None = None
+    location: str | None = None
     # Minutes east of UTC, supplied from the browser for the selected date.
     timezone_offset_minutes: int = Field(default=0, strict=True, ge=-840, le=840)
     end_timezone_offset_minutes: int | None = Field(default=None, strict=True, ge=-840, le=840)
 
-    @field_validator("date", "end_date", "start_time", "end_time", "expected_attendance", "required_layout", "required_accessibility", "required_facility", mode="before")
+    @field_validator("date", "end_date", "start_time", "end_time", "expected_attendance", "required_layout", "required_accessibility", "required_facility", "location", mode="before")
     @classmethod
     def normalize_empty_filter(cls, value):
         if isinstance(value, str):
