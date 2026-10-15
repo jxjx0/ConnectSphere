@@ -52,6 +52,8 @@ def _search(client, records, request):
     candidates = []
     for record in records:
         venue = Venue(**record)
+        if request.location is not None and request.location.casefold() not in (venue.location or "").casefold():
+            continue
         if request.required_facility is not None and not any(
             _normalize_facility(name) == _normalize_facility(request.required_facility)
             for name in _facility_names(venue.facilities)

@@ -2,7 +2,7 @@
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/
 
 export const EMPTY_VENUE_FILTERS = {
-  date: '', end_date: '', start_time: '', end_time: '', expected_attendance: '', required_layout: '', required_accessibility: '', required_facility: '',
+  date: '', end_date: '', start_time: '', end_time: '', expected_attendance: '', required_layout: '', required_accessibility: '', required_facility: '', location: '',
 }
 export const INITIAL_VENUE_SEARCH = { phase: 'idle', error: '', venues: [], warnings: [] }
 
@@ -47,6 +47,7 @@ export function venueSearchPayload(form) {
   }
   if (String(form.expected_attendance ?? '').trim()) payload.expected_attendance = Number(form.expected_attendance)
   if (form.required_layout?.trim()) payload.required_layout = form.required_layout.trim()
+  if (form.location?.trim()) payload.location = form.location.trim()
   if (form.required_accessibility?.trim()) payload.required_accessibility = normalizeAccessibility(form.required_accessibility)
   if (form.required_facility?.trim()) payload.required_facility = normalizeFacility(form.required_facility)
   return payload
