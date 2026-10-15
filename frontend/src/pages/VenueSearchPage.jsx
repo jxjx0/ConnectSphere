@@ -26,7 +26,7 @@ function formatFeatures(value) {
 
 export default function VenueSearchPage() {
   const { token } = useAuth()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const eventId = searchParams.get('eventId')
   const [form, setForm] = useState(EMPTY_VENUE_FILTERS)
   const [result, setResult] = useState(INITIAL_VENUE_SEARCH)
@@ -43,8 +43,22 @@ export default function VenueSearchPage() {
 
   useEffect(() => {
     let active = true
+    const savedFilters = searchParams.get('filters') === '1'
+      ? Object.fromEntries(Object.keys(EMPTY_VENUE_FILTERS).map((field) => [field, searchParams.get(field) || ''])) : null
     searchGeneration.current += 1
-    setForm({ ...EMPTY_VENUE_FILTERS })
+    const generation = searchGeneration.current
+    async function resumeSearch() {
+      if (!active || generation !== searchGeneration.current || !savedFilters || searchParams.get('resume') !== '1') return
+      const error = validateVenueSearch(savedFilters)
+      if (error) {
+        setResult({ ...INITIAL_VENUE_SEARCH, phase: 'error', error })
+        return
+      }
+      setResult({ ...INITIAL_VENUE_SEARCH, phase: 'loading' })
+      const next = await runVenueSearch(savedFilters, token, searchVenues)
+      if (active && generation === searchGeneration.current) setResult(next)
+    }
+    setForm(savedFilters || { ...EMPTY_VENUE_FILTERS })
     setResult(INITIAL_VENUE_SEARCH)
     setLayouts({ options: [], accessibilityOptions: [], facilityOptions: [], loading: true, error: '' })
     setContext({ eventId, phase: eventId === null ? 'standalone' : 'loading', event: null, error: '' })
@@ -60,23 +74,40 @@ export default function VenueSearchPage() {
         .then(([data, catalogueData]) => {
           if (!active) return
           if (!data.event || data.event.id !== eventId) throw new Error('The requested event could not be loaded.')
-          setForm(eventVenueFilters(data.event, catalogueData.options))
+          setForm(savedFilters || eventVenueFilters(data.event, catalogueData.options))
           setContext({ eventId, phase: 'success', event: data.event, error: '' })
+          resumeSearch()
         })
         .catch((error) => {
           if (active) setContext({ eventId, phase: 'error', event: null, error: error.message || 'Unable to load this assigned event.' })
         })
+    } else {
+      catalogue.then(() => { if (active) resumeSearch() })
     }
     return () => { active = false; searchGeneration.current += 1 }
   }, [eventId, token])
 
+  function rememberFilters(filters, resume = false) {
+    const params = new URLSearchParams()
+    if (eventId !== null) params.set('eventId', eventId)
+    params.set('filters', '1')
+    if (resume) params.set('resume', '1')
+    for (const [field, value] of Object.entries(filters)) if (value) params.set(field, value)
+    setSearchParams(params, { replace: true })
+  }
+
   function updateField(field, value) {
-    setForm((current) => ({ ...current, [field]: value }))
+    searchGeneration.current += 1
+    const next = { ...form, [field]: value }
+    setForm(next)
+    rememberFilters(next)
     setResult(INITIAL_VENUE_SEARCH)
   }
 
   function clearFilters() {
+    searchGeneration.current += 1
     setForm({ ...EMPTY_VENUE_FILTERS })
+    rememberFilters(EMPTY_VENUE_FILTERS)
     setResult(INITIAL_VENUE_SEARCH)
   }
 
@@ -88,6 +119,7 @@ export default function VenueSearchPage() {
       setResult({ ...INITIAL_VENUE_SEARCH, phase: 'error', error })
       return
     }
+    rememberFilters(form, true)
     setResult({ ...INITIAL_VENUE_SEARCH, phase: 'loading' })
     const generation = ++searchGeneration.current
     const next = await runVenueSearch(form, token, searchVenues)
@@ -208,6 +240,7 @@ export default function VenueSearchPage() {
                     <th scope="col">Venue</th><th scope="col">Overall capacity</th>
                     <th scope="col">Layouts</th><th scope="col">Facilities &amp; accessibility</th>
                     {result.venues.some((venue) => venue.requested_start) && <th scope="col">Availability</th>}
+                    <th scope="col">Actions</th>
                   </tr></thead>
                   <tbody>{result.venues.map((venue) => (
                     <tr key={venue.id}>
@@ -224,6 +257,11 @@ export default function VenueSearchPage() {
                         {venue.availability_status === 'unverified' && <span className="venue-search__detail">No operational block conflict</span>}
                         {venue.effective_start && venue.effective_end && <span className="venue-search__detail">Including setup and turnaround: {formatPeriod(venue.effective_start, venue.effective_end)}</span>}
                       </td>}
+                      <td><Link className="button button--secondary button--small"
+                        to={`/venues/availability?${new URLSearchParams({ venueId: venue.id, from: 'search',
+                          ...(form.date ? { date: form.date } : {}), search: searchParams.toString() })}`}>
+                        View Availability
+                      </Link></td>
                     </tr>
                   ))}</tbody>
                 </table>

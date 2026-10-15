@@ -7,12 +7,31 @@ from models.profile import Role
 from models.venue import VenueCreateRequest, VenueUpdateRequest
 from models.venue_block import VenueBlockCreateRequest
 from models.venue_search import VenueSearchRequest
+from models.venue_availability import VenueAvailabilityRequest
 from routes.auth import require_auth
 from services import auth_service, venue_service, venue_block_service
 from services.auth_service import AuthError
 from services import venue_search_service
+from services import venue_availability_service
 
 venues_bp = Blueprint("venues", __name__, url_prefix="/venues")
+
+
+@venues_bp.get("/<venue_id>/availability")
+@require_auth
+def get_venue_availability(venue_id):
+    profile = auth_service.get_profile(g.access_token, g.user_id)
+    if profile.role not in {Role.VENUE_STAFF, Role.COORDINATOR}:
+        raise AuthError("Only Venue Staff and Event Coordinators can view venue availability.", status_code=403)
+    try:
+        availability_request = VenueAvailabilityRequest(
+            venue_id=venue_id, start_at=request.args.get("start_at"),
+            end_at=request.args.get("end_at"),
+        )
+    except ValidationError as error:
+        return jsonify({"errors": _validation_messages(error)}), 400
+    result = venue_availability_service.get_venue_availability(g.access_token, availability_request)
+    return jsonify(result.model_dump(mode="json")), 200
 
 
 @venues_bp.post("/search")
