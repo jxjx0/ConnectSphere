@@ -62,9 +62,12 @@ export default function DashboardPage() {
           {!assignedLoading && !assignedError && (
             <AssignedRequestTabs events={assignedEvents} />
           )}
-          <p className="note">
+          <div className="form-actions">
+            <Link to="/equipment-requests" className="button">
+              Request event equipment
+            </Link>
             <Link to="/venues/search" className="backlink">Browse Venues</Link>
-          </p>
+          </div>
         </section>
       )}
 
@@ -89,6 +92,9 @@ export default function DashboardPage() {
         <section className="stack stack--tight"> 
           <h2 className="section-title">Equipment Management</h2>
           <div className="form-actions"> 
+            <Link to="/equipment-requests" className="button">
+              Review equipment requests
+            </Link>
             <Link to="/equipment" className="button"> 
               View Equipment Catalogue 
             </Link> 
