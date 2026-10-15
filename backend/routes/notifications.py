@@ -15,7 +15,7 @@ notifications_bp = Blueprint("notifications", __name__, url_prefix="/notificatio
 @require_auth
 def list_notifications():
     notifications = notification_service.list_notifications(g.access_token)
-    unread_count = sum(1 for notification in notifications if not notification.is_read)
+    unread_count = notification_service.count_unread(g.access_token)
     return (
         jsonify(
             {

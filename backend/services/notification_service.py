@@ -9,7 +9,7 @@ Notifications are sent by the system, not by a user, so notify() uses the
 service-role Supabase client (config.get_admin_client). It is the only
 place in the backend that does.
 
-The inbox functions (list_notifications, mark_read) run for a logged-in
+The inbox functions (list_notifications, count_unread, mark_read) run for a logged-in
 user, so they use that user's client instead. Row-level security then
 limits them to the user's own notifications.
 """
@@ -115,8 +115,13 @@ def send_email(to_email: str, subject: str, body: str) -> None:
     SendGridAPIClient(config.SENDGRID_API_KEY).send(message)
 
 
+# The inbox shows at most this many notifications. The unread count is
+# worked out separately, so it stays right even when there are more.
+INBOX_LIMIT = 50
+
+
 def list_notifications(access_token: str) -> list[Notification]:
-    """Return the logged-in user's notifications, newest first.
+    """Return the logged-in user's newest notifications, newest first.
 
     Row-level security only returns rows where user_id is the caller, so
     there is no user_id filter here.
@@ -127,11 +132,30 @@ def list_notifications(access_token: str) -> list[Notification]:
             client.table("notifications")
             .select("*")
             .order("created_at", desc=True)
+            .limit(INBOX_LIMIT)
             .execute()
         )
     except PostgrestAPIError as error:
         raise AuthError("Unable to load notifications.", status_code=502) from error
     return [Notification(**record) for record in result.data]
+
+
+def count_unread(access_token: str) -> int:
+    """Count all of the logged-in user's unread notifications.
+
+    head=True asks the database for the count only, without the rows.
+    """
+    client = config.get_user_client(access_token)
+    try:
+        result = (
+            client.table("notifications")
+            .select("id", count="exact", head=True)
+            .eq("is_read", False)
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise AuthError("Unable to load notifications.", status_code=502) from error
+    return result.count or 0
 
 
 def mark_read(access_token: str, notification_id: str) -> Notification:

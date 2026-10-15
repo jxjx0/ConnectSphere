@@ -11,25 +11,38 @@ import { useLocation } from 'react-router-dom'
 import { getNotifications, markNotificationRead } from '../api/notifications'
 import { useAuth } from '../context/AuthContext'
 import { formatDateTime } from '../eventDisplay'
-import { countUnread, inboxLabel, markReadInList } from '../notificationInbox'
+import { inboxLabel, markReadInList, markUnreadInList } from '../notificationInbox'
 
 export default function NotificationDropdown() {
   const { token } = useAuth()
   const location = useLocation()
+  // The list holds the newest notifications only; the unread count comes
+  // from the backend so it covers all of them.
   const [notifications, setNotifications] = useState([])
+  const [unreadCount, setUnreadCount] = useState(0)
   const [isOpen, setIsOpen] = useState(false)
-  const [error, setError] = useState('')
+  // Two kinds of error: the list failing to load, and a single notification
+  // failing to be marked read. They are cleared at different times.
+  const [loadError, setLoadError] = useState('')
+  const [markError, setMarkError] = useState('')
   const containerRef = useRef(null)
 
   useEffect(() => {
     getNotifications(token)
       .then((data) => {
         setNotifications(data.notifications)
-        setError('')
+        setUnreadCount(data.unread_count)
+        setLoadError('')
       })
-      .catch((caught) => setError(caught.message))
+      .catch((caught) => setLoadError(caught.message))
     setIsOpen(false)
   }, [token, location.pathname])
+
+  // An old "could not mark read" message should not linger once the user
+  // closes the dropdown.
+  useEffect(() => {
+    if (!isOpen) setMarkError('')
+  }, [isOpen])
 
   // Close the dropdown when the user clicks outside it or presses Escape.
   useEffect(() => {
@@ -52,17 +65,22 @@ export default function NotificationDropdown() {
 
   // The whole notification is already visible, so clicking it is what
   // "opening" means: it marks the notification read.
+  //
+  // It is shown as read straight away, so a second click does nothing.
+  // If the backend then fails, it goes back to unread and an error shows.
   function handleOpen(notification) {
     if (notification.is_read) return
 
-    markNotificationRead(notification.id, token)
-      .then(() => {
-        setNotifications((current) => markReadInList(current, notification.id))
-      })
-      .catch((caught) => setError(caught.message))
-  }
+    setMarkError('')
+    setNotifications((current) => markReadInList(current, notification.id))
+    setUnreadCount((count) => Math.max(count - 1, 0))
 
-  const unreadCount = countUnread(notifications)
+    markNotificationRead(notification.id, token).catch((caught) => {
+      setNotifications((current) => markUnreadInList(current, notification.id))
+      setUnreadCount((count) => count + 1)
+      setMarkError(caught.message)
+    })
+  }
 
   return (
     <div className="inbox" ref={containerRef}>
@@ -99,9 +117,14 @@ export default function NotificationDropdown() {
             </button>
           </div>
 
-          {error && <p className="form-error inbox__message" role="alert">{error}</p>}
+          {loadError && (
+            <p className="form-error inbox__message" role="alert">{loadError}</p>
+          )}
+          {markError && (
+            <p className="form-error inbox__message" role="alert">{markError}</p>
+          )}
 
-          {!error && notifications.length === 0 && (
+          {!loadError && notifications.length === 0 && (
             <p className="note inbox__message">You have no notifications yet.</p>
           )}
 

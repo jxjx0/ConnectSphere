@@ -44,9 +44,10 @@ def authenticate(monkeypatch):
 class FakeQuery:
     """Records the calls the service makes and returns a fixed result."""
 
-    def __init__(self, data=None, error=None):
+    def __init__(self, data=None, error=None, count=None):
         self.data = data or []
         self.error = error
+        self.count = count
         self.calls = []
 
     def __getattr__(self, name):
@@ -59,7 +60,7 @@ class FakeQuery:
     def execute(self):
         if self.error:
             raise self.error
-        return SimpleNamespace(data=self.data)
+        return SimpleNamespace(data=self.data, count=self.count)
 
 
 def use_fake_client(monkeypatch, query):
@@ -86,6 +87,7 @@ def test_inbox_lists_notifications_with_unread_count(client, monkeypatch):
         "list_notifications",
         lambda token: [Notification(**NEWER_RECORD), Notification(**OLDER_RECORD)],
     )
+    monkeypatch.setattr(notification_service, "count_unread", lambda token: 1)
 
     response = client.get(
         "/notifications", headers={"Authorization": "Bearer token"}
@@ -100,6 +102,7 @@ def test_inbox_lists_notifications_with_unread_count(client, monkeypatch):
 def test_empty_inbox_returns_empty_list(client, monkeypatch):
     authenticate(monkeypatch)
     monkeypatch.setattr(notification_service, "list_notifications", lambda token: [])
+    monkeypatch.setattr(notification_service, "count_unread", lambda token: 0)
 
     response = client.get(
         "/notifications", headers={"Authorization": "Bearer token"}
@@ -157,6 +160,30 @@ def test_list_notifications_orders_newest_first(monkeypatch):
 
     assert [n.id for n in notifications] == [NOTIFICATION_ID, OLDER_ID]
     assert ("order", ("created_at",), {"desc": True}) in query.calls
+
+
+def test_list_notifications_is_capped(monkeypatch):
+    query = FakeQuery(data=[NEWER_RECORD])
+    use_fake_client(monkeypatch, query)
+
+    notification_service.list_notifications("token")
+
+    assert ("limit", (notification_service.INBOX_LIMIT,), {}) in query.calls
+
+
+def test_count_unread_counts_unread_rows_in_the_database(monkeypatch):
+    query = FakeQuery(count=7)
+    use_fake_client(monkeypatch, query)
+
+    assert notification_service.count_unread("token") == 7
+    assert ("select", ("id",), {"count": "exact", "head": True}) in query.calls
+    assert ("eq", ("is_read", False), {}) in query.calls
+
+
+def test_count_unread_with_no_count_is_zero(monkeypatch):
+    use_fake_client(monkeypatch, FakeQuery(count=None))
+
+    assert notification_service.count_unread("token") == 0
 
 
 def test_list_notifications_database_error_is_502(monkeypatch):
