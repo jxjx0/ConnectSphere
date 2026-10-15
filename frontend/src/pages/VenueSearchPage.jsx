@@ -158,61 +158,74 @@ export default function VenueSearchPage() {
             <h2 className="section-title">Search filters</h2>
             <p className="field__hint">All filters are optional. Leave them blank to browse all venues.</p>
           </div>
-          <div className="venue-search__grid">
-            <div className="field">
-              <label htmlFor="searchDate">Start date</label>
-              <input id="searchDate" type="date" disabled={disabled} value={form.date}
-                aria-describedby="searchTimeHint" onChange={(event) => updateField('date', event.target.value)} />
+          <fieldset className="venue-search__filter-group">
+            <legend className="section-title">Venue requirements</legend>
+            <div className="venue-search__grid">
+              <div className="field venue-search__wide">
+                <label htmlFor="searchLocation">Location</label>
+                <input id="searchLocation" type="text" placeholder="e.g. Stamford Road" disabled={disabled} value={form.location || ''}
+                  onChange={(event) => updateField('location', event.target.value)} />
+              </div>
+              <div className="field">
+                <label htmlFor="searchAttendance">Expected attendance</label>
+                <input id="searchAttendance" type="number" min="1" step="1" placeholder="e.g. 100" disabled={disabled}
+                  value={form.expected_attendance}
+                  onChange={(event) => updateField('expected_attendance', event.target.value)} />
+              </div>
+              <div className="field">
+                <label htmlFor="searchFacility">Required facility</label>
+                <select id="searchFacility" disabled={disabled || layouts.loading || Boolean(layouts.error)} value={form.required_facility}
+                  onChange={(event) => updateField('required_facility', event.target.value)}>
+                  <option value="">Any facility</option>
+                  {(layouts.facilityOptions || []).map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="searchLayout">Required layout</label>
+                <select id="searchLayout" disabled={disabled || layouts.loading || Boolean(layouts.error)} value={form.required_layout}
+                  onChange={(event) => updateField('required_layout', event.target.value)}>
+                  <option value="">Any layout</option>
+                  {layouts.options.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+                {layouts.loading && <p className="field__hint">Loading layout options…</p>}
+                {layouts.error && <p className="field__error" role="alert">{layouts.error}</p>}
+              </div>
+              <div className="field">
+                <label htmlFor="searchAccessibility">Accessibility</label>
+                <select id="searchAccessibility" disabled={disabled || layouts.loading || Boolean(layouts.error)} value={form.required_accessibility}
+                  onChange={(event) => updateField('required_accessibility', event.target.value)}>
+                  <option value="">Any accessibility</option>
+                  {(layouts.accessibilityOptions || []).map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </div>
             </div>
-            <div className="field">
-              <label htmlFor="searchAttendance">Expected attendance</label>
-              <input id="searchAttendance" type="number" min="1" step="1" placeholder="e.g. 100" disabled={disabled}
-                value={form.expected_attendance}
-                onChange={(event) => updateField('expected_attendance', event.target.value)} />
+          </fieldset>
+          <fieldset className="venue-search__filter-group">
+            <legend className="section-title">Availability</legend>
+            <div className="venue-search__grid">
+              <div className="field">
+                <label htmlFor="searchDate">Start date</label>
+                <input id="searchDate" type="date" disabled={disabled} value={form.date}
+                  aria-describedby="searchTimeHint" onChange={(event) => updateField('date', event.target.value)} />
+              </div>
+              <div className="field">
+                <label htmlFor="searchEndDate">End date (optional)</label>
+                <input id="searchEndDate" type="date" disabled={disabled} value={form.end_date}
+                  aria-describedby="searchTimeHint" onChange={(event) => updateField('end_date', event.target.value)} />
+                <p className="field__hint">Leave blank for the same day as the start date.</p>
+              </div>
+              <div className="field">
+                <label htmlFor="searchStart">Start time</label>
+                <input id="searchStart" type="time" disabled={disabled} value={form.start_time}
+                  aria-describedby="searchTimeHint" onChange={(event) => updateField('start_time', event.target.value)} />
+              </div>
+              <div className="field">
+                <label htmlFor="searchEnd">End time</label>
+                <input id="searchEnd" type="time" disabled={disabled} value={form.end_time}
+                  aria-describedby="searchTimeHint" onChange={(event) => updateField('end_time', event.target.value)} />
+              </div>
             </div>
-            <div className="field">
-              <label htmlFor="searchStart">Start time</label>
-              <input id="searchStart" type="time" disabled={disabled} value={form.start_time}
-                aria-describedby="searchTimeHint" onChange={(event) => updateField('start_time', event.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="searchEnd">End time</label>
-              <input id="searchEnd" type="time" disabled={disabled} value={form.end_time}
-                aria-describedby="searchTimeHint" onChange={(event) => updateField('end_time', event.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="searchEndDate">End date (optional)</label>
-              <input id="searchEndDate" type="date" disabled={disabled} value={form.end_date}
-                aria-describedby="searchTimeHint" onChange={(event) => updateField('end_date', event.target.value)} />
-              <p className="field__hint">Leave blank for the same day as the start date.</p>
-            </div>
-            <div className="field">
-              <label htmlFor="searchFacility">Required Facility</label>
-              <select id="searchFacility" disabled={disabled || layouts.loading || Boolean(layouts.error)} value={form.required_facility}
-                onChange={(event) => updateField('required_facility', event.target.value)}>
-                <option value="">Any facility</option>
-                {(layouts.facilityOptions || []).map((name) => <option key={name} value={name}>{name}</option>)}
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="searchLayout">Required layout</label>
-              <select id="searchLayout" disabled={disabled || layouts.loading || Boolean(layouts.error)} value={form.required_layout}
-                onChange={(event) => updateField('required_layout', event.target.value)}>
-                <option value="">Any layout</option>
-                {layouts.options.map((name) => <option key={name} value={name}>{name}</option>)}
-              </select>
-              {layouts.loading && <p className="field__hint">Loading layout options…</p>}
-              {layouts.error && <p className="field__error" role="alert">{layouts.error}</p>}
-            </div>
-            <div className="field">
-              <label htmlFor="searchAccessibility">Accessibility</label>
-              <select id="searchAccessibility" disabled={disabled || layouts.loading || Boolean(layouts.error)} value={form.required_accessibility}
-                onChange={(event) => updateField('required_accessibility', event.target.value)}>
-                <option value="">Any accessibility</option>
-                {(layouts.accessibilityOptions || []).map((name) => <option key={name} value={name}>{name}</option>)}
-              </select>
-            </div>
-          </div>
+          </fieldset>
           <p className="field__hint" id="searchTimeHint">To check availability, enter date, start and end time together. Times use your local timezone.</p>
           <div className="form-actions">
             <button type="submit" className="button" disabled={disabled}>{loading ? 'Searching…' : 'Search venues'}</button>

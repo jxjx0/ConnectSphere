@@ -49,6 +49,66 @@ def set_blocks(database, records):
     database[2].select.return_value.in_.return_value.lt.return_value.gt.return_value.execute.return_value = SimpleNamespace(data=records)
 
 
+@pytest.mark.parametrize("stored,query,matches", [
+    ("Campus West", "West", True),
+    ("Campus West", "cAmPuS wEsT", True),
+    ("Campus West", " \t west \n", True),
+    ("Campus West", "East", False),
+    (None, "West", False),
+    ("", "West", False),
+    ("Campus West", "%", False),
+    ("Campus West", "_", False),
+    ("Hall 100%_West", "%_", True),
+    ("Straße", "STRASSE", True),
+])
+def test_location_matches_literal_casefolded_substring(database, catalogue, stored, query, matches):
+    catalogue[0]["location"] = stored
+    request = VenueSearchRequest(location=query)
+    assert request.location == query.strip()
+    result = venue_search_service.search_venues("token", request)
+    assert len(result["venues"]) == int(matches)
+    if matches:
+        assert result["venues"][0]["location"] == stored
+    assert catalogue[0]["location"] == stored
+
+
+@pytest.mark.parametrize("filters", [{}, {"location": None}, {"location": ""}, {"location": " \t\n "}])
+@pytest.mark.parametrize("stored", [None, "Campus West"])
+def test_blank_or_omitted_location_does_not_filter(database, catalogue, filters, stored):
+    catalogue[0]["location"] = stored
+    request = VenueSearchRequest(**filters)
+    assert request.location is None
+    assert len(venue_search_service.search_venues("token", request)["venues"]) == 1
+
+
+@pytest.mark.parametrize("changes", [
+    {}, {"location": "East"}, {"required_layout": "Unknown"},
+    {"expected_attendance": 181}, {"expected_attendance": 121},
+    {"required_accessibility": "Hearing loop"}, {"required_facility": "Projector"},
+])
+def test_location_combines_with_all_suitability_filters(database, catalogue, changes):
+    catalogue[0].update(facilities=["Wi-Fi"], accessibility=["Wheelchair access"])
+    request = VenueSearchRequest(**{
+        **PAYLOAD, "location": "West", "required_accessibility": "Wheelchair access",
+        "required_facility": "Wi-Fi", **changes,
+    })
+    result = venue_search_service.search_venues("token", request)
+    assert len(result["venues"]) == (0 if changes else 1)
+    if not changes:
+        set_blocks(database, [{"venue_id": "hall", "start_at": "2026-11-07T11:00:00+08:00", "end_at": "2026-11-07T12:00:00+08:00"}])
+        assert venue_search_service.search_venues("token", request)["venues"] == []
+
+
+def test_nonmatching_location_skips_availability_checks(database, search_request, monkeypatch):
+    reader = Mock(side_effect=AssertionError("excluded venues must not check availability"))
+    monkeypatch.setattr(availability, "venue_buffers", reader)
+    monkeypatch.setattr(availability, "load_booking_occupancy", reader)
+    request = search_request.model_copy(update={"location": "East"})
+    assert venue_search_service.search_venues("token", request) == {"venues": [], "warnings": []}
+    reader.assert_not_called()
+    database[0].table.assert_called_once_with("venues")
+
+
 @pytest.mark.parametrize("selected", [None, "", "  "])
 @pytest.mark.parametrize("features", [None, [], {}, ["Projector"]])
 def test_any_facility_does_not_filter(database, catalogue, selected, features):
