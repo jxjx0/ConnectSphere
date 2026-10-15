@@ -43,3 +43,14 @@ create policy "Users can view their own notifications"
     for select
     to authenticated
     using (user_id = (select auth.uid()));
+
+-- A user can mark their own notifications as read. The column-level grant
+-- means is_read is the only column they can change.
+grant update (is_read) on public.notifications to authenticated;
+
+create policy "Users can mark their own notifications read"
+    on public.notifications
+    for update
+    to authenticated
+    using (user_id = (select auth.uid()))
+    with check (user_id = (select auth.uid()));
