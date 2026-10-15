@@ -12,6 +12,7 @@ from routes.venues import venues_bp
 from services.auth_service import AuthError
 
 from routes.equipment import equipment_bp
+from routes.equipment_requests import equipment_requests_bp
 
 
 def create_app() -> Flask:
@@ -23,8 +24,8 @@ def create_app() -> Flask:
     app.register_blueprint(events_bp)
     app.register_blueprint(venues_bp)
     app.register_blueprint(notifications_bp)
-    # app.register_blueprint(equipment_bp)
-    app.register_blueprint(equipment_bp, url_prefix='/api/equipment')
+    app.register_blueprint(equipment_bp)
+    app.register_blueprint(equipment_requests_bp)
 
     @app.errorhandler(AuthError)
     def handle_auth_error(error: AuthError):

@@ -16,6 +16,7 @@ import VenueSearchPage from './pages/VenueSearchPage'
 import VenueAvailabilityPage from './pages/VenueAvailabilityPage'
 import EquipmentPage from './pages/EquipmentPage'
 import EventReviewDetailPage from './pages/EventReviewDetailPage'
+import EquipmentRequestsPage from './pages/EquipmentRequestsPage'
 
 export default function App() {
   return (
@@ -109,6 +110,15 @@ export default function App() {
             <EquipmentPage />
           </AuthGuard>
         } 
+      />
+
+      <Route
+        path="/equipment-requests"
+        element={
+          <AuthGuard allowedRoles={['coordinator', 'tech_support']}>
+            <EquipmentRequestsPage />
+          </AuthGuard>
+        }
       />
 
       <Route
