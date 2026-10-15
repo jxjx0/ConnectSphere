@@ -10,6 +10,26 @@ const formatStatus = (status) => {
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
+const formatDateTime = (isoString) => {
+  if (!isoString) return { date: 'Unassigned', time: '' }
+  const dateObj = new Date(isoString)
+  if (isNaN(dateObj.getTime())) return { date: isoString, time: '' }
+
+  const formattedDate = dateObj.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+
+  const formattedTime = dateObj.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+
+  return { date: formattedDate, time: formattedTime }
+}
+
 export default function LeadDashboardPage() {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
@@ -66,6 +86,10 @@ export default function LeadDashboardPage() {
 
     return nameMatch && coordinatorMatch && statusMatch
   })
+
+  // Format start and end date for selected event safely
+  const start = selectedEvent ? formatDateTime(selectedEvent.start_time || selectedEvent.start_date) : null
+  const end = selectedEvent ? formatDateTime(selectedEvent.end_time || selectedEvent.end_date) : null
 
   return (
     <AppShell>
@@ -231,15 +255,35 @@ export default function LeadDashboardPage() {
             justify: 'center',
             alignItems: 'center',
             zIndex: 1000,
+            padding: '1.5rem',
           }}
         >
-          <div className="form-card" style={{ width: '100%', maxWidth: '550px', margin: 0 }}>
+          <div 
+            className="form-card" 
+            style={{ 
+              width: '100%', 
+              maxWidth: '550px', 
+              maxHeight: '85vh', 
+              overflowY: 'auto', 
+              margin: 0 
+            }}
+          >
             <h2>{selectedEvent.name}</h2>
             <div className="stack stack--tight" style={{ marginTop: '1rem' }}>
               <div className="form-group">
                 <label className="form-label">Coordinator</label>
                 <p className="form-input" style={{ background: '#f5f5f5' }}>
                   {selectedEvent.coordinator_name || 'Unassigned'}
+                </p>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Event Schedule</label>
+                <p className="form-input" style={{ background: '#f5f5f5', marginBottom: '0.5rem' }}>
+                  <strong>Start:</strong> {start.date} {start.time && `at ${start.time}`}
+                </p>
+                <p className="form-input" style={{ background: '#f5f5f5' }}>
+                  <strong>End:</strong> {end.date} {end.time && `at ${end.time}`}
                 </p>
               </div>
 
