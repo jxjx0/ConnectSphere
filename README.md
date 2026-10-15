@@ -148,7 +148,10 @@ No `.env` needed for the frontend in local development — it defaults to
 
 ### About the database
 
-All tables already exist in the shared hosted Supabase project. There is nothing to create or migrate locally — everyone connects to the same remote database. SQL files in database are just for reference only
+The app connects to the shared hosted Supabase project. Before using the
+equipment-request feature, apply `database/equipment_requests.sql` once in the
+Supabase SQL Editor; it creates the request tables and the atomic submission
+function. Other SQL files in `database` document the existing schema.
 
 ---
 
@@ -466,4 +469,3 @@ monkeypatch.setattr(
 So the suite checks our own wiring — status codes, request parsing, error
 shapes — and runs in seconds with no network and no credentials. The tradeoff:
 it can't tell you whether Supabase itself is configured correctly.
-
