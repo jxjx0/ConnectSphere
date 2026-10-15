@@ -372,6 +372,50 @@ a:hover {
   }
 }
 
+.topbar__link {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.topbar__link:hover {
+  color: var(--accent);
+}
+
+/* --- Notification inbox ---------------------------------------------- */
+
+.inbox {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.inbox__item {
+  border-bottom: 1px solid var(--rule);
+}
+
+.inbox__title {
+  display: block;
+  width: 100%;
+  padding: var(--space-4) 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink-muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.inbox__title--unread {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.inbox__detail {
+  padding-bottom: var(--space-4);
+}
+
 .app-main {
   max-width: 64rem;
   margin: 0 auto;

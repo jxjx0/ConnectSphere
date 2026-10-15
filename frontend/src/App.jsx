@@ -16,6 +16,7 @@ import VenueSearchPage from './pages/VenueSearchPage'
 import VenueAvailabilityPage from './pages/VenueAvailabilityPage'
 import EquipmentPage from './pages/EquipmentPage'
 import EventReviewDetailPage from './pages/EventReviewDetailPage'
+import InboxPage from './pages/InboxPage'
 
 export default function App() {
   return (
@@ -35,6 +36,15 @@ export default function App() {
         element={
           <AuthGuard>
             <DashboardPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/inbox"
+        element={
+          <AuthGuard>
+            <InboxPage />
           </AuthGuard>
         }
       />
