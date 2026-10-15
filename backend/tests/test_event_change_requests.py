@@ -528,6 +528,112 @@ def test_coordinator_can_reject_change_request_and_notify_organiser(
     assert "Reason:" in captured["notification"][3]
 
 
+# --- T7-162: notifying the Organiser of the review outcome ---------------
+
+
+def _review_returns(monkeypatch, status):
+    """Make the review service succeed with a change request in `status`."""
+    reviewed_request = EventChangeRequest(**_change_request_row(status))
+    reviewed_event = Event(**_event_row("under_review"))
+    monkeypatch.setattr(
+        event_service,
+        "review_assigned_change_request",
+        lambda access_token, coordinator_id, event_id, decision, rejection: (
+            reviewed_event,
+            reviewed_request,
+        ),
+    )
+
+
+def test_approving_change_request_notifies_organiser_changes_were_applied(
+    client, monkeypatch
+):
+    authenticate_as(monkeypatch, COORDINATOR)
+    _review_returns(monkeypatch, "approved")
+    captured = {}
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: captured.setdefault("notification", args),
+    )
+
+    response = client.post(
+        f"/events/review/{EVENT_ID}/change-request/approve",
+        headers={"Authorization": "Bearer coordinator-token"},
+    )
+
+    assert response.status_code == 200
+    user_id, notification_type, title, body, event_id = captured["notification"]
+    assert user_id == ORGANISER_ID
+    assert notification_type == "event_change_approved"
+    assert title == "Event change request approved"
+    assert "Annual Client Summit" in body
+    assert "approved and applied" in body
+    assert event_id == EVENT_ID
+
+
+def test_rejecting_change_request_notification_names_the_event(
+    client, monkeypatch
+):
+    authenticate_as(monkeypatch, COORDINATOR)
+    _review_returns(monkeypatch, "rejected")
+    captured = {}
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: captured.setdefault("notification", args),
+    )
+
+    client.post(
+        f"/events/review/{EVENT_ID}/change-request/reject",
+        json={"reason": "Venue unavailable"},
+        headers={"Authorization": "Bearer coordinator-token"},
+    )
+
+    body = captured["notification"][3]
+    assert "Annual Client Summit" in body
+    assert "The revised date conflicts with the venue booking." in body
+
+
+@pytest.mark.parametrize("decision", ["approve", "reject"])
+def test_failed_review_sends_no_notification(client, monkeypatch, decision):
+    authenticate_as(monkeypatch, COORDINATOR)
+
+    def failing_review(*args):
+        raise AuthError("This change request has already been reviewed.", 409)
+
+    monkeypatch.setattr(
+        event_service, "review_assigned_change_request", failing_review
+    )
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: pytest.fail("a failed review must not notify anyone"),
+    )
+
+    response = client.post(
+        f"/events/review/{EVENT_ID}/change-request/{decision}",
+        json={"reason": "Venue unavailable"},
+        headers={"Authorization": "Bearer coordinator-token"},
+    )
+
+    assert response.status_code == 409
+
+
+def test_review_still_succeeds_when_notification_fails(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+    _review_returns(monkeypatch, "approved")
+    # notify() returns None, rather than raising, when it cannot save.
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify", lambda *args: None
+    )
+
+    response = client.post(
+        f"/events/review/{EVENT_ID}/change-request/approve",
+        headers={"Authorization": "Bearer coordinator-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["change_request"]["status"] == "approved"
+
+
 def test_coordinator_must_provide_rejection_reason(client, monkeypatch):
     authenticate_as(monkeypatch, COORDINATOR)
     monkeypatch.setattr(
