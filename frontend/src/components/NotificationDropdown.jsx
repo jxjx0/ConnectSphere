@@ -1,4 +1,5 @@
-// The "Inbox (n)" button in the top bar and the dropdown it opens.
+// The bell button in the top bar (with an unread badge) and the
+// notification dropdown it opens.
 //
 // The list is fetched on every page change, so the unread count stays
 // fresh as the user moves around. There is no polling and no pop-up: the
@@ -17,7 +18,6 @@ export default function NotificationDropdown() {
   const location = useLocation()
   const [notifications, setNotifications] = useState([])
   const [isOpen, setIsOpen] = useState(false)
-  const [openId, setOpenId] = useState(null)
   const [error, setError] = useState('')
   const containerRef = useRef(null)
 
@@ -50,79 +50,109 @@ export default function NotificationDropdown() {
     }
   }, [isOpen])
 
-  // Opening a notification shows its message and marks it read. Clicking
-  // an open one again closes it.
-  function handleToggle(notification) {
-    if (openId === notification.id) {
-      setOpenId(null)
-      return
-    }
-    setOpenId(notification.id)
+  // The whole notification is already visible, so clicking it is what
+  // "opening" means: it marks the notification read.
+  function handleOpen(notification) {
+    if (notification.is_read) return
 
-    if (!notification.is_read) {
-      markNotificationRead(notification.id, token)
-        .then(() => {
-          setNotifications((current) => markReadInList(current, notification.id))
-        })
-        .catch((caught) => setError(caught.message))
-    }
+    markNotificationRead(notification.id, token)
+      .then(() => {
+        setNotifications((current) => markReadInList(current, notification.id))
+      })
+      .catch((caught) => setError(caught.message))
   }
+
+  const unreadCount = countUnread(notifications)
 
   return (
     <div className="inbox" ref={containerRef}>
       <button
         type="button"
-        className="topbar__link"
+        className="inbox__bell"
+        aria-label={inboxLabel(unreadCount)}
         aria-expanded={isOpen}
         aria-controls="inbox-panel"
         onClick={() => setIsOpen((open) => !open)}
       >
-        {inboxLabel(countUnread(notifications))}
+        <BellIcon />
+        {unreadCount > 0 && (
+          <span className="inbox__badge" aria-hidden="true">{unreadCount}</span>
+        )}
       </button>
 
       {isOpen && (
         <div id="inbox-panel" className="inbox__panel">
-          {error && <p className="form-error" role="alert">{error}</p>}
+          <div className="inbox__header">
+            <h2 className="inbox__heading">
+              Notifications
+              {unreadCount > 0 && (
+                <span className="inbox__count">{unreadCount}</span>
+              )}
+            </h2>
+            <button
+              type="button"
+              className="inbox__close"
+              aria-label="Close notifications"
+              onClick={() => setIsOpen(false)}
+            >
+              ×
+            </button>
+          </div>
+
+          {error && <p className="form-error inbox__message" role="alert">{error}</p>}
 
           {!error && notifications.length === 0 && (
-            <p className="note">You have no notifications yet.</p>
+            <p className="note inbox__message">You have no notifications yet.</p>
           )}
 
           {notifications.length > 0 && (
             <ul className="inbox__list">
-              {notifications.map((notification) => {
-                const isItemOpen = openId === notification.id
-                return (
-                  <li key={notification.id} className="inbox__item">
-                    <button
-                      type="button"
-                      className={notification.is_read
-                        ? 'inbox__title'
-                        : 'inbox__title inbox__title--unread'}
-                      aria-expanded={isItemOpen}
-                      onClick={() => handleToggle(notification)}
-                    >
+              {notifications.map((notification) => (
+                <li key={notification.id}>
+                  <button
+                    type="button"
+                    className={notification.is_read
+                      ? 'inbox__item'
+                      : 'inbox__item inbox__item--unread'}
+                    onClick={() => handleOpen(notification)}
+                  >
+                    <span className="inbox__dot" aria-hidden="true" />
+                    <span className="inbox__text">
                       {!notification.is_read && (
                         <span className="visually-hidden">Unread: </span>
                       )}
-                      {notification.title}
-                    </button>
-
-                    {isItemOpen && (
-                      <div className="inbox__detail">
-                        <p>{notification.body}</p>
-                        <p className="note">
-                          {formatDateTime(notification.created_at)}
-                        </p>
-                      </div>
-                    )}
-                  </li>
-                )
-              })}
+                      <span className="inbox__title">{notification.title}</span>
+                      <span className="inbox__body">{notification.body}</span>
+                      <span className="inbox__time">
+                        {formatDateTime(notification.created_at)}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
             </ul>
           )}
         </div>
       )}
     </div>
+  )
+}
+
+function BellIcon() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </svg>
   )
 }
