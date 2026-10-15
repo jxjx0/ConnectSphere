@@ -303,11 +303,44 @@ def submit_event_change_request(event_id):
     except ValidationError as error:
         return jsonify({"errors": _validation_messages(error)}), 400
 
-    _require_organiser()
+    organiser = _require_organiser()
     event_service.submit_event_change_request(
         g.access_token, g.user_id, event_id, change_request
     )
+    _notify_change_request_submitted(organiser, event_id, change_request)
     return jsonify({"message": "Change request submitted."}), 201
+
+
+def _notify_change_request_submitted(organiser, event_id, change_request) -> None:
+    """Tell the event's Coordinator a change request needs review (T7-164).
+
+    Runs only after the change request is saved. A failed event lookup is
+    logged rather than raised, so it cannot undo the saved change request.
+    """
+    try:
+        event = event_service.get_my_event(g.access_token, g.user_id, event_id)
+    except AuthError:
+        logger.exception(
+            "Change request for event %s was saved but its notification failed",
+            event_id,
+        )
+        return
+
+    # Every event should have a Coordinator by the time it can be changed,
+    # but there is no one to notify if it does not.
+    if not event.coordinator_id:
+        return
+
+    notification_service.notify(
+        event.coordinator_id,
+        "change_request_submitted",
+        "Change request submitted",
+        (
+            f"{organiser.full_name} has submitted a change request for "
+            f"'{event.name}'. Reason: {change_request.reason_for_change}"
+        ),
+        event_id,
+    )
 
 
 # --- Draft event requests (T7-37) ------------------------------------------

@@ -220,6 +220,26 @@ def test_other_category_requires_its_description():
 
 # Checks organiser is authenticated, endpoint returns 201, correct event ID 
 # and organiser ID is passed, and all change-request data reaches the service
+def _assigned_event(coordinator_id=COORDINATOR.id) -> Event:
+    """The Organiser's event as it is before the change request is reviewed."""
+    return Event(**{**_event_row("under_review"), "coordinator_id": coordinator_id})
+
+
+def _stub_change_notification(monkeypatch, captured=None, event=None):
+    """Stub the event lookup and notify() used after a change request is saved."""
+    monkeypatch.setattr(
+        event_service,
+        "get_my_event",
+        lambda token, organiser_id, event_id: event or _assigned_event(),
+    )
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: (captured if captured is not None else {}).setdefault(
+            "notification", args
+        ),
+    )
+
+
 def test_organiser_can_submit_a_change_request(client, monkeypatch):
     authenticate_as(monkeypatch, ORGANISER)
     captured = {}
@@ -234,6 +254,7 @@ def test_organiser_can_submit_a_change_request(client, monkeypatch):
         )
 
     monkeypatch.setattr(event_service, "submit_event_change_request", submit)
+    _stub_change_notification(monkeypatch)
     response = client.post(
         f"/events/{EVENT_ID}/change-requests",
         json=payload,
@@ -526,6 +547,107 @@ def test_coordinator_can_reject_change_request_and_notify_organiser(
     assert response.get_json()["change_request"]["rejection_reason"]
     assert captured["notification"][0] == ORGANISER_ID
     assert "Reason:" in captured["notification"][3]
+
+
+# --- T7-164: notifying the Coordinator of a new change request -----------
+
+
+def _post_change_request(client):
+    return client.post(
+        f"/events/{EVENT_ID}/change-requests",
+        json=valid_change_request(),
+        headers={"Authorization": "Bearer organiser-token"},
+    )
+
+
+def test_submitting_change_request_notifies_the_coordinator(client, monkeypatch):
+    authenticate_as(monkeypatch, ORGANISER)
+    monkeypatch.setattr(
+        event_service, "submit_event_change_request", lambda *args: None
+    )
+    captured = {}
+    _stub_change_notification(monkeypatch, captured)
+
+    response = _post_change_request(client)
+
+    assert response.status_code == 201
+    user_id, notification_type, title, body, event_id = captured["notification"]
+    assert user_id == COORDINATOR.id
+    assert notification_type == "change_request_submitted"
+    assert title == "Change request submitted"
+    assert "Ada Tan" in body
+    assert "Annual Client Summit" in body
+    assert "The venue can only host us on the revised date." in body
+    assert event_id == EVENT_ID
+
+
+def test_failed_change_request_sends_no_notification(client, monkeypatch):
+    authenticate_as(monkeypatch, ORGANISER)
+
+    def failing_submit(*args):
+        raise AuthError("A change request is already waiting for review.", 409)
+
+    monkeypatch.setattr(event_service, "submit_event_change_request", failing_submit)
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: pytest.fail("a failed change request must not notify anyone"),
+    )
+
+    response = _post_change_request(client)
+
+    assert response.status_code == 409
+
+
+def test_change_request_is_still_saved_when_notification_fails(client, monkeypatch):
+    authenticate_as(monkeypatch, ORGANISER)
+    monkeypatch.setattr(
+        event_service, "submit_event_change_request", lambda *args: None
+    )
+    _stub_change_notification(monkeypatch)
+    # notify() returns None, rather than raising, when it cannot save.
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify", lambda *args: None
+    )
+
+    response = _post_change_request(client)
+
+    assert response.status_code == 201
+
+
+def test_change_request_is_still_saved_when_event_lookup_fails(client, monkeypatch):
+    authenticate_as(monkeypatch, ORGANISER)
+    monkeypatch.setattr(
+        event_service, "submit_event_change_request", lambda *args: None
+    )
+
+    def failing_lookup(*args):
+        raise AuthError("Unable to load the event request.", 502)
+
+    monkeypatch.setattr(event_service, "get_my_event", failing_lookup)
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: pytest.fail("no notification without the event"),
+    )
+
+    response = _post_change_request(client)
+
+    assert response.status_code == 201
+
+
+def test_event_without_coordinator_sends_no_notification(client, monkeypatch):
+    authenticate_as(monkeypatch, ORGANISER)
+    monkeypatch.setattr(
+        event_service, "submit_event_change_request", lambda *args: None
+    )
+    _stub_change_notification(monkeypatch, event=_assigned_event(coordinator_id=None))
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: pytest.fail("there is no coordinator to notify"),
+    )
+
+    response = _post_change_request(client)
+
+    assert response.status_code == 201
 
 
 # --- T7-162: notifying the Organiser of the review outcome ---------------
