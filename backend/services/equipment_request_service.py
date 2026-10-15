@@ -22,7 +22,7 @@ def _database_error(error: PostgrestAPIError) -> AuthError:
         )
     if error.code == "P0002":
         return AuthError(
-            "The event was not found or is not assigned to you.",
+            "The event was not found, is not assigned to you, or is not eligible for an equipment request.",
             status_code=404,
         )
     if error.code in {"22023", "22P02", "23503", "23505", "23514"}:
@@ -60,25 +60,19 @@ def submit_equipment_request(
     if not request_id:
         raise AuthError("Equipment request was not saved.", status_code=502)
 
-    return get_equipment_request(client, str(request_id), coordinator_id)
-
-
-def get_equipment_request(client, request_id: str, coordinator_id: str) -> dict:
-    """Load the newly submitted request with its event and equipment details."""
-    try:
-        result = (
-            client.table("equipment_requests")
-            .select(_REQUEST_SELECT)
-            .eq("id", request_id)
-            .eq("coordinator_id", coordinator_id)
-            .execute()
-        )
-    except PostgrestAPIError as error:
-        raise _database_error(error) from error
-
-    if not result.data:
-        raise AuthError("Equipment request was not found.", status_code=404)
-    return result.data[0]
+    return {
+        "id": str(request_id),
+        "event_id": str(equipment_request.event_id),
+        "coordinator_id": coordinator_id,
+        "status": "Pending Technical Approval",
+        "items": [
+            {
+                "equipment_id": str(item.equipment_id),
+                "quantity": item.quantity,
+            }
+            for item in equipment_request.items
+        ],
+    }
 
 
 def list_equipment_requests(access_token: str) -> list[dict]:

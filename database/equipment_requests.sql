@@ -10,7 +10,11 @@ create table public.equipment_requests (
     created_at timestamptz not null default now(),
 
     constraint equipment_requests_status_valid
-        check (status = 'Pending Technical Approval')
+        check (status in (
+            'Pending Technical Approval',
+            'Approved',
+            'Rejected'
+        ))
 );
 
 create table public.equipment_request_items (
@@ -62,7 +66,12 @@ create policy "Coordinators and Tech Support can view equipment requests"
         public.is_tech_support()
         or (
             public.is_coordinator()
-            and coordinator_id = (select auth.uid())
+            and exists (
+                select 1
+                from public.events
+                where public.events.id = public.equipment_requests.event_id
+                  and public.events.coordinator_id = (select auth.uid())
+            )
         )
     );
 
@@ -79,24 +88,64 @@ create policy "Coordinators and Tech Support can view requested items"
                   public.is_tech_support()
                   or (
                       public.is_coordinator()
-                      and public.equipment_requests.coordinator_id = (select auth.uid())
+                      and exists (
+                          select 1
+                          from public.events
+                          where public.events.id = public.equipment_requests.event_id
+                            and public.events.coordinator_id = (select auth.uid())
+                      )
                   )
               )
         )
     );
 
 -- Technical Support needs event context to review equipment requirements.
+create or replace function public.tech_support_has_equipment_request(
+    p_event_id uuid
+)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+    if not public.is_tech_support() then
+        return false;
+    end if;
+
+    return exists (
+        select 1
+        from public.equipment_requests
+        where public.equipment_requests.event_id = p_event_id
+    );
+end;
+$$;
+
+revoke all on function public.tech_support_has_equipment_request(uuid) from public;
+grant execute on function public.tech_support_has_equipment_request(uuid) to authenticated;
+
 create policy "Tech Support can view events with equipment requests"
     on public.events
     for select
     to authenticated
     using (
+        public.tech_support_has_equipment_request(public.events.id)
+    );
+
+grant update (status) on public.equipment_requests to authenticated;
+
+create policy "Technical Support can review equipment requests"
+    on public.equipment_requests
+    for update
+    to authenticated
+    using (
         public.is_tech_support()
-        and exists (
-            select 1
-            from public.equipment_requests
-            where public.equipment_requests.event_id = public.events.id
-        )
+        and status = 'Pending Technical Approval'
+    )
+    with check (
+        public.is_tech_support()
+        and status in ('Approved', 'Rejected')
     );
 
 create or replace function public.submit_equipment_request(
@@ -130,9 +179,9 @@ begin
         from public.events
         where public.events.id = p_event_id
           and public.events.coordinator_id = auth.uid()
-          and public.events.status <> 'draft'
+          and public.events.status in ('planning', 'confirmed')
     ) then
-        raise exception 'The event was not found or is not assigned to you.'
+        raise exception 'Event not found, not assigned to you, or not eligible for an equipment request.'
             using errcode = 'P0002';
     end if;
 

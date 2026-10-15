@@ -151,7 +151,10 @@ No `.env` needed for the frontend in local development — it defaults to
 The app connects to the shared hosted Supabase project. Before using the
 equipment-request feature, apply `database/equipment_requests.sql` once in the
 Supabase SQL Editor; it creates the request tables and the atomic submission
-function. Other SQL files in `database` document the existing schema.
+function. If an earlier version of that migration was already applied, also
+apply `database/equipment_request_hardening.sql` to update assignment access,
+eligible event statuses and request review statuses without deleting rows.
+Other SQL files in `database` document the existing schema.
 
 ---
 

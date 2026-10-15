@@ -265,7 +265,7 @@ def test_equipment_catalog_is_registered_at_its_frontend_api_path(
     ],
     ids=["scalar-id", "list-id"],
 )
-def test_service_submits_atomically_and_loads_the_saved_request(
+def test_service_returns_submit_result_without_a_post_save_read(
     equipment_request_database, equipment_request, rpc_data
 ):
     client, client_factory = equipment_request_database
@@ -287,13 +287,14 @@ def test_service_submits_atomically_and_loads_the_saved_request(
             "p_items": VALID_REQUEST["items"],
         },
     )
-    client.table.assert_called_once_with("equipment_requests")
-    saved_query.select.assert_called_once_with(REQUEST_SELECT)
-    assert saved_query.eq.call_args_list == [
-        (("id", SAVED_REQUEST["id"]), {}),
-        (("coordinator_id", COORDINATOR.id), {}),
-    ]
-    assert result == SAVED_REQUEST
+    client.table.assert_not_called()
+    assert result == {
+        "id": SAVED_REQUEST["id"],
+        "event_id": VALID_REQUEST["event_id"],
+        "coordinator_id": COORDINATOR.id,
+        "status": "Pending Technical Approval",
+        "items": VALID_REQUEST["items"],
+    }
 
 
 @pytest.mark.parametrize("rpc_data", [None, []], ids=["null-id", "empty-id-list"])
@@ -326,7 +327,7 @@ def test_service_reports_missing_rpc_result(
         (
             "P0002",
             404,
-            "The event was not found or is not assigned to you.",
+            "The event was not found, is not assigned to you, or is not eligible for an equipment request.",
         ),
         (
             "22023",
@@ -362,22 +363,6 @@ def test_service_maps_rpc_database_errors(
     assert caught.value.__cause__ is database_error
 
 
-def test_service_get_request_reports_missing_row(equipment_request_database):
-    client, _ = equipment_request_database
-    query = query_returning([])
-    client.table.return_value = query
-
-    with pytest.raises(AuthError) as caught:
-        equipment_request_service.get_equipment_request(
-            client, SAVED_REQUEST["id"], COORDINATOR.id
-        )
-
-    assert caught.value.status_code == 404
-    assert caught.value.message == "Equipment request was not found."
-    query.eq.assert_any_call("id", SAVED_REQUEST["id"])
-    query.eq.assert_any_call("coordinator_id", COORDINATOR.id)
-
-
 def test_service_list_returns_requests_ordered_by_recent_creation(
     equipment_request_database
 ):
@@ -394,9 +379,8 @@ def test_service_list_returns_requests_ordered_by_recent_creation(
     assert result == [SAVED_REQUEST]
 
 
-@pytest.mark.parametrize("operation", ["get", "list"])
-def test_service_maps_database_errors_while_reading_requests(
-    equipment_request_database, operation
+def test_service_maps_database_errors_while_listing_requests(
+    equipment_request_database,
 ):
     client, _ = equipment_request_database
     query = query_returning([])
@@ -407,12 +391,7 @@ def test_service_maps_database_errors_while_reading_requests(
     client.table.return_value = query
 
     with pytest.raises(AuthError) as caught:
-        if operation == "get":
-            equipment_request_service.get_equipment_request(
-                client, SAVED_REQUEST["id"], COORDINATOR.id
-            )
-        else:
-            equipment_request_service.list_equipment_requests("staff-token")
+        equipment_request_service.list_equipment_requests("staff-token")
 
     assert caught.value.status_code == 502
     assert caught.value.message == "Unable to access equipment requests."

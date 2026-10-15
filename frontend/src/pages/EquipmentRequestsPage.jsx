@@ -10,6 +10,7 @@ import { getAssignedEventRequests } from '../api/events'
 import AppShell from '../components/AppShell'
 import { useAuth } from '../context/AuthContext'
 import { formatDateRange } from '../eventDisplay'
+import { equipmentRequestEligibleEvents } from '../equipmentRequestEligibility'
 
 function equipmentLines(request) {
   return request.items.map((item) => (
@@ -42,7 +43,9 @@ export default function EquipmentRequestsPage() {
       .then(([requestData, eventData, equipmentData]) => {
         setRequests(requestData.requests)
         if (isCoordinator) {
-          setEvents(eventData.events)
+          setEvents(
+            equipmentRequestEligibleEvents(eventData.events),
+          )
           setEquipment(
             equipmentData.filter((item) => item.maintenance_status === 'Functional'),
           )
@@ -94,7 +97,15 @@ export default function EquipmentRequestsPage() {
     setSubmitting(true)
     try {
       const data = await submitEquipmentRequest({ event_id: eventId, items }, token)
-      setRequests((current) => [data.request, ...current])
+      const submittedRequest = {
+        ...data.request,
+        event: selectedEvent,
+        items: data.request.items.map((item) => ({
+          ...item,
+          equipment: equipment.find((entry) => entry.id === item.equipment_id),
+        })),
+      }
+      setRequests((current) => [submittedRequest, ...current])
       setQuantities({})
       setSubmittedMessage('Equipment request submitted for technical approval.')
     } catch (caught) {
@@ -155,7 +166,7 @@ export default function EquipmentRequestsPage() {
               )}
 
               {events.length === 0 && (
-                <p className="note">There are no assigned events available for equipment requests.</p>
+                <p className="note">You have no assigned events in Planning or Confirmed status that are eligible for equipment requests.</p>
               )}
             </section>
 
