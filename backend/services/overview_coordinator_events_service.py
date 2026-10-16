@@ -29,7 +29,7 @@ def get_lead_coordinator_events(access_token: str):
                     )
                 )
             """)
-            .not_.in_("status", ["completed", "rejected"])
+            .not_.in_("status", ["completed", "rejected", "draft"])
             .order("start_time", desc=False)
             .execute()
         )
