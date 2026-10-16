@@ -5,13 +5,13 @@
 // fresh as the user moves around. There is no polling and no pop-up: the
 // dropdown only opens when the user clicks the button.
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 
 import { getNotifications, markNotificationRead } from '../api/notifications'
 import { useAuth } from '../context/AuthContext'
 import { formatDateTime } from '../eventDisplay'
-import { inboxLabel, markReadInList, markUnreadInList } from '../notificationInbox'
+import { inboxLabel, markReadInList } from '../notificationInbox'
 
 export default function NotificationDropdown() {
   const { token } = useAuth()
@@ -26,17 +26,32 @@ export default function NotificationDropdown() {
   const [loadError, setLoadError] = useState('')
   const [markError, setMarkError] = useState('')
   const containerRef = useRef(null)
+  // Counts load requests. Only the most recent one may update the state, so
+  // an older, slower response that finishes late cannot overwrite a newer one.
+  const latestRequest = useRef(0)
 
-  useEffect(() => {
+  // Loads the list and unread count from the backend, the source of truth.
+  const refresh = useCallback(() => {
+    latestRequest.current += 1
+    const requestId = latestRequest.current
+
     getNotifications(token)
       .then((data) => {
+        if (requestId !== latestRequest.current) return
         setNotifications(data.notifications)
         setUnreadCount(data.unread_count)
         setLoadError('')
       })
-      .catch((caught) => setLoadError(caught.message))
+      .catch((caught) => {
+        if (requestId !== latestRequest.current) return
+        setLoadError(caught.message)
+      })
+  }, [token])
+
+  useEffect(() => {
+    refresh()
     setIsOpen(false)
-  }, [token, location.pathname])
+  }, [refresh, location.pathname])
 
   // An old "could not mark read" message should not linger once the user
   // closes the dropdown.
@@ -67,7 +82,10 @@ export default function NotificationDropdown() {
   // "opening" means: it marks the notification read.
   //
   // It is shown as read straight away, so a second click does nothing.
-  // If the backend then fails, it goes back to unread and an error shows.
+  // Once the backend has saved or rejected it, the list and count are
+  // reloaded from the backend rather than adjusted by hand. A hand-made
+  // "+1" could count the same notification twice if the list was refreshed
+  // while the request was still pending.
   function handleOpen(notification) {
     if (notification.is_read) return
 
@@ -75,11 +93,9 @@ export default function NotificationDropdown() {
     setNotifications((current) => markReadInList(current, notification.id))
     setUnreadCount((count) => Math.max(count - 1, 0))
 
-    markNotificationRead(notification.id, token).catch((caught) => {
-      setNotifications((current) => markUnreadInList(current, notification.id))
-      setUnreadCount((count) => count + 1)
-      setMarkError(caught.message)
-    })
+    markNotificationRead(notification.id, token)
+      .catch((caught) => setMarkError(caught.message))
+      .finally(refresh)
   }
 
   return (
