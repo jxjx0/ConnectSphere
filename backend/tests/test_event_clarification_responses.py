@@ -166,6 +166,15 @@ def test_response_route_returns_saved_exchange_and_uses_signed_in_organiser(
         return saved
 
     monkeypatch.setattr(event_service, "respond_to_event_clarification", respond)
+    monkeypatch.setattr(
+        event_service,
+        "get_my_event",
+        lambda *args: SimpleNamespace(name="Annual Client Summit"),
+    )
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: captured.setdefault("notification", args),
+    )
 
     result = client.post(
         f"/events/{EVENT_ID}/clarification-response",
@@ -174,7 +183,7 @@ def test_response_route_returns_saved_exchange_and_uses_signed_in_organiser(
     )
 
     assert result.status_code == 200
-    assert captured == {
+    assert {key: value for key, value in captured.items() if key != "notification"} == {
         "organiser_id": ORGANISER_ID,
         "event_id": EVENT_ID,
         "response": "Theatre layout for 80 attendees.",
@@ -182,6 +191,14 @@ def test_response_route_returns_saved_exchange_and_uses_signed_in_organiser(
     assert result.get_json()["clarification"]["event_id"] == EVENT_ID
     assert result.get_json()["clarification"]["organiser_response"]
     assert result.get_json()["clarification"]["coordinator_notes"]
+    assert captured["notification"] == (
+        COORDINATOR_ID,
+        "event_clarification_responded",
+        "Clarification response received",
+        "The Organiser responded to the clarification for event request "
+        "'Annual Client Summit': Theatre layout for 80 attendees.",
+        EVENT_ID,
+    )
 
 
 def test_organiser_can_view_clarification_history(client, monkeypatch):

@@ -6,7 +6,7 @@
 // dropdown only opens when the user clicks the button.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import { getNotifications, markNotificationRead } from '../api/notifications'
 import { useAuth } from '../context/AuthContext'
@@ -14,8 +14,9 @@ import { formatDateTime } from '../eventDisplay'
 import { inboxLabel, markReadInList } from '../notificationInbox'
 
 export default function NotificationDropdown() {
-  const { token } = useAuth()
+  const { token, user } = useAuth()
   const location = useLocation()
+  const navigate = useNavigate()
   // The list holds the newest notifications only; the unread count comes
   // from the backend so it covers all of them.
   const [notifications, setNotifications] = useState([])
@@ -87,15 +88,21 @@ export default function NotificationDropdown() {
   // "+1" could count the same notification twice if the list was refreshed
   // while the request was still pending.
   function handleOpen(notification) {
-    if (notification.is_read) return
+    if (!notification.is_read) {
+      setMarkError('')
+      setNotifications((current) => markReadInList(current, notification.id))
+      setUnreadCount((count) => Math.max(count - 1, 0))
 
-    setMarkError('')
-    setNotifications((current) => markReadInList(current, notification.id))
-    setUnreadCount((count) => Math.max(count - 1, 0))
+      markNotificationRead(notification.id, token)
+        .catch((caught) => setMarkError(caught.message))
+        .finally(refresh)
+    }
 
-    markNotificationRead(notification.id, token)
-      .catch((caught) => setMarkError(caught.message))
-      .finally(refresh)
+    if (notification.event_id && user?.role === 'coordinator') {
+      navigate(`/event-reviews/${notification.event_id}`)
+    } else if (notification.event_id && user?.role === 'organiser') {
+      navigate(`/my-events/${notification.event_id}`)
+    }
   }
 
   return (
