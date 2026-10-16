@@ -131,15 +131,7 @@ def review_venue_booking(
         if check_schedule_conflict(client, booking["venue_id"], booking["effective_start_at"], booking["effective_end_at"]):
             raise AuthError("Cannot approve booking due to a conflicting schedule block.", status_code=409)
 
-        # Update booking status
-        update_res = (
-            client.table("venue_bookings")
-            .update({"status": "APPROVED", "reviewed_by": reviewer_id})
-            .eq("booking_id", booking_id)
-            .execute()
-        )
-
-        # Copy into venue_blocks to reserve availability grid
+        # FIXED (Bug 3): Reserve availability grid FIRST before marking status APPROVED
         block_data = {
             "venue_id": booking["venue_id"],
             "start_at": booking["effective_start_at"],
@@ -147,7 +139,21 @@ def review_venue_booking(
             "block_reason": f"Approved Booking ({booking['room_layout']})",
             "block_issuer": reviewer_id,
         }
-        client.table("venue_blocks").insert(block_data).execute()
+        
+        try:
+            block_res = client.table("venue_blocks").insert(block_data).execute()
+            if not block_res.data:
+                raise AuthError("Failed to lock calendar operational block.", status_code=502)
+        except PostgrestAPIError as error:
+            raise AuthError("Unable to create calendar reservation block.", status_code=502) from error
+
+        # Update booking status ONLY after calendar block insertion succeeds
+        update_res = (
+            client.table("venue_bookings")
+            .update({"status": "APPROVED", "reviewed_by": reviewer_id})
+            .eq("booking_id", booking_id)
+            .execute()
+        )
 
         return update_res.data[0]
 

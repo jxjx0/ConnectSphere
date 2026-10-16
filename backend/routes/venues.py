@@ -196,6 +196,7 @@ def review_venue_booking(booking_id: str):
 @venues_bp.get("/bookings/event/<event_id>")
 @require_auth
 def get_venue_booking_for_event(event_id: str):
+    """Return all requested venue bookings for an event."""
     client = config.get_user_client(g.access_token)
     
     result = (
@@ -206,5 +207,5 @@ def get_venue_booking_for_event(event_id: str):
         .execute()
     )
 
-    booking = result.data[0] if result.data else None
-    return jsonify({"booking": booking}), 200
+    # Fixed: Returns array of all bookings for the event rather than just the latest single item
+    return jsonify({"bookings": result.data or []}), 200
