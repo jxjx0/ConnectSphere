@@ -86,6 +86,7 @@ function harness({ get = async (id, range) => data(id, range), catalogue = async
     '../eventDisplay': display,
     '../venueSearch.js': searchHelpers,
     '../venueAvailability': helpers,
+    '../components/BookingForm.jsx': { __esModule: true, default: () => null },
   }
   new Function('require', 'module', 'exports', code)((name) => {
     assert.ok(name in imports, `unexpected import ${name}`)

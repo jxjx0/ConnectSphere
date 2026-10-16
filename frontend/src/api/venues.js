@@ -53,3 +53,23 @@ export function createVenueBlock(venueId, block, token) {
     token,
   })
 }
+
+export function createVenueBooking(venueId, booking, token) {
+  return request(`/venues/${venueId}/bookings`, {
+    method: 'POST',
+    body: booking,
+    token,
+  })
+}
+
+export function reviewVenueBooking(bookingId, review, token) {
+  return request(`/venues/bookings/${bookingId}/review`, {
+    method: 'PATCH',
+    body: review,
+    token,
+  })
+}
+
+export function getVenueBookingsForEvent(eventId, token) {
+  return request(`/venues/bookings/event/${encodeURIComponent(eventId)}`, { token })
+}

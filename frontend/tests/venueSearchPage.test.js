@@ -11,6 +11,7 @@ import * as searchHelpers from '../src/venueSearch.js'
 import * as eventDisplay from '../src/eventDisplay.js'
 import * as eventCategories from '../src/eventCategories.js'
 
+
 const source = await readFile(new URL('../src/pages/VenueSearchPage.jsx', import.meta.url), 'utf8')
 const { code } = await transformWithEsbuild(source, 'VenueSearchPage.jsx', {
   jsx: 'automatic', format: 'cjs', tsconfigRaw: '{}',
@@ -44,6 +45,7 @@ function pageHarness(result, form = searchHelpers.EMPTY_VENUE_FILTERS, search = 
     '../components/AppShell': { __esModule: true, default: ({ children }) => React.createElement('main', null, children) },
     '../context/AuthContext': { useAuth: () => ({ token: 'token' }) },
     '../venueSearch.js': searchHelpers,
+    '../components/BookingForm': { __esModule: true, default: () => null },
   }
   new Function('require', 'module', 'exports', code)(
     (name) => {
