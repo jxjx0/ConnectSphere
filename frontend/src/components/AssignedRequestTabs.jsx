@@ -44,6 +44,53 @@ const TABS = [
   },
 ]
 
+// Helper function to derive the venue status badge
+function getVenueBadge(venueBookings) {
+  if (!venueBookings || venueBookings.length === 0) {
+    return {
+      label: 'No Venue',
+      style: {
+        backgroundColor: 'var(--sunken)',
+        color: 'var(--ink-faint)',
+        borderColor: 'var(--rule)',
+      },
+    }
+  }
+
+  const hasApproved = venueBookings.some((b) => b.status === 'APPROVED')
+  if (hasApproved) {
+    return {
+      label: 'Venue Approved',
+      style: {
+        backgroundColor: 'var(--accent-faint)',
+        color: 'var(--accent)',
+        borderColor: 'var(--accent)',
+      },
+    }
+  }
+
+  const hasPending = venueBookings.some((b) => b.status === 'PENDING_VENUE_APPROVAL')
+  if (hasPending) {
+    return {
+      label: 'Venue Pending',
+      style: {
+        backgroundColor: 'var(--surface)',
+        color: 'var(--ink)',
+        borderColor: 'var(--rule-strong)',
+      },
+    }
+  }
+
+  return {
+    label: 'Venue Rejected',
+    style: {
+      backgroundColor: 'var(--danger-faint)',
+      color: 'var(--danger)',
+      borderColor: 'var(--danger)',
+    },
+  }
+}
+
 export default function AssignedRequestTabs({ events }) {
   // The open tab lives in the URL (?tab=ongoing), so the back button
   // returns to the same tab. Incoming is the default.
@@ -78,23 +125,30 @@ export default function AssignedRequestTabs({ events }) {
         <p className="note">{tab.empty}</p>
       ) : (
         <div className="choices">
-          {tabEvents.map((event) => (
-            <Link
-              key={event.id}
-              to={`/event-reviews/${event.id}`}
-              className="choice"
-            >
-              <span className="choice__text">
-                <span className="choice__title">{event.name}</span>
-                <span className="choice__description">
-                  {formatDateRange(event.start_time, event.end_time)}
-                  {' · '}
-                  <span className="tag">{readableStatus(event.status)}</span>
+          {tabEvents.map((event) => {
+            const venueBadge = getVenueBadge(event.venue_bookings)
+
+            return (
+              <Link
+                key={event.id}
+                to={`/event-reviews/${event.id}`}
+                className="choice"
+              >
+                <span className="choice__text">
+                  <span className="choice__title">{event.name}</span>
+                  <span className="choice__description" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap', marginTop: 'var(--space-1)' }}>
+                    <span>{formatDateRange(event.start_time, event.end_time)}</span>
+                    <span aria-hidden="true">·</span>
+                    <span className="tag">{readableStatus(event.status)}</span>
+                    <span className="tag" style={venueBadge.style}>
+                      {venueBadge.label}
+                    </span>
+                  </span>
                 </span>
-              </span>
-              <span className="choice__arrow" aria-hidden="true">→</span>
-            </Link>
-          ))}
+                <span className="choice__arrow" aria-hidden="true">→</span>
+              </Link>
+            )
+          })}
         </div>
       )}
     </>
