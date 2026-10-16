@@ -5,6 +5,7 @@ import { getVenues, getVenueAvailability } from '../api/venues'
 import { getAssignedEventRequest } from '../api/events'
 import AppShell from '../components/AppShell'
 import BlockForm from '../components/BlockForm'
+import BookingForm from '../components/BookingForm.jsx'
 import { useAuth } from '../context/AuthContext'
 import { formatDateRange } from '../eventDisplay'
 import { EMPTY_VENUE_FILTERS, validateVenueSearch } from '../venueSearch.js'
@@ -24,23 +25,31 @@ export default function VenueAvailabilityPage() {
   const [activeVenue, setActiveVenue] = useState(0)
   const [blockingVenue, setBlockingVenue] = useState(null)
   const [eventContext, setEventContext] = useState({ id: '', event: null, error: '' })
+  const [successMessage, setSuccessMessage] = useState('')
+
   const fromSearch = searchParams.get('from') === 'search' && user.role === 'coordinator'
   const fromCatalogue = searchParams.get('from') === 'catalogue' && user.role === 'venue_staff'
   const returnSearch = new URLSearchParams(searchParams.get('search') || '')
   if (fromSearch) returnSearch.set('resume', '1')
+
   const backTo = fromSearch ? `/venues/search?${returnSearch}` : fromCatalogue ? '/venues' : '/dashboard'
   const backLabel = fromSearch ? 'Back to Search Results' : fromCatalogue ? 'Back to Venue Catalogue' : 'Back to Dashboard'
-  const eventId = fromSearch ? returnSearch.get('eventId') : null
+
+  // Resolve eventId from search params or search context
+  const eventId = searchParams.get('eventId') || (fromSearch ? returnSearch.get('eventId') : null)
+
   const filters = Object.fromEntries(Object.keys(EMPTY_VENUE_FILTERS).map((field) => [field, returnSearch.get(field) || '']))
   const requestedPeriod = fromSearch && filters.date && !validateVenueSearch(filters)
     ? formatDateRange(new Date(`${filters.date}T${filters.start_time}`).toISOString(),
       new Date(`${filters.end_date || filters.date}T${filters.end_time}`).toISOString()) : null
+
   let week
   let dateError = ''
   try { week = calendarWeek(date) } catch (error) { dateError = error.message }
   const start = week?.range.start_at
   const end = week?.range.end_at
   const key = `${venueId}/${start}/${end}/${refresh}`
+  const [bookingVenue, setBookingVenue] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -86,29 +95,55 @@ export default function VenueAvailabilityPage() {
   const canShowCalendar = week && !catalogue.loading && !catalogue.error && venueId && current.data
   const matches = calendarVenueOptions(catalogue.venues, venueSearch || '')
   const selectedVenue = catalogue.venues.find((venue) => venue.id === venueId)
+
   function closeVenues(event) {
     setVenueOpen(false)
     setVenueSearch(null)
     event.currentTarget?.closest('.venue-picker')?.querySelector('button')?.focus()
   }
+
   function chooseVenue(venue, event) {
     setVenueId(venue.id)
     closeVenues(event)
   }
+
   function openVenues() {
     setVenueSearch('')
     setActiveVenue(Math.max(0, catalogue.venues.findIndex((venue) => venue.id === venueId)))
     setVenueOpen(true)
   }
+
   const blockDetails = selectedBlock?.key === key && current.data
     ? current.data.items.find((item) => item.id === selectedBlock.id) : null
   const formatDay = (value) => value.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+
+  // Derived date values for initial form values
+  const derivedStartDate = searchParams.get('date') || filters?.date || date || ''
+  const derivedEndDate = searchParams.get('end_date') || filters?.end_date || derivedStartDate
+
   return (
     <AppShell>
       <div className="content__header venue-search__header">
         <Link to={backTo} className="venue-search__back">← {backLabel}</Link>
         <h1>Venue Availability</h1>
         <p className="lead">{fromSearch ? 'Review this venue’s schedule, then return to your matching venues.' : 'View recorded venue occupancy across dates and times.'}</p>
+        
+        {/* SUCCESS BANNER IN HEADER */}
+        {successMessage && (
+          <div
+            className="notice"
+            style={{
+              backgroundColor: 'var(--accent-faint)',
+              borderColor: 'var(--accent)',
+              color: 'var(--accent)',
+              marginTop: 'var(--space-3)'
+            }}
+            role="status"
+          >
+            <p><strong>✓ {successMessage}</strong></p>
+          </div>
+        )}
+
         {fromSearch && <div className="notice stack stack--tight">
           {eventId && (eventContext.id !== eventId || (!eventContext.event && !eventContext.error)) && <p className="note">Loading event context…</p>}
           {eventContext.id === eventId && eventContext.event && <p>Finding a venue for: <strong>{eventContext.event.name}</strong></p>}
@@ -174,14 +209,50 @@ export default function VenueAvailabilityPage() {
             onClick={() => setBlockingVenue(selectedVenue)}>Block Venue</button>
         </div>}
         <div className="venue-calendar__navigation">
-        {week && <h3 className="venue-calendar__range">{formatDay(week.days[0].start)} – {formatDay(week.days[6].start)}</h3>}
-        <div className="form-actions">
-          <button className="button button--secondary button--small" disabled={!week} onClick={() => setDate(shiftCalendarDate(date, -7))}>Previous week</button>
-          <button className="button button--secondary button--small" onClick={() => setDate(localDateValue())}>This week</button>
-          <button className="button button--secondary button--small" disabled={!week} onClick={() => setDate(shiftCalendarDate(date, 7))}>Next week</button>
-          <button className="button button--secondary button--small" onClick={() => setRefresh((value) => value + 1)}>Refresh</button>
+          {week && <h3 className="venue-calendar__range">{formatDay(week.days[0].start)} – {formatDay(week.days[6].start)}</h3>}
+          <div className="form-actions">
+            <button className="button button--secondary button--small" disabled={!week} onClick={() => setDate(shiftCalendarDate(date, -7))}>Previous week</button>
+            <button className="button button--secondary button--small" onClick={() => setDate(localDateValue())}>This week</button>
+            <button className="button button--secondary button--small" disabled={!week} onClick={() => setDate(shiftCalendarDate(date, 7))}>Next week</button>
+            <button className="button button--secondary button--small" onClick={() => setRefresh((value) => value + 1)}>Refresh</button>
+
+            {/* Action button toolbar */}
+            {user?.role === 'coordinator' && selectedVenue && (
+              <button
+                type="button"
+                className="button button--primary button--small"
+                onClick={() => setBookingVenue(selectedVenue)}
+              >
+                Request Venue Booking
+              </button>
+            )}
+          </div>
         </div>
-        </div>
+
+        {/* Render BookingForm modal */}
+        {bookingVenue && (
+          <BookingForm
+            venue={bookingVenue}
+            eventId={eventId}
+            initialValues={{
+              eventId: eventId || '',
+              eventName: eventContext.event?.name || '',
+              startDate: derivedStartDate,
+              endDate: derivedEndDate,
+              startTime: searchParams.get('start_time') || filters?.start_time || '',
+              endTime: searchParams.get('end_time') || filters?.end_time || '',
+              layout: searchParams.get('required_layout') || filters?.required_layout || (eventContext.event?.layout_preference || ''),
+            }}
+            onClose={() => setBookingVenue(null)}
+            onCreated={() => {
+              const venueName = bookingVenue.name
+              setBookingVenue(null) // Closes modal
+              setSuccessMessage(`Booking request for ${venueName} successfully submitted!`)
+              setRefresh((val) => val + 1) // Refresh calendar data
+            }}
+          />
+        )}
+
         {venueId && <div className="venue-calendar__notice" role="status">
           <strong>Availability not fully verified.</strong>
           <p className="note">Additional reservations may not be shown.</p>
@@ -194,70 +265,70 @@ export default function VenueAvailabilityPage() {
         {!catalogue.loading && !catalogue.error && venueId && week && current.loading && <p role="status" className="note">Loading venue occupancy…</p>}
         {current.error && !catalogue.loading && !catalogue.error && !dateError && <p role="alert" className="form-error">{current.error}</p>}
         {canShowCalendar && <>
-        <div className="stack stack--tight">
-          <p className="note venue-calendar__legend">Operational block</p>
-          <p className="note">Empty grid space is not verified availability. Select a block to see its details.</p>
-        </div>
-        <div className="venue-calendar__scroll" tabIndex={0} role="region" aria-label="Weekly time grid, scroll to see all hours">
-          <div className="venue-calendar__time-grid">
-            <div className="venue-calendar__time-heading">Time</div>
-            {week.days.map((day) => <div key={day.date} className="venue-calendar__time-heading">
-              <time dateTime={day.date}>{day.start.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</time>
-            </div>)}
-            <div className="venue-calendar__hours" aria-hidden="true">
-              {Array.from({ length: 24 }, (_, hour) => <span key={hour}>{hour % 12 || 12} {hour < 12 ? 'AM' : 'PM'}</span>)}
-            </div>
-            {week.days.map((day) => <div key={day.date} className="venue-calendar__timeline" aria-label={day.date}>
-              <div className="venue-calendar__hour-lines" aria-hidden="true">
-                {Array.from({ length: 24 }, (_, hour) => <span key={hour} />)}
+          <div className="stack stack--tight">
+            <p className="note venue-calendar__legend">Operational block</p>
+            <p className="note">Empty grid space is not verified availability. Select a block to see its details.</p>
+          </div>
+          <div className="venue-calendar__scroll" tabIndex={0} role="region" aria-label="Weekly time grid, scroll to see all hours">
+            <div className="venue-calendar__time-grid">
+              <div className="venue-calendar__time-heading">Time</div>
+              {week.days.map((day) => <div key={day.date} className="venue-calendar__time-heading">
+                <time dateTime={day.date}>{day.start.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</time>
+              </div>)}
+              <div className="venue-calendar__hours" aria-hidden="true">
+                {Array.from({ length: 24 }, (_, hour) => <span key={hour}>{hour % 12 || 12} {hour < 12 ? 'AM' : 'PM'}</span>)}
               </div>
-              {calendarBlockPositions(current.data.items, day).map(({ item, top, height, left, width }) => (
-                <button type="button" key={item.id}
-                  className={`venue-calendar__time-block${height < 100 / 24 ? ' venue-calendar__time-block--compact' : ''}`}
-                  style={{ top: `${top}%`, height: `${height}%`, left: `${left}%`, width: `${width}%` }}
-                  title={`${item.reason}. ${formatDateRange(item.start_at, item.end_at)}`}
-                  aria-label={`Operational block: ${item.reason}. ${formatDateRange(item.start_at, item.end_at)}`}
-                  aria-controls="calendar-block-details" aria-expanded={blockDetails?.id === item.id}
-                  onClick={() => setSelectedBlock({ key, id: item.id })}>
+              {week.days.map((day) => <div key={day.date} className="venue-calendar__timeline" aria-label={day.date}>
+                <div className="venue-calendar__hour-lines" aria-hidden="true">
+                  {Array.from({ length: 24 }, (_, hour) => <span key={hour} />)}
+                </div>
+                {calendarBlockPositions(current.data.items, day).map(({ item, top, height, left, width }) => (
+                  <button type="button" key={item.id}
+                    className={`venue-calendar__time-block${height < 100 / 24 ? ' venue-calendar__time-block--compact' : ''}`}
+                    style={{ top: `${top}%`, height: `${height}%`, left: `${left}%`, width: `${width}%` }}
+                    title={`${item.reason}. ${formatDateRange(item.start_at, item.end_at)}`}
+                    aria-label={`Operational block: ${item.reason}. ${formatDateRange(item.start_at, item.end_at)}`}
+                    aria-controls="calendar-block-details" aria-expanded={blockDetails?.id === item.id}
+                    onClick={() => setSelectedBlock({ key, id: item.id })}>
                     {height >= 100 / 24 && <strong>{item.reason}</strong>}
-                </button>
-              ))}
-            </div>)}
+                  </button>
+                ))}
+              </div>)}
+            </div>
           </div>
-        </div>
-        {blockDetails && <section id="calendar-block-details" className="venue-calendar__time-detail stack stack--tight"
-          aria-labelledby="calendar-block-heading" aria-live="polite">
-          <div className="venue-calendar__navigation">
-            <h3 id="calendar-block-heading">Operational block</h3>
-            <button type="button" className="button button--secondary button--small"
-              onClick={() => setSelectedBlock(null)}>Close details</button>
-          </div>
-          <strong>{selectedVenue?.name}</strong>
-          <p className="venue-calendar__period">{formatDateRange(blockDetails.start_at, blockDetails.end_at)}</p>
-          <p>{blockDetails.reason}</p>
-        </section>}
-        <details className="venue-calendar__list">
-        <summary>View daily block details</summary>
-        <div className="venue-calendar__week" aria-label="Weekly venue occupancy">
-          {week.days.map((day) => {
-            const items = blocksForDay(current.data.items, day)
-            return <section key={day.date} className="venue-calendar__day" aria-label={day.date}>
-              <h3 className="venue-calendar__day-heading"><time dateTime={day.date}>
-                <span>{day.start.toLocaleDateString('en-GB', { weekday: 'short' })}</span>
-                <span className="note">{day.start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
-              </time></h3>
-              {!items.length && <p className="note">No recorded occupancy</p>}
-              {items.map((item) => <article key={item.id} className="venue-calendar__block">
-                <p className="venue-calendar__period">{formatDateRange(item.start_at, item.end_at)}</p>
-                <strong className="note">Operational block</strong>
-                <p className="note">{item.reason}</p>
-                {new Date(item.start_at) < day.start && <p className="note">Continues from previous day</p>}
-                {new Date(item.end_at) > day.end && <p className="note">Continues into next day</p>}
-              </article>)}
-            </section>
-          })}
-        </div>
-        </details>
+          {blockDetails && <section id="calendar-block-details" className="venue-calendar__time-detail stack stack--tight"
+            aria-labelledby="calendar-block-heading" aria-live="polite">
+            <div className="venue-calendar__navigation">
+              <h3 id="calendar-block-heading">Operational block</h3>
+              <button type="button" className="button button--secondary button--small"
+                onClick={() => setSelectedBlock(null)}>Close details</button>
+            </div>
+            <strong>{selectedVenue?.name}</strong>
+            <p className="venue-calendar__period">{formatDateRange(blockDetails.start_at, blockDetails.end_at)}</p>
+            <p>{blockDetails.reason}</p>
+          </section>}
+          <details className="venue-calendar__list">
+            <summary>View daily block details</summary>
+            <div className="venue-calendar__week" aria-label="Weekly venue occupancy">
+              {week.days.map((day) => {
+                const items = blocksForDay(current.data.items, day)
+                return <section key={day.date} className="venue-calendar__day" aria-label={day.date}>
+                  <h3 className="venue-calendar__day-heading"><time dateTime={day.date}>
+                    <span>{day.start.toLocaleDateString('en-GB', { weekday: 'short' })}</span>
+                    <span className="note">{day.start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                  </time></h3>
+                  {!items.length && <p className="note">No recorded occupancy</p>}
+                  {items.map((item) => <article key={item.id} className="venue-calendar__block">
+                    <p className="venue-calendar__period">{formatDateRange(item.start_at, item.end_at)}</p>
+                    <strong className="note">Operational block</strong>
+                    <p className="note">{item.reason}</p>
+                    {new Date(item.start_at) < day.start && <p className="note">Continues from previous day</p>}
+                    {new Date(item.end_at) > day.end && <p className="note">Continues into next day</p>}
+                  </article>)}
+                </section>
+              })}
+            </div>
+          </details>
         </>}
       </section>
       {blockingVenue && <BlockForm venue={blockingVenue} onClose={() => setBlockingVenue(null)}

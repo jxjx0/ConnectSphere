@@ -116,6 +116,7 @@ def list_assigned_events():
     )
     return jsonify(
         {"events": [event.model_dump(mode="json") for event in events]}
+        # {"events": events}
     ), 200
 
 
