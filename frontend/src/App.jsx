@@ -18,6 +18,7 @@ import EquipmentPage from './pages/EquipmentPage'
 import EventReviewDetailPage from './pages/EventReviewDetailPage'
 import EquipmentRequestsPage from './pages/EquipmentRequestsPage'
 import LeadDashboardPage from './pages/LeadDashboardPage'
+import UnassignedQueuePage from './pages/UnassignedQueuePage'
 
 export default function App() {
   return (
@@ -172,6 +173,15 @@ export default function App() {
         element={
           <AuthGuard allowedRoles={['event_coordinator_lead']}>
             <LeadDashboardPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/events/unassigned-queue"
+        element={
+          <AuthGuard allowedRoles={['event_coordinator_lead']}>
+            <UnassignedQueuePage />
           </AuthGuard>
         }
       />

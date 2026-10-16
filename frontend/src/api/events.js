@@ -153,24 +153,23 @@ export function reassignAssignedEvent(eventId, { newCoordinatorId, reason }, tok
   })
 }
 
-// export async function getLeadCoordinatorEvents(token) {
-//   const response = await fetch('/lead-overview', {
-//     method: 'GET',
-//     headers: {
-//       'Content-Type': 'application/json',
-//       Authorization: `Bearer ${token}`,
-//     },
-//   })
-
-//   if (!response.ok) {
-//     const errorData = await response.json().catch(() => ({}))
-//     throw new Error(errorData.error || 'Failed to fetch coordinator events')
-//   }
-
-//   return response.json()
-// }
-
 // REPLACE getLeadCoordinatorEvents WITH THIS:
 export function getLeadCoordinatorEvents(token) {
   return request('/events/lead-overview', { token })
+}
+
+export function getUnassignedEventsQueue(token) {
+  return request('/events/unassigned-queue', { token })
+}
+
+export function getCoordinatorsList(token) {
+  return request('/events/coordinators', { token })
+}
+
+export function assignCoordinatorToEvent(eventId, coordinatorId, reason = '', token) {
+  return request(`/events/review/${eventId}/reassign`, {
+    method: 'POST',
+    body: { new_coordinator_id: coordinatorId, reason },
+    token,
+  })
 }

@@ -374,29 +374,6 @@ class Event(BaseModel):
     has_pending_change_request: bool = False
     change_request: EventChangeRequest | None = None
 
-
-class EventReviewSummary(BaseModel):
-    """The fields needed to render the Coordinator's review list."""
-
-    id: str
-    name: str
-    start_time: datetime
-    end_time: datetime
-    status: EventStatus
-
-
-class EventOrganiser(BaseModel):
-    """The Organiser's contact details, shown to their event's Coordinator."""
-
-    full_name: str | None = None
-    contact_number: str | None = None
-    organization: str | None = None
-
-
-
-class Event:
-    # ... your existing Event class fields and methods ...
-
     @classmethod
     def format_lead_overview(cls, raw_events):
         """
@@ -412,7 +389,6 @@ class Event:
             if not evt or evt.get("status") in ["completed", "rejected"]:
                 continue
 
-            # Safely extract venue from venue_bookings array
             venue_bookings = evt.get("venue_bookings") or []
             venue_info = venue_bookings[0].get("venue", {}) if venue_bookings else {}
             
@@ -434,3 +410,21 @@ class Event:
             })
 
         return formatted_events
+
+
+class EventReviewSummary(BaseModel):
+    """The fields needed to render the Coordinator's review list."""
+
+    id: str
+    name: str
+    start_time: datetime
+    end_time: datetime
+    status: EventStatus
+
+
+class EventOrganiser(BaseModel):
+    """The Organiser's contact details, shown to their event's Coordinator."""
+
+    full_name: str | None = None
+    contact_number: str | None = None
+    organization: str | None = None

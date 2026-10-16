@@ -112,9 +112,9 @@ export default function DashboardPage() {
             <Link to="/lead/dashboard" className="button"> 
               View Event Overview 
             </Link> 
-            {/* <Link to="/equipment/new" className="button button--secondary"> 
-              Create Equipment Profile 
-            </Link>  */}
+            <Link to="/events/unassigned-queue" className="button button--secondary"> 
+              View Unassigned Events 
+            </Link> 
           </div> 
         </section> 
       )} 

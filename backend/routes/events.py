@@ -14,7 +14,7 @@ from models.event import (
 )
 from models.profile import Role
 from routes.auth import require_auth
-from services import auth_service, event_service, notification_service, overview_coordinator_events_service
+from services import auth_service, event_service, notification_service, overview_coordinator_events_service, event_assignment_service
 from services.auth_service import AuthError
 from models.event import Event
 
@@ -39,11 +39,20 @@ def _require_organiser() -> None:
 def _require_coordinator() -> None:
     """Require the authenticated profile to have the coordinator role."""
     profile = auth_service.get_profile(g.access_token, g.user_id)
-    if profile.role != Role.COORDINATOR:
+    allowed_roles = [
+        Role.COORDINATOR,
+        getattr(Role, "EVENT_COORDINATOR_LEAD", "event_coordinator_lead"),
+    ]
+    if profile.role not in allowed_roles:
         raise AuthError(
-            "Only Event Coordinators can review event requests.",
+            "Only Event Coordinators and Lead Coordinators can review event requests.",
             status_code=403,
         )
+    # if profile.role != Role.COORDINATOR:
+    #     raise AuthError(
+    #         "Only Event Coordinators can review event requests.",
+    #         status_code=403,
+    #     )
 
 
 @events_bp.post("")
@@ -405,5 +414,19 @@ def get_lead_overview():
         )
         formatted_events = Event.format_lead_overview(raw_events)
         return jsonify(formatted_events), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    
+
+@events_bp.get("/unassigned-queue")
+@require_auth
+def get_unassigned_queue():
+    """Fetch unassigned events queue for Lead Coordinators."""
+    _require_coordinator()
+    try:
+        queue = event_assignment_service.get_unassigned_events_queue(
+            access_token=g.access_token
+        )
+        return jsonify(queue), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400
