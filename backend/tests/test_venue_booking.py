@@ -412,7 +412,7 @@ def test_review_venue_booking_conflict_recheck_raises_409(monkeypatch):
     assert exc.value.status_code == 409
     assert "Cannot approve booking due to a conflicting schedule block" in str(exc.value)
 
-def test_review_venue_booking_conflict_recheck_raises_409(monkeypatch):
+def test_review_venue_booking_conflict_recheck_raises_recheck(monkeypatch):
     """Line 126: Test 409 AuthError when review_venue_booking detects a conflict during approval."""
     now = datetime.now(timezone.utc)
     booking_record = {
