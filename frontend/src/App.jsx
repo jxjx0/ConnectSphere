@@ -16,6 +16,7 @@ import VenueSearchPage from './pages/VenueSearchPage'
 import VenueAvailabilityPage from './pages/VenueAvailabilityPage'
 import EquipmentPage from './pages/EquipmentPage'
 import EventReviewDetailPage from './pages/EventReviewDetailPage'
+import EquipmentRequestsPage from './pages/EquipmentRequestsPage'
 import LeadDashboardPage from './pages/LeadDashboardPage'
 
 export default function App() {
@@ -110,6 +111,24 @@ export default function App() {
             <EquipmentPage />
           </AuthGuard>
         } 
+      />
+
+      <Route
+        path="/equipment-requests"
+        element={
+          <AuthGuard allowedRoles={['coordinator', 'tech_support']}>
+            <EquipmentRequestsPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/equipment-requests"
+        element={
+          <AuthGuard allowedRoles={['coordinator', 'tech_support']}>
+            <EquipmentRequestsPage />
+          </AuthGuard>
+        }
       />
 
       <Route

@@ -55,6 +55,19 @@ test('empty search sends an empty object, not zero attendance or invalid timesta
   assert.deepEqual(venueSearchPayload(EMPTY_VENUE_FILTERS), {})
 })
 
+test('location payload trims text, preserves literal characters and omits blank input', () => {
+  for (const location of [undefined, null, '', ' \t\n ']) {
+    assert.deepEqual(venueSearchPayload({ ...EMPTY_VENUE_FILTERS, location }), {})
+  }
+  const payload = venueSearchPayload({ ...form, location: '  West%_  ', required_accessibility: 'Step-free', required_facility: 'Wi-Fi' })
+  assert.equal(payload.location, 'West%_')
+  assert.equal(payload.required_layout, 'Theatre')
+  assert.equal(payload.expected_attendance, 100)
+  assert.equal(payload.required_accessibility, 'Step-free')
+  assert.equal(payload.required_facility, 'Wi-Fi')
+  assert.equal(eventVenueFilters({ start_time: '2026-11-07T10:00Z', end_time: '2026-11-07T12:00Z', location_preference: 'Somewhere central near an MRT' }, []).location, '')
+})
+
 test('facility options normalize safe aliases and support existing catalogue formats without mutation', () => {
   const venues = [
     { facilities: [' Wi-Fi ', 'wifi', 'WI   FI', ' Projector ', 'PROJECTOR', 'Wi-Fi hotspot', '', null] },
