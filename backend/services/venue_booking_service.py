@@ -169,3 +169,16 @@ def review_venue_booking(
         .execute()
     )
     return update_res.data[0]
+
+def get_pending_venue_bookings(access_token: str, venue_id: str | None = None) -> list[dict]:
+    """Retrieve all venue bookings with status 'PENDING_VENUE_APPROVAL'."""
+    client = config.get_user_client(access_token)
+    
+    query = client.table("venue_bookings").select("*, venues(name)").eq("status", "PENDING_VENUE_APPROVAL")
+    
+    # Optional filter if you want pending bookings for a specific venue
+    if venue_id:
+        query = query.eq("venue_id", venue_id)
+        
+    result = query.order("created_at", desc=True).execute()
+    return result.data or []
