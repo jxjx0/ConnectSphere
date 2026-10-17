@@ -7,25 +7,6 @@ from services.notification_service import notify
 logger = logging.getLogger(__name__)
 
 
-# def get_unassigned_events_queue(access_token: str):
-#     """Fetches all events where coordinator_id is NULL, ordered FIFO (created_at ASC)."""
-#     try:
-#         supabase = config.get_admin_client()
-#         response = (
-#             supabase.from_("events")
-#             .select(
-#                 "id, name, status, start_time, end_time, expected_attendance, "
-#                 "equipment_requirements, coordinator_id, created_at, "
-#                 "venue_bookings(venue_id, venue(id, name, location))"
-#             )
-#             .is_("coordinator_id", "null")
-#             .not_.in_("status", ["completed", "rejected"])
-#             .order("created_at", desc=False)
-#             .execute()
-#         )
-#         return response.data or []
-#     except PostgrestAPIError as e:
-#         raise AuthError(f"Database error fetching queue: {e.message}", status_code=400)
 
 def get_unassigned_events_queue(access_token: str = None):
     """
