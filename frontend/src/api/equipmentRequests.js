@@ -15,7 +15,9 @@ async function request(path, token, options = {}) {
     const message = data.errors
       ? data.errors.join(' ')
       : data.error || 'Unable to access equipment requests.'
-    throw new Error(message)
+    const error = new Error(message)
+    error.status = response.status
+    throw error
   }
 
   return data
@@ -27,6 +29,13 @@ export function getEquipmentCatalog(token) {
 
 export function getEquipmentRequests(token) {
   return request('/equipment-requests', token)
+}
+
+export function reviewEquipmentRequest(requestId, decision, token) {
+  return request(`/equipment-requests/${requestId}/review`, token, {
+    method: 'PATCH',
+    body: { decision },
+  })
 }
 
 export function submitEquipmentRequest(equipmentRequest, token) {

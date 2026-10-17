@@ -7,7 +7,7 @@ import pytest
 from postgrest import APIError as PostgrestAPIError
 
 import config
-from models.equipment_request import EquipmentRequestSubmit
+from models.equipment_request import EquipmentRequestReview, EquipmentRequestSubmit
 from models.profile import Profile, Role
 from routes import equipment
 from services import auth_service, equipment_request_service
@@ -211,7 +211,9 @@ def test_technical_support_can_view_equipment_requests(client, monkeypatch):
     authenticate_as(monkeypatch, TECH_SUPPORT)
     list_requests = Mock(return_value=[SAVED_REQUEST])
     monkeypatch.setattr(
-        equipment_request_service, "list_equipment_requests", list_requests
+        equipment_request_service,
+        "list_tech_support_equipment_requests",
+        list_requests,
     )
 
     response = client.get(
@@ -221,6 +223,71 @@ def test_technical_support_can_view_equipment_requests(client, monkeypatch):
 
     assert response.status_code == 200
     assert response.get_json()["requests"] == [SAVED_REQUEST]
+    list_requests.assert_called_once_with("tech-token")
+
+
+def test_technical_support_can_review_equipment_request(client, monkeypatch):
+    authenticate_as(monkeypatch, TECH_SUPPORT)
+    review_request = Mock(return_value={"id": SAVED_REQUEST["id"], "status": "Approved"})
+    monkeypatch.setattr(
+        equipment_request_service, "review_equipment_request", review_request
+    )
+
+    response = client.patch(
+        f"/equipment-requests/{SAVED_REQUEST['id']}/review",
+        json={"decision": "Approved"},
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["request"]["status"] == "Approved"
+    review_request.assert_called_once()
+    assert review_request.call_args.args[0] == "test-token"
+    assert review_request.call_args.args[1] == SAVED_REQUEST["id"]
+    assert review_request.call_args.args[2] == EquipmentRequestReview(
+        decision="Approved"
+    )
+
+
+@pytest.mark.parametrize("profile", [COORDINATOR, ATTENDEE])
+def test_non_technical_support_cannot_review_equipment_request(
+    client, monkeypatch, profile
+):
+    authenticate_as(monkeypatch, profile)
+    review_request = Mock(
+        side_effect=AssertionError("only Technical Support may review")
+    )
+    monkeypatch.setattr(
+        equipment_request_service, "review_equipment_request", review_request
+    )
+
+    response = client.patch(
+        f"/equipment-requests/{SAVED_REQUEST['id']}/review",
+        json={"decision": "Approved"},
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 403
+    review_request.assert_not_called()
+
+
+def test_review_rejects_invalid_decision(client, monkeypatch):
+    authenticate_as(monkeypatch, TECH_SUPPORT)
+    review_request = Mock(
+        side_effect=AssertionError("invalid review must not reach the service")
+    )
+    monkeypatch.setattr(
+        equipment_request_service, "review_equipment_request", review_request
+    )
+
+    response = client.patch(
+        f"/equipment-requests/{SAVED_REQUEST['id']}/review",
+        json={"decision": "Maybe"},
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 400
+    review_request.assert_not_called()
 
 
 def test_attendee_cannot_view_equipment_requests(client, monkeypatch):
@@ -377,6 +444,112 @@ def test_service_list_returns_requests_ordered_by_recent_creation(
     query.select.assert_called_once_with(REQUEST_SELECT)
     query.order.assert_called_once_with("created_at", desc=True)
     assert result == [SAVED_REQUEST]
+
+
+def test_technical_support_service_loads_review_queue_via_user_rpc(
+    equipment_request_database,
+):
+    client, client_factory = equipment_request_database
+    rpc_query = Mock()
+    rpc_query.execute.return_value = SimpleNamespace(data=[SAVED_REQUEST])
+    client.rpc.return_value = rpc_query
+
+    result = equipment_request_service.list_tech_support_equipment_requests(
+        "staff-token"
+    )
+
+    client_factory.assert_called_once_with("staff-token")
+    client.rpc.assert_called_once_with("list_equipment_request_review_queue")
+    assert result == [SAVED_REQUEST]
+
+
+@pytest.mark.parametrize("decision", ["Approved", "Rejected"])
+def test_service_returns_saved_review_status(
+    equipment_request_database, decision
+):
+    client, _ = equipment_request_database
+    rpc_query = Mock()
+    rpc_query.execute.return_value = SimpleNamespace(
+        data={
+            "outcome": "reviewed",
+            "request": {"id": SAVED_REQUEST["id"], "status": decision},
+        }
+    )
+    client.rpc.return_value = rpc_query
+    review = EquipmentRequestReview(decision=decision)
+
+    result = equipment_request_service.review_equipment_request(
+        "staff-token", SAVED_REQUEST["id"], review
+    )
+
+    client.rpc.assert_called_once_with(
+        "review_equipment_request",
+        {"p_request_id": SAVED_REQUEST["id"], "p_decision": decision},
+    )
+    assert result == {"id": SAVED_REQUEST["id"], "status": decision}
+
+
+def test_unavailable_equipment_stays_pending_and_notifies_coordinator(
+    equipment_request_database, monkeypatch
+):
+    client, _ = equipment_request_database
+    rpc_query = Mock()
+    rpc_query.execute.return_value = SimpleNamespace(
+        data={
+            "outcome": "unavailable",
+            "coordinator_id": COORDINATOR.id,
+            "event_id": VALID_REQUEST["event_id"],
+            "event_name": "Community Conference",
+        }
+    )
+    client.rpc.return_value = rpc_query
+    notify = Mock(return_value=object())
+    monkeypatch.setattr(
+        equipment_request_service.notification_service, "notify", notify
+    )
+
+    with pytest.raises(AuthError) as caught:
+        equipment_request_service.review_equipment_request(
+            "staff-token",
+            SAVED_REQUEST["id"],
+            EquipmentRequestReview(decision="Approved"),
+        )
+
+    assert caught.value.status_code == 409
+    assert "remains pending" in caught.value.message
+    assert "Coordinator has been notified" in caught.value.message
+    notify.assert_called_once()
+    assert notify.call_args.kwargs["user_id"] == COORDINATOR.id
+    assert notify.call_args.kwargs["event_id"] == VALID_REQUEST["event_id"]
+
+
+def test_unavailable_equipment_reports_notification_failure(
+    equipment_request_database, monkeypatch
+):
+    client, _ = equipment_request_database
+    rpc_query = Mock()
+    rpc_query.execute.return_value = SimpleNamespace(
+        data={
+            "outcome": "unavailable",
+            "coordinator_id": COORDINATOR.id,
+            "event_id": VALID_REQUEST["event_id"],
+            "event_name": "Community Conference",
+        }
+    )
+    client.rpc.return_value = rpc_query
+    monkeypatch.setattr(
+        equipment_request_service.notification_service, "notify", Mock(return_value=None)
+    )
+
+    with pytest.raises(AuthError) as caught:
+        equipment_request_service.review_equipment_request(
+            "staff-token",
+            SAVED_REQUEST["id"],
+            EquipmentRequestReview(decision="Approved"),
+        )
+
+    assert caught.value.status_code == 409
+    assert "could not be notified" in caught.value.message
 
 
 def test_service_maps_database_errors_while_listing_requests(

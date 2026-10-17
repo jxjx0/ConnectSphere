@@ -3,7 +3,8 @@
 from postgrest import APIError as PostgrestAPIError
 
 import config
-from models.equipment_request import EquipmentRequestSubmit
+from models.equipment_request import EquipmentRequestReview, EquipmentRequestSubmit
+from services import notification_service
 from services.auth_service import AuthError
 
 _REQUEST_SELECT = (
@@ -24,6 +25,11 @@ def _database_error(error: PostgrestAPIError) -> AuthError:
         return AuthError(
             "The event was not found, is not assigned to you, or is not eligible for an equipment request.",
             status_code=404,
+        )
+    if error.code == "P0001":
+        return AuthError(
+            "This equipment request has already been reviewed.",
+            status_code=409,
         )
     if error.code in {"22023", "22P02", "23503", "23505", "23514"}:
         return AuthError(
@@ -88,3 +94,84 @@ def list_equipment_requests(access_token: str) -> list[dict]:
     except PostgrestAPIError as error:
         raise _database_error(error) from error
     return result.data
+
+
+def list_tech_support_equipment_requests(access_token: str) -> list[dict]:
+    """List requests enriched with organiser, booking, and availability data."""
+    client = config.get_user_client(access_token)
+    try:
+        result = client.rpc("list_equipment_request_review_queue").execute()
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    if not isinstance(result.data, list):
+        raise AuthError("Unable to load equipment requests.", status_code=502)
+    return result.data
+
+
+def review_equipment_request(
+    access_token: str,
+    request_id: str,
+    review: EquipmentRequestReview,
+) -> dict:
+    """Atomically approve and reserve available equipment, or reject a request."""
+    client = config.get_user_client(access_token)
+    try:
+        result = client.rpc(
+            "review_equipment_request",
+            {
+                "p_request_id": request_id,
+                "p_decision": review.decision,
+            },
+        ).execute()
+    except PostgrestAPIError as error:
+        if error.code == "P0002":
+            raise AuthError(
+                "Equipment request was not found.",
+                status_code=404,
+            ) from error
+        if error.code == "22023":
+            raise AuthError(
+                "The equipment request does not contain valid items to review.",
+                status_code=400,
+            ) from error
+        raise _database_error(error) from error
+
+    outcome = result.data
+    if not isinstance(outcome, dict):
+        raise AuthError("Unable to review the equipment request.", status_code=502)
+
+    if outcome.get("outcome") == "unavailable":
+        if not outcome.get("coordinator_id") or not outcome.get("event_id"):
+            raise AuthError(
+                "Equipment is unavailable, but its Coordinator could not be identified.",
+                status_code=502,
+            )
+        event_name = outcome.get("event_name") or "the event"
+        notification = notification_service.notify(
+            user_id=outcome["coordinator_id"],
+            notification_type="equipment_requirement_unavailable",
+            title="Equipment is unavailable",
+            body=(
+                f"Some requested equipment for {event_name} is unavailable "
+                "during the event's scheduled time. The request remains pending."
+            ),
+            event_id=outcome["event_id"],
+        )
+        if notification is None:
+            message = (
+                "The requested equipment is unavailable. The request remains "
+                "pending, but the Coordinator could not be notified."
+            )
+        else:
+            message = (
+                "The requested equipment is unavailable. The request remains "
+                "pending and the Coordinator has been notified."
+            )
+        raise AuthError(message, status_code=409)
+
+    if outcome.get("outcome") != "reviewed" or not isinstance(
+        outcome.get("request"), dict
+    ):
+        raise AuthError("Unable to review the equipment request.", status_code=502)
+    return outcome["request"]

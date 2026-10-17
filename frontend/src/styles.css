@@ -303,6 +303,11 @@ a:hover {
   border-bottom: 1px solid var(--rule);
 }
 
+.equipment-request-card__body {
+  display: grid;
+  gap: var(--space-3);
+}
+
 @media (max-width: 35rem) {
   .equipment-request-item {
     grid-template-columns: 1fr;

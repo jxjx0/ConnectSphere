@@ -154,6 +154,15 @@ Supabase SQL Editor; it creates the request tables and the atomic submission
 function. If an earlier version of that migration was already applied, also
 apply `database/equipment_request_hardening.sql` to update assignment access,
 eligible event statuses and request review statuses without deleting rows.
+Then apply `database/equipment_request_review.sql` to enable the Technical
+Support review queue and atomic availability checks. The review migration adds
+functions only: approving a request reserves its requested equipment for the
+event's active venue-booking windows (including setup and teardown buffers),
+and the request status represents whether its technical requirement is still
+outstanding. It does not change equipment catalogue maintenance status or add
+tables or columns. The current schema has no stock-count field, so availability
+is tracked by equipment row as an exclusive resource; it cannot verify whether
+a requested quantity greater than one represents enough physical units.
 Other SQL files in `database` document the existing schema.
 
 ---

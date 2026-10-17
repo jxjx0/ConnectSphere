@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import {
   getEquipmentCatalog,
   getEquipmentRequests,
+  reviewEquipmentRequest,
   submitEquipmentRequest,
 } from '../api/equipmentRequests'
 import { getAssignedEventRequests } from '../api/events'
@@ -30,6 +31,9 @@ export default function EquipmentRequestsPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [submittedMessage, setSubmittedMessage] = useState('')
+  const [reviewingRequestId, setReviewingRequestId] = useState('')
+  const [reviewErrors, setReviewErrors] = useState({})
+  const isTechSupport = user.role === 'tech_support'
 
   useEffect(() => {
     const loads = [
@@ -113,6 +117,137 @@ export default function EquipmentRequestsPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  async function handleReview(requestId, decision) {
+    setReviewingRequestId(requestId)
+    setReviewErrors((current) => ({ ...current, [requestId]: '' }))
+    try {
+      const result = await reviewEquipmentRequest(requestId, decision, token)
+      setRequests((current) => current.map((request) => (
+        request.id === requestId
+          ? { ...request, ...result.request }
+          : request
+      )))
+      try {
+        const refreshed = await getEquipmentRequests(token)
+        setRequests(refreshed.requests)
+      } catch (refreshError) {
+        setReviewErrors((current) => ({
+          ...current,
+          [requestId]: `${decision} was saved, but the queue could not refresh: ${refreshError.message}`,
+        }))
+      }
+    } catch (caught) {
+      setReviewErrors((current) => ({ ...current, [requestId]: caught.message }))
+      if (caught.status === 409) {
+        try {
+          const refreshed = await getEquipmentRequests(token)
+          setRequests(refreshed.requests)
+        } catch (refreshError) {
+          setReviewErrors((current) => ({
+            ...current,
+            [requestId]: `${caught.message} ${refreshError.message}`,
+          }))
+        }
+      }
+    } finally {
+      setReviewingRequestId('')
+    }
+  }
+
+  function renderTechSupportRequest(request) {
+    const windows = request.bookings || []
+    const items = request.items || []
+    const pending = request.status === 'Pending Technical Approval'
+    const hasUnavailableItem = items.some((item) => !item.available)
+
+    return (
+      <article className="choice equipment-request-card" key={request.id}>
+        <div className="equipment-request-card__body">
+          <strong className="choice__title">{request.event?.name || 'Assigned event'}</strong>
+          <span className="choice__description">
+            Organiser: {request.event?.organiser_name || 'Unknown'}
+          </span>
+          <span className="choice__description">
+            Status: <span className="tag">{request.status}</span>
+            {request.technical_requirement_outstanding
+              && ' · Outstanding technical requirement'}
+          </span>
+
+          <div className="stack stack--tight">
+            <strong>Booking time windows</strong>
+            {windows.length === 0 ? (
+              <span className="choice__description">
+                No valid event or venue booking time is available for allocation.
+              </span>
+            ) : windows.map((booking, index) => (
+              <span
+                className="choice__description"
+                key={booking.booking_id || `event-${index}`}
+              >
+                {booking.venue_name || 'Event schedule'}
+                {booking.room_layout ? ` · ${booking.room_layout}` : ''}
+                {' · '}
+                {formatDateRange(booking.start_at, booking.end_at)}
+                {booking.booking_status && booking.booking_status !== 'EVENT_SCHEDULE'
+                  ? ` · ${booking.booking_status}`
+                  : ''}
+              </span>
+            ))}
+          </div>
+
+          {pending && hasUnavailableItem && (
+            <p className="note" role="status">
+              This request cannot be reserved as-is. If approval is attempted,
+              it will remain pending and the Coordinator will be notified.
+            </p>
+          )}
+
+          <div className="stack stack--tight">
+            <strong>Requested equipment</strong>
+            {items.length === 0 ? (
+              <span className="choice__description">No equipment items were included.</span>
+            ) : items.map((item) => (
+              <span className="choice__description" key={item.id}>
+                {item.equipment?.name || 'Equipment'} × {item.quantity}
+                {' · '}
+                {item.reserved
+                  ? 'Reserved for this event'
+                  : item.available
+                    ? 'Available for all listed time windows'
+                    : 'Unavailable for this time window'}
+              </span>
+            ))}
+          </div>
+
+          {reviewErrors[request.id] && (
+            <p className="form-error" role="alert">{reviewErrors[request.id]}</p>
+          )}
+
+          {pending && (
+            <div className="form-actions">
+              <button
+                className="button"
+                type="button"
+                disabled={reviewingRequestId === request.id}
+                onClick={() => handleReview(request.id, 'Approved')}
+              >
+                {reviewingRequestId === request.id ? 'Saving…' : 'Approve and reserve'}
+              </button>
+              <button
+                className="button button--secondary"
+                type="button"
+                disabled={reviewingRequestId === request.id}
+                onClick={() => handleReview(request.id, 'Rejected')}
+              >
+                Reject request
+              </button>
+            </div>
+          )}
+        </div>
+      </article>
+    )
   }
 
   if (loading) {
@@ -222,7 +357,7 @@ export default function EquipmentRequestsPage() {
 
         <section className="stack stack--tight">
           <h2 className="section-title">
-            {isCoordinator ? 'Submitted requests' : 'Pending technical approval'}
+            {isCoordinator ? 'Submitted requests' : 'Equipment requests to review'}
           </h2>
           {requests.length === 0 ? (
             <p className="note">
@@ -233,17 +368,28 @@ export default function EquipmentRequestsPage() {
           ) : (
             <div className="choices">
               {requests.map((request) => (
-                <article className="choice equipment-request-card" key={request.id}>
-                  <span className="choice__text">
-                    <span className="choice__title">{request.event?.name || 'Assigned event'}</span>
-                    <span className="choice__description">
-                      {formatDateRange(request.event?.start_time, request.event?.end_time)}
-                      {' · '}
-                      <span className="tag">{request.status}</span>
-                    </span>
-                    <span className="choice__description">{equipmentLines(request)}</span>
-                  </span>
-                </article>
+                isTechSupport
+                  ? renderTechSupportRequest(request)
+                  : (
+                    <article className="choice equipment-request-card" key={request.id}>
+                      <span className="choice__text">
+                        <span className="choice__title">
+                          {request.event?.name || 'Assigned event'}
+                        </span>
+                        <span className="choice__description">
+                          {formatDateRange(request.event?.start_time, request.event?.end_time)}
+                          {' · '}
+                          <span className="tag">{request.status}</span>
+                        </span>
+                        {request.status !== 'Approved' && (
+                          <span className="choice__description">
+                            Outstanding technical requirement
+                          </span>
+                        )}
+                        <span className="choice__description">{equipmentLines(request)}</span>
+                      </span>
+                    </article>
+                  )
               ))}
             </div>
           )}
