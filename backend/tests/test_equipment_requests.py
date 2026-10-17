@@ -470,10 +470,7 @@ def test_service_returns_saved_review_status(
     client, _ = equipment_request_database
     rpc_query = Mock()
     rpc_query.execute.return_value = SimpleNamespace(
-        data={
-            "outcome": "reviewed",
-            "request": {"id": SAVED_REQUEST["id"], "status": decision},
-        }
+        data={"id": SAVED_REQUEST["id"], "status": decision}
     )
     client.rpc.return_value = rpc_query
     review = EquipmentRequestReview(decision=decision)
@@ -489,24 +486,11 @@ def test_service_returns_saved_review_status(
     assert result == {"id": SAVED_REQUEST["id"], "status": decision}
 
 
-def test_unavailable_equipment_stays_pending_and_notifies_coordinator(
-    equipment_request_database, monkeypatch
-):
+def test_service_reports_unexpected_review_result(equipment_request_database):
     client, _ = equipment_request_database
     rpc_query = Mock()
-    rpc_query.execute.return_value = SimpleNamespace(
-        data={
-            "outcome": "unavailable",
-            "coordinator_id": COORDINATOR.id,
-            "event_id": VALID_REQUEST["event_id"],
-            "event_name": "Community Conference",
-        }
-    )
+    rpc_query.execute.return_value = SimpleNamespace(data=None)
     client.rpc.return_value = rpc_query
-    notify = Mock(return_value=object())
-    monkeypatch.setattr(
-        equipment_request_service.notification_service, "notify", notify
-    )
 
     with pytest.raises(AuthError) as caught:
         equipment_request_service.review_equipment_request(
@@ -515,31 +499,22 @@ def test_unavailable_equipment_stays_pending_and_notifies_coordinator(
             EquipmentRequestReview(decision="Approved"),
         )
 
-    assert caught.value.status_code == 409
-    assert "remains pending" in caught.value.message
-    assert "Coordinator has been notified" in caught.value.message
-    notify.assert_called_once()
-    assert notify.call_args.kwargs["user_id"] == COORDINATOR.id
-    assert notify.call_args.kwargs["event_id"] == VALID_REQUEST["event_id"]
+    assert caught.value.status_code == 502
 
 
-def test_unavailable_equipment_reports_notification_failure(
-    equipment_request_database, monkeypatch
+@pytest.mark.parametrize(
+    "code,status",
+    [("P0001", 409), ("P0002", 404), ("22023", 400), ("42501", 403)],
+)
+def test_service_maps_review_database_errors(
+    equipment_request_database, code, status
 ):
     client, _ = equipment_request_database
     rpc_query = Mock()
-    rpc_query.execute.return_value = SimpleNamespace(
-        data={
-            "outcome": "unavailable",
-            "coordinator_id": COORDINATOR.id,
-            "event_id": VALID_REQUEST["event_id"],
-            "event_name": "Community Conference",
-        }
+    rpc_query.execute.side_effect = PostgrestAPIError(
+        {"code": code, "message": "Private database detail"}
     )
     client.rpc.return_value = rpc_query
-    monkeypatch.setattr(
-        equipment_request_service.notification_service, "notify", Mock(return_value=None)
-    )
 
     with pytest.raises(AuthError) as caught:
         equipment_request_service.review_equipment_request(
@@ -548,8 +523,8 @@ def test_unavailable_equipment_reports_notification_failure(
             EquipmentRequestReview(decision="Approved"),
         )
 
-    assert caught.value.status_code == 409
-    assert "could not be notified" in caught.value.message
+    assert caught.value.status_code == status
+    assert "Private database detail" not in caught.value.message
 
 
 def test_service_maps_database_errors_while_listing_requests(

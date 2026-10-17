@@ -4,7 +4,6 @@ from postgrest import APIError as PostgrestAPIError
 
 import config
 from models.equipment_request import EquipmentRequestReview, EquipmentRequestSubmit
-from services import notification_service
 from services.auth_service import AuthError
 
 _REQUEST_SELECT = (
@@ -114,7 +113,7 @@ def review_equipment_request(
     request_id: str,
     review: EquipmentRequestReview,
 ) -> dict:
-    """Atomically approve and reserve available equipment, or reject a request."""
+    """Record an approve or reject decision; equipment is booked separately."""
     client = config.get_user_client(access_token)
     try:
         result = client.rpc(
@@ -132,46 +131,12 @@ def review_equipment_request(
             ) from error
         if error.code == "22023":
             raise AuthError(
-                "The equipment request does not contain valid items to review.",
+                "The review decision is invalid.",
                 status_code=400,
             ) from error
         raise _database_error(error) from error
 
-    outcome = result.data
-    if not isinstance(outcome, dict):
+    reviewed_request = result.data
+    if not isinstance(reviewed_request, dict) or not reviewed_request.get("status"):
         raise AuthError("Unable to review the equipment request.", status_code=502)
-
-    if outcome.get("outcome") == "unavailable":
-        if not outcome.get("coordinator_id") or not outcome.get("event_id"):
-            raise AuthError(
-                "Equipment is unavailable, but its Coordinator could not be identified.",
-                status_code=502,
-            )
-        event_name = outcome.get("event_name") or "the event"
-        notification = notification_service.notify(
-            user_id=outcome["coordinator_id"],
-            notification_type="equipment_requirement_unavailable",
-            title="Equipment is unavailable",
-            body=(
-                f"Some requested equipment for {event_name} is unavailable "
-                "during the event's scheduled time. The request remains pending."
-            ),
-            event_id=outcome["event_id"],
-        )
-        if notification is None:
-            message = (
-                "The requested equipment is unavailable. The request remains "
-                "pending, but the Coordinator could not be notified."
-            )
-        else:
-            message = (
-                "The requested equipment is unavailable. The request remains "
-                "pending and the Coordinator has been notified."
-            )
-        raise AuthError(message, status_code=409)
-
-    if outcome.get("outcome") != "reviewed" or not isinstance(
-        outcome.get("request"), dict
-    ):
-        raise AuthError("Unable to review the equipment request.", status_code=502)
-    return outcome["request"]
+    return reviewed_request

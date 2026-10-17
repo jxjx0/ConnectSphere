@@ -9,6 +9,11 @@ revoke update (status) on public.equipment_requests from authenticated;
 drop policy if exists "Technical Support can review equipment requests"
     on public.equipment_requests;
 
+-- Return types change from the earlier versions, which create or replace
+-- cannot do, so drop them first.
+drop function if exists public.equipment_request_time_windows(uuid);
+drop function if exists public.review_equipment_request(uuid, text);
+
 create or replace function public.equipment_request_time_windows(
     p_event_id uuid
 )

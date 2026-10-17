@@ -15,6 +15,7 @@ import VenuePage from './pages/VenuePage'
 import VenueSearchPage from './pages/VenueSearchPage'
 import VenueAvailabilityPage from './pages/VenueAvailabilityPage'
 import EquipmentPage from './pages/EquipmentPage'
+import EquipmentBookingsPage from './pages/EquipmentBookingsPage'
 import EventReviewDetailPage from './pages/EventReviewDetailPage'
 import EquipmentRequestsPage from './pages/EquipmentRequestsPage'
 
@@ -110,6 +111,15 @@ export default function App() {
             <EquipmentPage />
           </AuthGuard>
         } 
+      />
+
+      <Route
+        path="/equipment/:equipmentId/bookings"
+        element={
+          <AuthGuard allowedRoles={['tech_support']}>
+            <EquipmentBookingsPage />
+          </AuthGuard>
+        }
       />
 
       <Route

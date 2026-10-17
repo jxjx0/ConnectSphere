@@ -159,8 +159,8 @@ export default function EquipmentRequestsPage() {
   function renderTechSupportRequest(request) {
     const windows = request.bookings || []
     const items = request.items || []
+    const bookedEquipment = request.equipment_bookings || []
     const pending = request.status === 'Pending Technical Approval'
-    const hasUnavailableItem = items.some((item) => !item.available)
 
     return (
       <article className="choice equipment-request-card" key={request.id}>
@@ -176,7 +176,7 @@ export default function EquipmentRequestsPage() {
           </span>
 
           <div className="stack stack--tight">
-            <strong>Booking time windows</strong>
+            <strong>Event time windows</strong>
             {windows.length === 0 ? (
               <span className="choice__description">
                 No valid event or venue booking time is available for allocation.
@@ -197,13 +197,6 @@ export default function EquipmentRequestsPage() {
             ))}
           </div>
 
-          {pending && hasUnavailableItem && (
-            <p className="note" role="status">
-              This request cannot be reserved as-is. If approval is attempted,
-              it will remain pending and the Coordinator will be notified.
-            </p>
-          )}
-
           <div className="stack stack--tight">
             <strong>Requested equipment</strong>
             {items.length === 0 ? (
@@ -211,12 +204,29 @@ export default function EquipmentRequestsPage() {
             ) : items.map((item) => (
               <span className="choice__description" key={item.id}>
                 {item.equipment?.name || 'Equipment'} × {item.quantity}
+                {pending && (
+                  <>
+                    {' · '}
+                    <Link to={`/equipment/${item.equipment_id}/bookings?request=${request.id}`}>
+                      Check calendar and book
+                    </Link>
+                  </>
+                )}
+              </span>
+            ))}
+          </div>
+
+          <div className="stack stack--tight">
+            <strong>Booked equipment</strong>
+            {bookedEquipment.length === 0 ? (
+              <span className="choice__description">No equipment booked yet.</span>
+            ) : bookedEquipment.map((booking) => (
+              <span className="choice__description" key={booking.id}>
+                {booking.equipment_name}
                 {' · '}
-                {item.reserved
-                  ? 'Reserved for this event'
-                  : item.available
-                    ? 'Available for all listed time windows'
-                    : 'Unavailable for this time window'}
+                {formatDateRange(booking.start_at, booking.end_at)}
+                {' · '}
+                <Link to={`/equipment/${booking.equipment_id}/bookings`}>Calendar</Link>
               </span>
             ))}
           </div>
@@ -233,7 +243,7 @@ export default function EquipmentRequestsPage() {
                 disabled={reviewingRequestId === request.id}
                 onClick={() => handleReview(request.id, 'Approved')}
               >
-                {reviewingRequestId === request.id ? 'Saving…' : 'Approve and reserve'}
+                {reviewingRequestId === request.id ? 'Saving…' : 'Approve request'}
               </button>
               <button
                 className="button button--secondary"
@@ -379,9 +389,11 @@ export default function EquipmentRequestsPage() {
                         <span className="choice__description">
                           {formatDateRange(request.event?.start_time, request.event?.end_time)}
                           {' · '}
-                          <span className="tag">{request.status}</span>
+                          <span className="tag">
+                            {request.status === 'Approved' ? 'Equipment reserved' : request.status}
+                          </span>
                         </span>
-                        {request.status !== 'Approved' && (
+                        {request.status === 'Pending Technical Approval' && (
                           <span className="choice__description">
                             Outstanding technical requirement
                           </span>

@@ -44,3 +44,23 @@ export function submitEquipmentRequest(equipmentRequest, token) {
     body: equipmentRequest,
   })
 }
+
+export function getEquipmentBookings(equipmentId, from, to, token) {
+  const params = new URLSearchParams({
+    equipment_id: equipmentId,
+    from: from.toISOString(),
+    to: to.toISOString(),
+  })
+  return request(`/equipment-bookings?${params}`, token)
+}
+
+export function createEquipmentBooking(booking, token) {
+  return request('/equipment-bookings', token, {
+    method: 'POST',
+    body: booking,
+  })
+}
+
+export function deleteEquipmentBooking(bookingId, token) {
+  return request(`/equipment-bookings/${bookingId}`, token, { method: 'DELETE' })
+}

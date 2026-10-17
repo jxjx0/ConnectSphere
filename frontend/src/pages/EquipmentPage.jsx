@@ -247,6 +247,13 @@ export default function EquipmentPage() {
                       >
                         Edit
                       </button>
+                      {' '}
+                      <Link
+                        to={`/equipment/${item.id}/bookings`}
+                        className="button button--secondary button--small"
+                      >
+                        Bookings
+                      </Link>
                     </td>
                   </tr>
                 ))}
