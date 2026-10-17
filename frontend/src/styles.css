@@ -386,6 +386,9 @@ a:hover {
 }
 
 .topbar__inner {
+  /* The notification dropdown is positioned against this row, so it lines
+     up with the top bar's right edge and stays on screen on phones. */
+  position: relative;
   max-width: 64rem;
   margin: 0 auto;
   display: flex;
@@ -411,6 +414,181 @@ a:hover {
   .topbar__name {
     display: inline;
   }
+}
+
+/* --- Notification inbox dropdown ------------------------------------- */
+
+.inbox {
+  display: flex;
+}
+
+.inbox__bell {
+  position: relative;
+  display: flex;
+  padding: var(--space-1);
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.inbox__bell:hover {
+  color: var(--accent);
+}
+
+.inbox__badge {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+.inbox__panel {
+  position: absolute;
+  top: calc(100% + var(--space-3));
+  right: 0;
+  z-index: 10;
+  width: min(24rem, calc(100vw - 2 * var(--space-4)));
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  font-size: 0.875rem;
+  color: var(--ink);
+  overflow: hidden;
+}
+
+.inbox__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--rule);
+}
+
+.inbox__heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.inbox__count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.75rem;
+  line-height: 20px;
+  text-align: center;
+}
+
+.inbox__close {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--sunken);
+  color: var(--ink-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.inbox__close:hover {
+  color: var(--ink);
+}
+
+.inbox__message {
+  margin: 0;
+  padding: var(--space-5) var(--space-4);
+  text-align: center;
+}
+
+.inbox__list {
+  max-height: 24rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inbox__list li + li {
+  border-top: 1px solid var(--rule);
+}
+
+.inbox__item {
+  display: flex;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink-muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.inbox__item:hover {
+  background: var(--sunken);
+}
+
+.inbox__item--unread {
+  background: var(--accent-faint);
+  color: var(--ink);
+}
+
+/* Small dot beside unread notifications; invisible once read. */
+.inbox__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+}
+
+.inbox__item--unread .inbox__dot {
+  background: var(--accent);
+}
+
+.inbox__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.inbox__title {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.inbox__item--unread .inbox__title {
+  font-weight: 700;
+}
+
+.inbox__body {
+  overflow-wrap: anywhere;
+}
+
+.inbox__time {
+  font-size: 0.75rem;
+  color: var(--ink-faint);
 }
 
 .app-main {

@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 import config
 from models.event import (
+    Event,
     EventClarification,
     EventClarificationRequest,
     EventStatus,
@@ -75,6 +76,42 @@ def fake_client(monkeypatch, rows_by_table, calls, rpc_calls, rpc_error=None):
 def authenticate_as(monkeypatch, profile):
     monkeypatch.setattr(auth_service, "get_user_id", lambda token: profile.id)
     monkeypatch.setattr(auth_service, "get_profile", lambda token, user_id: profile)
+
+
+COORDINATOR = Profile(id=COORDINATOR_ID, full_name="Ben Lim", role=Role.COORDINATOR)
+
+ASSIGNED_EVENT = Event(
+    id=EVENT_ID,
+    organiser_id=ORGANISER_ID,
+    coordinator_id=COORDINATOR_ID,
+    name="Annual Client Summit",
+    status=EventStatus.AWAITING_CLARIFICATION,
+)
+
+SAVED_CLARIFICATION = EventClarification(
+    id="44444444-4444-4444-4444-444444444444",
+    event_id=EVENT_ID,
+    organiser_id=ORGANISER_ID,
+    coordinator_id=COORDINATOR_ID,
+    coordinator_notes="Confirm the room layout.",
+    previous_status=EventStatus.PLANNING,
+    requested_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
+)
+
+
+def stub_notification_lookups(monkeypatch, captured=None):
+    """Stub the event lookup and notify() used after a clarification is saved."""
+    monkeypatch.setattr(
+        event_service,
+        "get_assigned_event",
+        lambda token, coordinator_id, event_id: ASSIGNED_EVENT,
+    )
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: (captured if captured is not None else {}).setdefault(
+            "notification", args
+        ),
+    )
 
 
 def test_clarification_notes_are_trimmed_and_required():
@@ -189,6 +226,7 @@ def test_coordinator_route_saves_and_returns_clarification(client, monkeypatch):
     monkeypatch.setattr(
         event_service, "request_event_clarification", request_clarification
     )
+    stub_notification_lookups(monkeypatch)
 
     response = client.post(
         f"/events/review/{EVENT_ID}/clarification",
@@ -249,3 +287,97 @@ def test_clarification_route_rejects_blank_notes(client, monkeypatch):
 
     assert response.status_code == 400
     assert "Clarification notes must not be blank" in response.get_json()["errors"]
+
+
+# --- T7-160: notifying the Organiser -------------------------------------
+
+
+def post_clarification(client):
+    return client.post(
+        f"/events/review/{EVENT_ID}/clarification",
+        headers={"Authorization": "Bearer coordinator-token"},
+        json={"notes": "Confirm the room layout."},
+    )
+
+
+def test_clarification_request_notifies_the_organiser(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+    monkeypatch.setattr(
+        event_service,
+        "request_event_clarification",
+        lambda token, coordinator_id, event_id, request: SAVED_CLARIFICATION,
+    )
+    captured = {}
+    stub_notification_lookups(monkeypatch, captured)
+
+    response = post_clarification(client)
+
+    assert response.status_code == 201
+    user_id, notification_type, title, body, event_id = captured["notification"]
+    assert user_id == ORGANISER_ID
+    assert notification_type == "clarification_requested"
+    assert title == "Clarification requested"
+    assert "Ben Lim" in body
+    assert "Annual Client Summit" in body
+    assert "Awaiting Clarification" in body
+    assert "Confirm the room layout." in body
+    assert event_id == EVENT_ID
+
+
+def test_failed_clarification_request_sends_no_notification(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+
+    def failing_request(*args):
+        raise AuthError("Only events under review can be clarified.", 409)
+
+    monkeypatch.setattr(
+        event_service, "request_event_clarification", failing_request
+    )
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: pytest.fail("a failed request must not notify anyone"),
+    )
+
+    response = post_clarification(client)
+
+    assert response.status_code == 409
+
+
+def test_clarification_is_still_saved_when_notification_fails(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+    monkeypatch.setattr(
+        event_service,
+        "request_event_clarification",
+        lambda token, coordinator_id, event_id, request: SAVED_CLARIFICATION,
+    )
+    stub_notification_lookups(monkeypatch)
+    # notify() returns None, rather than raising, when it cannot save.
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify", lambda *args: None
+    )
+
+    response = post_clarification(client)
+
+    assert response.status_code == 201
+
+
+def test_clarification_is_still_saved_when_event_lookup_fails(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+    monkeypatch.setattr(
+        event_service,
+        "request_event_clarification",
+        lambda token, coordinator_id, event_id, request: SAVED_CLARIFICATION,
+    )
+
+    def failing_lookup(*args):
+        raise AuthError("Unable to load the event request.", 502)
+
+    monkeypatch.setattr(event_service, "get_assigned_event", failing_lookup)
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: pytest.fail("no notification without the event name"),
+    )
+
+    response = post_clarification(client)
+
+    assert response.status_code == 201

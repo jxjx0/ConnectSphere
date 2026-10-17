@@ -4,6 +4,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
+import NotificationDropdown from './NotificationDropdown'
 
 export default function AppShell({ children }) {
   const { user, logout } = useAuth()
@@ -23,6 +24,7 @@ export default function AppShell({ children }) {
           </Link>
 
           <div className="topbar__user">
+            <NotificationDropdown />
             <span className="topbar__name">{user.full_name}</span>
             <button
               type="button"
