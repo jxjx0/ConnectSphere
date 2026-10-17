@@ -2,9 +2,6 @@ import React from 'react'
 import { formatDateTime, readableStatus } from '../eventDisplay'
 import styles from './VenueBookingCard.module.css'
 
-/**
- * Returns CSS module class corresponding to booking status style.
- */
 function getStatusClass(status) {
   switch (status) {
     case 'APPROVED':
@@ -18,10 +15,11 @@ function getStatusClass(status) {
   }
 }
 
-export default function VenueBookingCard({ booking, actions }) {
+export default function VenueBookingCard({ booking, validationError, actions }) {
   if (!booking) return null
 
   const statusClass = getStatusClass(booking.status)
+  const attendance = booking.events?.expected_attendance || booking.expected_attendance
 
   return (
     <div className={`${styles.card} ${statusClass}`}>
@@ -37,11 +35,15 @@ export default function VenueBookingCard({ booking, actions }) {
           <span className={`note ${styles.label}`}>Requested Layout:</span>
           <span className={styles.value}>{booking.room_layout}</span>
         </div>
+        {attendance && (
+          <div>
+            <span className={`note ${styles.label}`}>Expected Attendance:</span>
+            <span className={styles.value}>{attendance} people</span>
+          </div>
+        )}
         <div>
           <span className={`note ${styles.label}`}>Submitted On:</span>
-          <span className={styles.value}>
-            {formatDateTime(booking.created_at)}
-          </span>
+          <span className={styles.value}>{formatDateTime(booking.created_at)}</span>
         </div>
         <div className={styles.fullWidth}>
           <span className={`note ${styles.label}`}>Event Period:</span>
@@ -49,17 +51,22 @@ export default function VenueBookingCard({ booking, actions }) {
             {formatDateTime(booking.start_at)} – {formatDateTime(booking.end_at)}
           </span>
         </div>
-        {(booking.setup_buffer_minutes > 0 ||
-          booking.teardown_buffer_minutes > 0) && (
+        {(booking.setup_buffer_minutes > 0 || booking.teardown_buffer_minutes > 0) && (
           <div className={styles.fullWidth}>
             <span className={`note ${styles.label}`}>Operational Buffers:</span>
             <span className={styles.value}>
-              {booking.setup_buffer_minutes}m setup ·{' '}
-              {booking.teardown_buffer_minutes}m teardown
+              {booking.setup_buffer_minutes}m setup · {booking.teardown_buffer_minutes}m turnaround
             </span>
           </div>
         )}
       </div>
+
+      {/* Validation Failure Banner */}
+      {validationError && (
+        <div className={`form-error ${styles.rejectionError}`}>
+          <strong>Validation Issue:</strong> {validationError}
+        </div>
+      )}
 
       {booking.status === 'REJECTED' && booking.rejection_reason && (
         <div className={`form-error ${styles.rejectionError}`}>

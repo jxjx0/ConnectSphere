@@ -10,10 +10,17 @@ import {
 } from '../venueAvailability'
 import styles from './VenueScheduleCalendar.module.css'
 
-export default function VenueScheduleCalendar({ venueId, token }) {
-  const [date, setDate] = useState(() => localDateValue())
+export default function VenueScheduleCalendar({ venueId, initialDate, token }) {
+  const [date, setDate] = useState(() => initialDate || localDateValue())
   const [result, setResult] = useState({ loading: false, error: '', data: null })
   const [selectedBlock, setSelectedBlock] = useState(null)
+
+  // Synchronize internal date state whenever initialDate prop changes
+  useEffect(() => {
+    if (initialDate) {
+      setDate(initialDate)
+    }
+  }, [initialDate])
 
   let week
   let dateError = ''
@@ -89,7 +96,7 @@ export default function VenueScheduleCalendar({ venueId, token }) {
           <button
             type="button"
             className="button button--secondary button--small"
-            onClick={() => setDate(localDateValue())}
+            onClick={() => setDate(initialDate || localDateValue())}
           >
             Today
           </button>
