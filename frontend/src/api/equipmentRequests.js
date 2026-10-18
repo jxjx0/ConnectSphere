@@ -15,7 +15,9 @@ async function request(path, token, options = {}) {
     const message = data.errors
       ? data.errors.join(' ')
       : data.error || 'Unable to access equipment requests.'
-    throw new Error(message)
+    const error = new Error(message)
+    error.status = response.status
+    throw error
   }
 
   return data
@@ -29,9 +31,44 @@ export function getEquipmentRequests(token) {
   return request('/equipment-requests', token)
 }
 
+export function reviewEquipmentRequest(requestId, decision, token) {
+  return request(`/equipment-requests/${requestId}/review`, token, {
+    method: 'PATCH',
+    body: { decision },
+  })
+}
+
 export function submitEquipmentRequest(equipmentRequest, token) {
   return request('/equipment-requests', token, {
     method: 'POST',
     body: equipmentRequest,
   })
+}
+
+export function getEquipmentBookings(equipmentId, from, to, token) {
+  const params = new URLSearchParams({
+    equipment_id: equipmentId,
+    from: from.toISOString(),
+    to: to.toISOString(),
+  })
+  return request(`/equipment-bookings?${params}`, token)
+}
+
+export function getAllEquipmentBookings(from, to, token) {
+  const params = new URLSearchParams({
+    from: from.toISOString(),
+    to: to.toISOString(),
+  })
+  return request(`/equipment-bookings/calendar?${params}`, token)
+}
+
+export function createEquipmentBooking(booking, token) {
+  return request('/equipment-bookings', token, {
+    method: 'POST',
+    body: booking,
+  })
+}
+
+export function deleteEquipmentBooking(bookingId, token) {
+  return request(`/equipment-bookings/${bookingId}`, token, { method: 'DELETE' })
 }

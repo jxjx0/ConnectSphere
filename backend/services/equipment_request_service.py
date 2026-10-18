@@ -3,14 +3,16 @@
 from postgrest import APIError as PostgrestAPIError
 
 import config
-from models.equipment_request import EquipmentRequestSubmit
+from models.equipment_request import EquipmentRequestReview, EquipmentRequestSubmit
 from services.auth_service import AuthError
 
 _REQUEST_SELECT = (
     "*, "
     "event:events(id,name,start_time,end_time), "
     "items:equipment_request_items("
-    "id,equipment_id,quantity,equipment:equipment(id,name,type))"
+    "id,equipment_id,quantity,equipment:equipment(id,name,type)), "
+    "equipment_bookings(id,equipment_id,start_at,end_at,"
+    "equipment:equipment(id,name))"
 )
 
 
@@ -24,6 +26,11 @@ def _database_error(error: PostgrestAPIError) -> AuthError:
         return AuthError(
             "The event was not found, is not assigned to you, or is not eligible for an equipment request.",
             status_code=404,
+        )
+    if error.code == "P0001":
+        return AuthError(
+            "This equipment request has already been reviewed.",
+            status_code=409,
         )
     if error.code in {"22023", "22P02", "23503", "23505", "23514"}:
         return AuthError(
@@ -52,6 +59,11 @@ def submit_equipment_request(
             },
         ).execute()
     except PostgrestAPIError as error:
+        if error.code == "P0001":
+            raise AuthError(
+                "An equipment request has already been submitted for this event.",
+                status_code=409,
+            ) from error
         raise _database_error(error) from error
 
     request_id = result.data
@@ -88,3 +100,55 @@ def list_equipment_requests(access_token: str) -> list[dict]:
     except PostgrestAPIError as error:
         raise _database_error(error) from error
     return result.data
+
+
+def list_tech_support_equipment_requests(access_token: str) -> list[dict]:
+    """List requests enriched with organiser, booking, and availability data."""
+    client = config.get_user_client(access_token)
+    try:
+        result = client.rpc("list_equipment_request_review_queue").execute()
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    if not isinstance(result.data, list):
+        raise AuthError("Unable to load equipment requests.", status_code=502)
+    return result.data
+
+
+def review_equipment_request(
+    access_token: str,
+    request_id: str,
+    review: EquipmentRequestReview,
+) -> dict:
+    """Record an approve or reject decision after required equipment allocation."""
+    client = config.get_user_client(access_token)
+    try:
+        result = client.rpc(
+            "review_equipment_request",
+            {
+                "p_request_id": request_id,
+                "p_decision": review.decision,
+            },
+        ).execute()
+    except PostgrestAPIError as error:
+        if error.code == "P0002":
+            raise AuthError(
+                "Equipment request was not found.",
+                status_code=404,
+            ) from error
+        if error.code == "22023":
+            raise AuthError(
+                "The review decision is invalid.",
+                status_code=400,
+            ) from error
+        if error.code == "P0001":
+            raise AuthError(
+                "Allocate every requested equipment item before approving this request.",
+                status_code=409,
+            ) from error
+        raise _database_error(error) from error
+
+    reviewed_request = result.data
+    if not isinstance(reviewed_request, dict) or not reviewed_request.get("status"):
+        raise AuthError("Unable to review the equipment request.", status_code=502)
+    return reviewed_request

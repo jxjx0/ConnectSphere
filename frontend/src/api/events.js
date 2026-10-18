@@ -153,6 +153,27 @@ export function reassignAssignedEvent(eventId, { newCoordinatorId, reason }, tok
   })
 }
 
+// REPLACE getLeadCoordinatorEvents WITH THIS:
+export function getLeadCoordinatorEvents(token) {
+  return request('/events/lead-overview', { token })
+}
+
+export function getUnassignedEventsQueue(token) {
+  return request('/events/unassigned-queue', { token })
+}
+
+export function getCoordinatorsList(token) {
+  return request('/events/coordinators', { token })
+}
+
+export function assignCoordinatorToEvent(eventId, coordinatorId, reason = '', token) {
+  return request(`/events/review/${eventId}/reassign`, {
+    method: 'POST',
+    body: { new_coordinator_id: coordinatorId, reason },
+    token,
+  })
+}
+
 export function getSafetyQueue(token) {
   return request('/events/safety/queue', { token })
 }

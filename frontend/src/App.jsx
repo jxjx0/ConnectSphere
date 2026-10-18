@@ -15,8 +15,12 @@ import VenuePage from './pages/VenuePage'
 import VenueSearchPage from './pages/VenueSearchPage'
 import VenueAvailabilityPage from './pages/VenueAvailabilityPage'
 import EquipmentPage from './pages/EquipmentPage'
+import EquipmentBookingsPage from './pages/EquipmentBookingsPage'
+import EquipmentBookingCalendarPage from './pages/EquipmentBookingCalendarPage'
 import EventReviewDetailPage from './pages/EventReviewDetailPage'
 import EquipmentRequestsPage from './pages/EquipmentRequestsPage'
+import LeadDashboardPage from './pages/LeadDashboardPage'
+import UnassignedQueuePage from './pages/UnassignedQueuePage'
 import ReviewVenueRequestsPage from './pages/ReviewVenueRequestsPage'
 
 import SafetyQueuePage from './pages/SafetyQueuePage'
@@ -117,6 +121,24 @@ export default function App() {
       />
 
       <Route
+        path="/equipment/bookings"
+        element={
+          <AuthGuard allowedRoles={['tech_support']}>
+            <EquipmentBookingCalendarPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/equipment/:equipmentId/bookings"
+        element={
+          <AuthGuard allowedRoles={['tech_support']}>
+            <EquipmentBookingsPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
         path="/equipment-requests"
         element={
           <AuthGuard allowedRoles={['coordinator', 'tech_support']}>
@@ -180,10 +202,28 @@ export default function App() {
       />
 
       <Route
+        path="/lead/dashboard"
+        element={
+          <AuthGuard allowedRoles={['event_coordinator_lead']}>
+            <LeadDashboardPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
         path="/safetyreview/:eventId"
         element={
           <AuthGuard allowedRoles={['safety_officer']}>
             <SafetyReviewDetailPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/events/unassigned-queue"
+        element={
+          <AuthGuard allowedRoles={['event_coordinator_lead']}>
+            <UnassignedQueuePage />
           </AuthGuard>
         }
       />
