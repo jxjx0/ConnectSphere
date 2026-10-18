@@ -164,20 +164,6 @@ def test_get_unassigned_events_queue_error_raises_autherror(monkeypatch):
     assert exc_info.value.status_code == 400
 
 
-def test_get_event_activity_logs_success(monkeypatch):
-    log_row = {"id": "log1", "event_id": EVENT_ID, "action_type": "ASSIGNMENT"}
-    mock_admin_client(monkeypatch, [log_row])
-    logs = event_assignment_service.get_event_activity_logs(EVENT_ID)
-    assert len(logs) == 1
-    assert logs[0]["id"] == "log1"
-
-
-def test_get_event_activity_logs_error_returns_empty_list(monkeypatch):
-    mock_admin_client(monkeypatch, [], raise_error=True)
-    logs = event_assignment_service.get_event_activity_logs(EVENT_ID)
-    assert logs == []
-
-
 def test_initial_assignment_updates_database_and_notifies(monkeypatch):
     calls = mock_admin_client(monkeypatch, [EVENT_UNASSIGNED_ROW])
 
@@ -198,9 +184,12 @@ def test_initial_assignment_updates_database_and_notifies(monkeypatch):
     )
 
     update_call = call_named(calls, "update")[1]
-    assert update_call["coordinator_id"] == NEW_COORD_ID
-    assert len(notified) == 1
-    assert notified[0] == (NEW_COORD_ID, "EVENT_ASSIGNMENT")
+    assert update_call == {"coordinator_id": NEW_COORD_ID}
+    audit_entry = call_named(calls, "insert")[1]
+    assert audit_entry["action_type"] == "ASSIGNMENT"
+    assert audit_entry["previous_coordinator_id"] is None
+    assert audit_entry["reason"] == "Initial assignment from queue"
+    assert notified == [(NEW_COORD_ID, "event_assigned")]
 
 
 def test_reassignment_notifies_both_coordinators(monkeypatch):
@@ -222,8 +211,14 @@ def test_reassignment_notifies_both_coordinators(monkeypatch):
         reason="Schedule conflict",
     )
 
-    assert call_named(calls, "update")[1]["coordinator_id"] == NEW_COORD_ID
-    assert len(notified) == 2
+    assert call_named(calls, "update")[1] == {"coordinator_id": NEW_COORD_ID}
+    audit_entry = call_named(calls, "insert")[1]
+    assert audit_entry["action_type"] == "REASSIGNMENT"
+    assert audit_entry["previous_coordinator_id"] == OLD_COORD_ID
+    assert notified == [
+        (NEW_COORD_ID, "event_reassigned"),
+        (OLD_COORD_ID, "event_reassigned"),
+    ]
 
 
 def test_assign_nonexistent_event_raises_404(monkeypatch):
@@ -326,17 +321,58 @@ def test_route_get_event_history_error(client, monkeypatch):
 
 def test_route_reassign_event_success(client, monkeypatch):
     authenticate_as(monkeypatch, LEAD_COORDINATOR)
-    monkeypatch.setattr(
-        event_service,
-        "reassign_event",
-        lambda event_id, new_coordinator_id, changed_by_id, reason, access_token: EVENT_ASSIGNED_ROW,
-    )
+    received = {}
+
+    def _assign(**kwargs):
+        received.update(kwargs)
+        return EVENT_ASSIGNED_ROW
+
+    monkeypatch.setattr(event_assignment_service, "assign_or_reassign_event", _assign)
     response = client.post(
         f"/events/review/{EVENT_ID}/reassign",
         json={"new_coordinator_id": NEW_COORD_ID, "reason": "Workload rebalance"},
         headers=LEAD_HEADERS,
     )
     assert response.status_code == 200
+    assert received == {
+        "event_id": EVENT_ID,
+        "new_coordinator_id": NEW_COORD_ID,
+        "changed_by_id": LEAD_ID,
+        "reason": "Workload rebalance",
+    }
+
+
+def test_route_assignment_from_queue_is_logged_as_assignment(client, monkeypatch):
+    """The queue and the overview share this route; an unassigned event is an ASSIGNMENT."""
+    authenticate_as(monkeypatch, LEAD_COORDINATOR)
+    calls = mock_admin_client(monkeypatch, [EVENT_UNASSIGNED_ROW])
+    monkeypatch.setattr(event_assignment_service, "notify", lambda **kwargs: None)
+
+    response = client.post(
+        f"/events/review/{EVENT_ID}/reassign",
+        json={"new_coordinator_id": NEW_COORD_ID, "reason": ""},
+        headers=LEAD_HEADERS,
+    )
+
+    assert response.status_code == 200
+    audit_entry = call_named(calls, "insert")[1]
+    assert audit_entry["action_type"] == "ASSIGNMENT"
+    assert audit_entry["reason"] == "Initial queue assignment"
+
+
+def test_route_reassign_event_keeps_service_status_codes(client, monkeypatch):
+    authenticate_as(monkeypatch, LEAD_COORDINATOR)
+
+    def _raise(**kwargs):
+        raise AuthError("Event not found.", status_code=404)
+
+    monkeypatch.setattr(event_assignment_service, "assign_or_reassign_event", _raise)
+    response = client.post(
+        f"/events/review/{EVENT_ID}/reassign",
+        json={"new_coordinator_id": NEW_COORD_ID},
+        headers=LEAD_HEADERS,
+    )
+    assert response.status_code == 404
 
 
 def test_route_reassign_event_missing_coordinator(client, monkeypatch):
@@ -352,7 +388,7 @@ def test_route_reassign_event_missing_coordinator(client, monkeypatch):
 def test_route_reassign_event_service_error(client, monkeypatch):
     authenticate_as(monkeypatch, LEAD_COORDINATOR)
     def _raise(*args, **kwargs): raise Exception("Service failed")
-    monkeypatch.setattr(event_service, "reassign_event", _raise)
+    monkeypatch.setattr(event_assignment_service, "assign_or_reassign_event", _raise)
     response = client.post(
         f"/events/review/{EVENT_ID}/reassign",
         json={"new_coordinator_id": NEW_COORD_ID},

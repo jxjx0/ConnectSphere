@@ -1,5 +1,4 @@
 import logging
-from postgrest import APIError as PostgrestAPIError
 import config
 from services.auth_service import AuthError
 from services.notification_service import notify
@@ -37,23 +36,6 @@ def get_unassigned_events_queue(access_token: str = None):
     except Exception as e:
         logger.error("Failed to fetch unassigned queue: %s", str(e))
         raise AuthError(f"Database error fetching queue: {str(e)}", status_code=400)
-
-
-def get_event_activity_logs(event_id: str):
-    """Fetches activity log history for a specific event."""
-    try:
-        supabase = config.get_admin_client()
-        response = (
-            supabase.from_("event_activity_logs")
-            .select("*")
-            .eq("event_id", event_id)
-            .order("created_at", desc=True)
-            .execute()
-        )
-        return response.data or []
-    except PostgrestAPIError as e:
-        logger.error("Failed to fetch activity logs: %s", e.message)
-        return []
 
 
 def assign_or_reassign_event(
@@ -109,9 +91,9 @@ def assign_or_reassign_event(
     # Notify newly assigned coordinator
     notify(
         user_id=new_coordinator_id,
-        notification_type="EVENT_ASSIGNMENT",
+        notification_type="event_reassigned" if is_reassignment else "event_assigned",
         title="New Event Assignment",
-        body=f"You have been assigned as the lead coordinator for '{event_name}'.",
+        body=f"You have been assigned to manage the event '{event_name}'.",
         event_id=event_id,
     )
 
@@ -119,7 +101,7 @@ def assign_or_reassign_event(
     if is_reassignment and previous_coordinator_id != new_coordinator_id:
         notify(
             user_id=previous_coordinator_id,
-            notification_type="EVENT_REASSIGNMENT",
+            notification_type="event_reassigned",
             title="Event Unassigned",
             body=f"You have been unassigned from event '{event_name}'.",
             event_id=event_id,

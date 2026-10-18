@@ -458,7 +458,7 @@ def get_event_history(event_id):
 @events_bp.post("/review/<event_id>/reassign")
 @require_auth
 def reassign_event(event_id):
-    """Reassign event coordinator with reason logging."""
+    """Assign or reassign an event's coordinator, with an audit log entry."""
     data = request.get_json() or {}
     new_coordinator_id = data.get("new_coordinator_id")
     reason = data.get("reason", "").strip()
@@ -467,14 +467,15 @@ def reassign_event(event_id):
         return jsonify({"error": "Please select a coordinator to reassign to."}), 400
 
     try:
-        updated_event = event_service.reassign_event(
+        updated_event = event_assignment_service.assign_or_reassign_event(
             event_id=event_id,
             new_coordinator_id=new_coordinator_id,
             changed_by_id=g.user_id,
-            reason=reason,
-            access_token=g.access_token,
+            reason=reason or None,
         )
         return jsonify({"event": updated_event}), 200
+    except AuthError:
+        raise
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     
