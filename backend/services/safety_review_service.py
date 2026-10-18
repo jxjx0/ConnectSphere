@@ -31,16 +31,18 @@ def is_within_operating_hours(start_dt: datetime, end_dt: datetime, operating_ho
         return True
 
     try:
-        open_time = datetime.strptime(open_str, "%H:%M").time()
-        close_time = datetime.strptime(close_str, "%H:%M").time()
-    except ValueError:
+        # Handle both HH:MM and HH:MM:SS formats
+        fmt = "%H:%M:%S" if len(str(open_str).strip()) == 8 else "%H:%M"
+        open_time = datetime.strptime(str(open_str).strip(), fmt).time()
+        close_time = datetime.strptime(str(close_str).strip(), fmt).time()
+    except Exception as exc:
+        logger.warning(f"Failed to parse venue operating hours '{operating_hours}': {exc}")
         return True
 
-    # Strip tzinfo or use time component directly
-    s_time = start_dt.time()
-    e_time = end_dt.time()
+    start_time = start_dt.time() if isinstance(start_dt, datetime) else start_dt
+    end_time = end_dt.time() if isinstance(end_dt, datetime) else end_dt
 
-    return s_time >= open_time and e_time <= close_time
+    return start_time >= open_time and end_time <= close_time
 
 def get_safety_review_queue(access_token: str) -> list[dict]:
     """Retrieve all pending safety review events in FIFO order (created_at ASC)."""

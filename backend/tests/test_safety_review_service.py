@@ -35,10 +35,10 @@ def valid_create_request():
 # --- is_within_operating_hours ---
 
 def test_is_within_operating_hours_valid():
-    start = datetime(2026, 11, 1, 10, 0, tzinfo=timezone.utc)
-    end = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
-    operating_hours = {"open": "08:00", "close": "22:00"}
-    assert is_within_operating_hours(start, end, operating_hours) is True
+    start = datetime(2026, 11, 1, 10, 0)
+    end = datetime(2026, 11, 1, 12, 0)
+    op_hours = {"open": "08:00", "close": "22:00"}
+    assert is_within_operating_hours(start, end, op_hours) is True
 
 
 def test_is_within_operating_hours_out_of_bounds():
