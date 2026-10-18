@@ -9,7 +9,7 @@ import BookingForm from '../components/BookingForm.jsx'
 import { useAuth } from '../context/AuthContext'
 import { formatDateRange } from '../eventDisplay'
 import { EMPTY_VENUE_FILTERS, validateVenueSearch } from '../venueSearch.js'
-import { blocksForDay, calendarBlockPositions, calendarWeek, calendarVenueOptions, localDateValue, shiftCalendarDate, validateCalendarResponse } from '../venueAvailability'
+import { blocksForDay, calendarBlockPositions, calendarOperatingHours, calendarWeek, calendarVenueOptions, localDateValue, shiftCalendarDate, validateCalendarResponse } from '../venueAvailability'
 
 export default function VenueAvailabilityPage() {
   const { token, user } = useAuth()
@@ -95,6 +95,7 @@ export default function VenueAvailabilityPage() {
   const canShowCalendar = week && !catalogue.loading && !catalogue.error && venueId && current.data
   const matches = calendarVenueOptions(catalogue.venues, venueSearch || '')
   const selectedVenue = catalogue.venues.find((venue) => venue.id === venueId)
+  const operatingHours = calendarOperatingHours(selectedVenue?.operating_hours)
 
   function closeVenues(event) {
     setVenueOpen(false)
@@ -202,6 +203,7 @@ export default function VenueAvailabilityPage() {
         {selectedVenue && <div className="stack stack--tight venue-calendar__selection">
           <h2>{selectedVenue.name}</h2>
           {selectedVenue.location && <p className="note">{selectedVenue.location}</p>}
+          <p className="note">{operatingHours ? `Operating hours: ${operatingHours.label}` : 'Operating hours unavailable.'}</p>
         </div>}
         {user.role === 'venue_staff' && <div className="form-actions">
           <button type="button" className="button button--secondary button--small"
@@ -253,10 +255,6 @@ export default function VenueAvailabilityPage() {
           />
         )}
 
-        {venueId && <div className="venue-calendar__notice" role="status">
-          <strong>Availability not fully verified.</strong>
-          <p className="note">Additional reservations may not be shown.</p>
-        </div>}
         {catalogue.loading && <p role="status" className="note">Loading venues…</p>}
         {catalogue.error && <p role="alert" className="form-error">{catalogue.error}</p>}
         {!catalogue.loading && !catalogue.error && !catalogue.venues.length && <p className="note">No venues to display.</p>}
@@ -265,9 +263,10 @@ export default function VenueAvailabilityPage() {
         {!catalogue.loading && !catalogue.error && venueId && week && current.loading && <p role="status" className="note">Loading venue occupancy…</p>}
         {current.error && !catalogue.loading && !catalogue.error && !dateError && <p role="alert" className="form-error">{current.error}</p>}
         {canShowCalendar && <>
-          <div className="stack stack--tight">
-            <p className="note venue-calendar__legend">Operational block</p>
-            <p className="note">Empty grid space is not verified availability. Select a block to see its details.</p>
+          <div className="venue-calendar__key" aria-label="Calendar legend">
+            <span className="note venue-calendar__legend">Recorded block</span>
+            {operatingHours && <span className="note venue-calendar__legend venue-calendar__legend--closed">Closed</span>}
+            <span className="note venue-calendar__timezone">Local time</span>
           </div>
           <div className="venue-calendar__scroll" tabIndex={0} role="region" aria-label="Weekly time grid, scroll to see all hours">
             <div className="venue-calendar__time-grid">
@@ -279,6 +278,13 @@ export default function VenueAvailabilityPage() {
                 {Array.from({ length: 24 }, (_, hour) => <span key={hour}>{hour % 12 || 12} {hour < 12 ? 'AM' : 'PM'}</span>)}
               </div>
               {week.days.map((day) => <div key={day.date} className="venue-calendar__timeline" aria-label={day.date}>
+                {(calendarOperatingHours(selectedVenue?.operating_hours, day)?.closed || []).map(({ item, top, height }, index) => (
+                  <div key={`closed-${index}`} className="venue-calendar__closed" role="img"
+                    style={{ top: `${top}%`, height: `${height}%` }}
+                    aria-label={`Closed: ${formatDateRange(item.start_at, item.end_at)}`}>
+                    {height >= 100 / 24 && <span>Closed</span>}
+                  </div>
+                ))}
                 <div className="venue-calendar__hour-lines" aria-hidden="true">
                   {Array.from({ length: 24 }, (_, hour) => <span key={hour} />)}
                 </div>
