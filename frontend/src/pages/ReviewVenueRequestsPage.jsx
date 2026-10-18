@@ -17,12 +17,33 @@ function validateBookingRequest(booking) {
     const venue = booking?.venues
     if (!venue) return null
 
-    // venue.layouts is an array of objects: [{ name: "Banquet", capacity: 100 }, ...]
+    // 1. Operating Hours Validation
+    const operatingHours = venue.operating_hours
+    if (operatingHours && typeof operatingHours === 'object') {
+        const { open, close } = operatingHours
+        if (open && close && booking.start_at && booking.end_at) {
+            const startTimeStr = new Date(booking.start_at).toLocaleTimeString('en-GB', {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false,
+            })
+            const endTimeStr = new Date(booking.end_at).toLocaleTimeString('en-GB', {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false,
+            })
+
+            if (startTimeStr < open || endTimeStr > close) {
+                return `Requested period (${startTimeStr} – ${endTimeStr}) falls outside venue operating hours (${open} – ${close}).`
+            }
+        }
+    }
+
+    // 2. Layout & Capacity Validation
     const supportedLayouts = Array.isArray(venue.layouts) ? venue.layouts : []
     const requestedLayoutName = booking.room_layout
     const attendance = booking.events?.expected_attendance || booking.expected_attendance || 0
 
-    // Find layout match (case-insensitive trim)
     const layoutMatch = supportedLayouts.find(
         (l) => l.name?.trim().toLowerCase() === requestedLayoutName?.trim().toLowerCase()
     )
@@ -75,7 +96,7 @@ export default function ReviewVenueRequests() {
 
     // Formats start date into YYYY-MM-DD for VenueScheduleCalendar initial focus
     const selectedBookingDate = selectedBooking?.start_at
-        ? new Date(selectedBooking.start_at).toISOString().split('T')[0]
+        ? new Date(selectedBooking.start_at).toLocaleDateString('sv-SE') // Produces YYYY-MM-DD in local time
         : null
 
     async function handleApprove(booking) {
@@ -90,30 +111,6 @@ export default function ReviewVenueRequests() {
         setProcessingId(bookingId)
 
         try {
-            const startWindow = booking.effective_start_at || booking.start_at
-            const endWindow = booking.effective_end_at || booking.end_at
-
-            const availability = await getVenueAvailability(
-                booking.venue_id,
-                { start_at: startWindow, end_at: endWindow },
-                token
-            )
-            const existingBlocks = availability?.items || []
-
-            const conflict = existingBlocks.find((block) =>
-                isOverlapping(startWindow, endWindow, block.start_at, block.end_at)
-            )
-
-            if (conflict) {
-                const conflictStart = new Date(conflict.start_at).toLocaleString()
-                const conflictEnd = new Date(conflict.end_at).toLocaleString()
-                const conflictName = conflict.reason || conflict.block_reason || 'Existing Reservation'
-
-                throw new Error(
-                    `Cannot approve: Overlaps with '${conflictName}' from ${conflictStart} to ${conflictEnd}.`
-                )
-            }
-
             await reviewVenueBooking(bookingId, { status: 'APPROVED' }, token)
 
             setBookings((prev) => {
@@ -307,8 +304,8 @@ export default function ReviewVenueRequests() {
                             </div>
                             {selectedBooking ? (
                                 <VenueScheduleCalendar
-                                    key={`${selectedBooking.venue_id}-${selectedBookingDate}`}
                                     venueId={selectedBooking.venue_id}
+                                    operatingHours={selectedBooking.venues?.operating_hours}
                                     initialDate={selectedBookingDate}
                                     token={token}
                                 />
