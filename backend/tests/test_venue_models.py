@@ -8,7 +8,34 @@ from models.venue import (
     VenueCreateRequest,
     VenueLayout,
     VenueUpdateRequest,
+    Venue,
 )
+
+
+@pytest.mark.parametrize("field", ["setup_time_minutes", "turnaround_time_minutes"])
+@pytest.mark.parametrize("value", [0, 30, 45, 1500])
+def test_venue_buffer_whole_minutes_are_preserved(request_model, venue_payload, field, value):
+    request = request_model(**{**venue_payload, field: value})
+    assert getattr(request, field) == value
+    assert getattr(Venue(id="hall", **request.model_dump()), field) == value
+
+
+@pytest.mark.parametrize("field", ["setup_time_minutes", "turnaround_time_minutes"])
+@pytest.mark.parametrize("value", [-1, 0.5, 30.0, True, "30", None, 2147483648])
+def test_invalid_venue_buffers_are_rejected(request_model, venue_payload, field, value):
+    with pytest.raises(ValidationError):
+        request_model(**{**venue_payload, field: value})
+
+
+def test_new_venue_buffers_default_to_zero(venue_payload):
+    request = VenueCreateRequest(**venue_payload)
+    assert request.setup_time_minutes == request.turnaround_time_minutes == 0
+
+
+def test_missing_read_configuration_is_unknown(venue_payload):
+    venue = Venue(id="hall", **venue_payload)
+    assert venue.setup_time_minutes is None
+    assert venue.turnaround_time_minutes is None
 
 
 @pytest.fixture(

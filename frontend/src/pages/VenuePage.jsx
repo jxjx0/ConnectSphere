@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   validateAccessibility,
   validateOperatingHours,
+  validateVenueBuffers,
   validateVenueLayouts,
   validateVenueName,
 } from '../validation'
@@ -29,6 +30,8 @@ function emptyForm() {
     layouts: [{ ...EMPTY_LAYOUT }],
     open: '',
     close: '',
+    setup_time_minutes: '0',
+    turnaround_time_minutes: '0',
   }
 }
 
@@ -58,6 +61,7 @@ function formatAuditDate(value) {
 
 function formatAuditValue(value, field) {
   if (value === null || value === undefined) return 'None'
+  if (['setup_time_minutes', 'turnaround_time_minutes'].includes(field)) return `${value} minutes`
   if (field === 'operating_hours' && typeof value === 'object') {
     return `${value.open}–${value.close}`
   }
@@ -82,6 +86,8 @@ function formatAuditValue(value, field) {
 function formatAuditField(field) {
   return {
     operating_hours: 'Operating Hours',
+    setup_time_minutes: 'Setup time',
+    turnaround_time_minutes: 'Turnaround time',
   }[field] || field.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
@@ -99,6 +105,7 @@ export default function VenuePage({ createMode = false }) {
   const [blockingVenue, setBlockingVenue] = useState(null)
   const [history, setHistory] = useState([])
   const [historyError, setHistoryError] = useState('')
+  const editableVenue = editMode && venues.some((venue) => venue.id === venueId)
 
   useEffect(() => {
     if (createMode) return
@@ -124,6 +131,8 @@ export default function VenuePage({ createMode = false }) {
             })),
             open: venue.operating_hours.open,
             close: venue.operating_hours.close,
+            setup_time_minutes: String(venue.setup_time_minutes ?? ''),
+            turnaround_time_minutes: String(venue.turnaround_time_minutes ?? ''),
           })
           getVenueHistory(venueId, token)
             .then((historyData) => setHistory(historyData.history))
@@ -173,6 +182,7 @@ export default function VenuePage({ createMode = false }) {
         : null) ||
       validateVenueLayouts(form.layouts, form.capacity) ||
       validateAccessibility(form.accessibility) ||
+      validateVenueBuffers(form.setup_time_minutes, form.turnaround_time_minutes) ||
       validateOperatingHours(form.open, form.close)
     )
   }
@@ -200,6 +210,8 @@ export default function VenuePage({ createMode = false }) {
         capacity: Number(layout.capacity),
       })),
       operating_hours: { open: form.open, close: form.close },
+      setup_time_minutes: Number(form.setup_time_minutes),
+      turnaround_time_minutes: Number(form.turnaround_time_minutes),
     }
 
     try {
@@ -232,8 +244,9 @@ export default function VenuePage({ createMode = false }) {
       </div>
 
       {editMode && loading && <p className="note">Loading venue…</p>}
+      {editMode && !loading && !editableVenue && error && <p className="form-error" role="alert">{error}</p>}
 
-      {(createMode || (editMode && !loading && !error)) && (
+      {(createMode || (editableVenue && !loading)) && (
         <section className="stack stack--tight">
           <h2 className="section-title">Venue details</h2>
 
@@ -434,6 +447,24 @@ export default function VenuePage({ createMode = false }) {
               </div>
             </div>
 
+            <div className="field">
+              <div className="repeater__row repeater__row--equal">
+                <div className="repeater__field">
+                  <label htmlFor="setupTime">Setup time (minutes)</label>
+                  <input id="setupTime" type="number" min="0" step="1" max="2147483647" required
+                    aria-describedby="venueBufferHint" value={form.setup_time_minutes}
+                    onChange={(event) => updateField('setup_time_minutes', event.target.value)} />
+                </div>
+                <div className="repeater__field">
+                  <label htmlFor="turnaroundTime">Turnaround time (minutes)</label>
+                  <input id="turnaroundTime" type="number" min="0" step="1" max="2147483647" required
+                    aria-describedby="venueBufferHint" value={form.turnaround_time_minutes}
+                    onChange={(event) => updateField('turnaround_time_minutes', event.target.value)} />
+                </div>
+              </div>
+              <p className="field__hint" id="venueBufferHint">Time needed before and after each event, used in availability and conflict checks. Enter 0 if none is needed.</p>
+            </div>
+
             {error && <p className="form-error" role="alert">{error}</p>}
             {success && <p className="form-success" role="status">{success}</p>}
 
@@ -446,7 +477,7 @@ export default function VenuePage({ createMode = false }) {
         </section>
       )}
 
-      {editMode && !loading && !error && (
+      {editableVenue && !loading && (
         <section className="stack stack--tight">
           <details>
             <summary className="section-title">Edit History</summary>
