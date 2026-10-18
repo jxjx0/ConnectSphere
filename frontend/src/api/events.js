@@ -152,3 +152,18 @@ export function reassignAssignedEvent(eventId, { newCoordinatorId, reason }, tok
     token,
   })
 }
+
+export function getSafetyQueue(token) {
+  return request('/events/safety/queue', { token })
+}
+
+export function getSafetyEventDetails(eventId, token) {
+  return request(`/events/safety/review/${eventId}`, { token })
+}
+
+export function requestSafetyCheck(eventId, token) {
+  return request(`/events/${eventId}/request-safety-check`, {
+    method: 'POST',
+    token,
+  })
+}

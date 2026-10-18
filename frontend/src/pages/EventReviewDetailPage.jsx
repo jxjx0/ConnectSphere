@@ -25,6 +25,8 @@ import {
 } from '../eventDisplay'
 import { getVenueBookingsForEvent } from '../api/venues'
 
+import { requestSafetyCheck } from '../api/events'
+
 const CHANGE_FIELDS = [
   { key: 'name', label: 'Event name' },
   { key: 'description', label: 'Description' },
@@ -107,6 +109,8 @@ export default function EventReviewDetailPage() {
   const [loading, setLoading] = useState(true)
   const [venueBookings, setVenueBookings] = useState([])
 
+  const [submittingSafety, setSubmittingSafety] = useState(false)
+
   // --- ADD THIS STATE FOR AUDIT TRAIL & REASSIGNMENT ---
   const [activityLogs, setActivityLogs] = useState([])
   const [showReassignModal, setShowReassignModal] = useState(false)
@@ -153,23 +157,6 @@ export default function EventReviewDetailPage() {
   }, [eventId, token])
 
 
-  //   getAssignedEventRequest(eventId, token)
-  //     .then((data) => {
-  //       if (!active) return
-  //       setEvent(data.event)
-  //       setOrganiser(data.organiser)
-  //     })
-  //     .catch((caught) => {
-  //       if (active) setError(caught.message)
-  //     })
-  //     .finally(() => {
-  //       if (active) setLoading(false)
-  //     })
-
-  //   return () => {
-  //     active = false
-  //   }
-  // }, [eventId, token])
 
   async function requestClarification(eventTarget) {
     eventTarget.preventDefault()
@@ -337,11 +324,57 @@ export default function EventReviewDetailPage() {
           </p>
 
           {/* --- ADD THIS BUTTON & MODAL RIGHT HERE --- */}
-          {event.status === 'planning' && (
+          {/* {event.status === 'planning' && (
             <div className="form-actions">
               <Link to={`/venues/search?eventId=${encodeURIComponent(eventId)}`} className="button">
                 {venueBookings.length > 0 ? 'Find / Request Additional Venue' : 'Find Venue'}
               </Link>
+              <Link to={`/safetyreview/${eventId}`} className="button button--secondary">
+                Request Safety Check
+              </Link>
+            </div>
+          )} */}
+
+          {event.status === 'planning' && (
+            <div className="stack stack--tight">
+              <div className="form-actions">
+                <Link to={`/venues/search?eventId=${encodeURIComponent(eventId)}`} className="button">
+                  {venueBookings.length > 0 ? 'Find / Request Additional Venue' : 'Find Venue'}
+                </Link>
+
+                {/* Dynamic Safety Check Status / Button */}
+                {event.safety_status === 'pending' ? (
+                  <span className="tag tag--orange">Safety Review Pending</span>
+                ) : event.safety_status === 'approved' ? (
+                  <span className="tag tag--green">Safety Approved</span>
+                ) : (
+                  <button
+                    type="button"
+                    className="button button--secondary"
+                    disabled={submittingSafety}
+                    onClick={async () => {
+                      setSubmittingSafety(true)
+                      try {
+                        await requestSafetyCheck(eventId, token)
+                        setEvent((prev) => ({ ...prev, safety_status: 'pending' }))
+                      } catch (err) {
+                        alert(err.message || 'Failed to request safety check')
+                      } finally {
+                        setSubmittingSafety(false)
+                      }
+                    }}
+                  >
+                    {submittingSafety ? 'Requesting...' : 'Request Safety Check'}
+                  </button>
+                )}
+              </div>
+
+              {/* Success Confirmation */}
+              {event.safety_status === 'pending' && (
+                <p className="note" style={{ color: 'var(--accent)', marginTop: '0.5rem' }}>
+                  ✓ Safety check request submitted successfully!
+                </p>
+              )}
             </div>
           )}
           {!['completed', 'rejected'].includes(event.status) && (

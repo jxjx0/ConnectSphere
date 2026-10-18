@@ -1,6 +1,7 @@
 """Event request endpoints. Thin handlers: parse, call the service, return JSON."""
 
 import logging
+import traceback
 
 from flask import Blueprint, g, jsonify, request
 from pydantic import ValidationError
@@ -16,7 +17,7 @@ from models.event import (
 )
 from models.profile import Profile, Role
 from routes.auth import require_auth
-from services import auth_service, event_service, notification_service
+from services import auth_service, event_service, notification_service, safety_review_service
 from services.auth_service import AuthError
 
 events_bp = Blueprint("events", __name__, url_prefix="/events")
@@ -52,6 +53,20 @@ def _require_coordinator() -> Profile:
     if profile.role != Role.COORDINATOR:
         raise AuthError(
             "Only Event Coordinators can review event requests.",
+            status_code=403,
+        )
+    return profile
+
+def _require_safety_officer() -> Profile:
+    """Require the authenticated profile to have the Safety Officer role."""
+    profile = auth_service.get_profile(g.access_token, g.user_id)
+    allowed_roles = [
+        Role.SAFETY_OFFICER,
+        getattr(Role, "SAFETY_OFFICER", "safety_officer"),
+    ]
+    if profile.role not in allowed_roles:
+        raise AuthError(
+            "Only Safety Officers are authorized to access safety review tasks.",
             status_code=403,
         )
     return profile
@@ -471,3 +486,47 @@ def reassign_event(event_id):
         return jsonify({"event": updated_event}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+
+@events_bp.get("/safety/queue")
+@require_auth
+def get_safety_queue():
+    """Endpoint for Safety Officers to get FIFO ordered pending events."""
+    try:
+        _require_safety_officer()
+        queue = safety_review_service.get_safety_review_queue(g.access_token)
+        return jsonify({"queue": queue}), 200
+    except AuthError as exc:
+        return jsonify({"error": exc.message}), exc.status_code
+    except Exception as exc:
+        logger.error(f"Error in /events/safety/queue: {traceback.format_exc()}")
+        return jsonify({"error": str(exc), "trace": traceback.format_exc()}), 500
+
+
+@events_bp.get("/safety/review/<event_id>")
+@require_auth
+def get_safety_review_details(event_id):
+    """Endpoint for inspecting event, layout, equipment, and safety flags."""
+    try:
+        _require_safety_officer()
+        details = safety_review_service.get_safety_event_details(event_id, g.access_token)
+        return jsonify(details), 200
+    except AuthError as exc:
+        return jsonify({"error": exc.message}), exc.status_code
+    except Exception as exc:
+        logger.error(f"Error in /events/safety/review/{event_id}: {traceback.format_exc()}")
+        return jsonify({"error": str(exc), "trace": traceback.format_exc()}), 500
+
+
+@events_bp.post("/<event_id>/request-safety-check")
+@require_auth
+def request_safety_check(event_id):
+    """Endpoint for coordinators to submit an event to the safety queue."""
+    try:
+        res = safety_review_service.request_safety_check(event_id, g.access_token)
+        return jsonify(res), 200
+    except AuthError as exc:
+        return jsonify({"error": exc.message}), exc.status_code
+    except Exception as exc:
+        logger.error(f"Error requesting safety check for {event_id}: {traceback.format_exc()}")
+        return jsonify({"error": str(exc)}), 500

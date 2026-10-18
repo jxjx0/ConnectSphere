@@ -19,6 +19,9 @@ import EventReviewDetailPage from './pages/EventReviewDetailPage'
 import EquipmentRequestsPage from './pages/EquipmentRequestsPage'
 import ReviewVenueRequestsPage from './pages/ReviewVenueRequestsPage'
 
+import SafetyQueuePage from './pages/SafetyQueuePage'
+import SafetyReviewDetailPage from './pages/SafetyReviewDetailPage'
+
 export default function App() {
   return (
     <Routes>
@@ -163,6 +166,24 @@ export default function App() {
         element={
           <AuthGuard allowedRoles={['venue_staff']}>
             <ReviewVenueRequestsPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/safetyreview"
+        element={
+          <AuthGuard allowedRoles={['safety_officer']}>
+            <SafetyQueuePage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/safetyreview/:eventId"
+        element={
+          <AuthGuard allowedRoles={['safety_officer']}>
+            <SafetyReviewDetailPage />
           </AuthGuard>
         }
       />
