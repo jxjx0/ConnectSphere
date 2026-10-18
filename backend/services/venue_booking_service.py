@@ -6,6 +6,7 @@ from postgrest import APIError as PostgrestAPIError
 import config
 from models.venue_booking import VenueBookingCreateRequest, VenueBookingReviewRequest
 from services.auth_service import AuthError
+from services.notification_service import notify
 
 
 def get_pending_venue_bookings(access_token: str, venue_id: str | None = None) -> list[dict]:
@@ -120,7 +121,7 @@ def review_venue_booking(
     reviewer_id: str,
     review: VenueBookingReviewRequest,
 ) -> dict:
-    """Approve or reject a request. On approval, synced into venue_blocks."""
+    """Approve or reject a request. On approval/rejection, dispatches a notification to the event coordinator."""
     client = config.get_user_client(access_token)
 
     booking_res = (
@@ -137,10 +138,10 @@ def review_venue_booking(
     if booking["status"] != "PENDING_VENUE_APPROVAL":
         raise AuthError("This booking request has already been processed.", status_code=400)
 
-    if review.status == "APPROVED":
-        venue = booking.get("venues") or {}
-        event = booking.get("events") or {}
+    venue = booking.get("venues") or {}
+    event = booking.get("events") or {}
 
+    if review.status == "APPROVED":
         supported_layouts = venue.get("layouts") or []
         if isinstance(supported_layouts, dict):
             supported_layouts = [{"name": k, "capacity": v} for k, v in supported_layouts.items()]
@@ -202,7 +203,18 @@ def review_venue_booking(
             .execute()
         )
 
-        return update_res.data[0]
+        approved_booking = update_res.data[0]
+
+        # Dispatch notification with positional notification_type
+        if booking.get("coordinator_id"):
+            notify(
+                booking["coordinator_id"],
+                "venue_booking_approved",
+                title="Venue Booking Approved",
+                body=f"Your venue booking request for '{venue.get('name', 'the requested venue')}' has been approved.",
+            )
+
+        return approved_booking
 
     update_res = (
         client.table("venue_bookings")
@@ -215,4 +227,16 @@ def review_venue_booking(
         .execute()
     )
 
-    return update_res.data[0]
+    rejected_booking = update_res.data[0]
+
+    # Dispatch notification with positional notification_type
+    if booking.get("coordinator_id"):
+        reason_text = f" Reason: {review.rejection_reason}" if review.rejection_reason else ""
+        notify(
+            booking["coordinator_id"],
+            "venue_booking_rejected",
+            title="Venue Booking Rejected",
+            body=f"Your venue booking request for '{venue.get('name', 'the requested venue')}' was rejected.{reason_text}",
+        )
+
+    return rejected_booking
