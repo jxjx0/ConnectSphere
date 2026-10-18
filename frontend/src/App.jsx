@@ -23,6 +23,9 @@ import LeadDashboardPage from './pages/LeadDashboardPage'
 import UnassignedQueuePage from './pages/UnassignedQueuePage'
 import ReviewVenueRequestsPage from './pages/ReviewVenueRequestsPage'
 
+import SafetyQueuePage from './pages/SafetyQueuePage'
+import SafetyReviewDetailPage from './pages/SafetyReviewDetailPage'
+
 export default function App() {
   return (
     <Routes>
@@ -190,10 +193,28 @@ export default function App() {
       />
 
       <Route
+        path="/safetyreview"
+        element={
+          <AuthGuard allowedRoles={['safety_officer']}>
+            <SafetyQueuePage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
         path="/lead/dashboard"
         element={
           <AuthGuard allowedRoles={['event_coordinator_lead']}>
             <LeadDashboardPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/safetyreview/:eventId"
+        element={
+          <AuthGuard allowedRoles={['safety_officer']}>
+            <SafetyReviewDetailPage />
           </AuthGuard>
         }
       />

@@ -368,6 +368,7 @@ class Event(BaseModel):
     accessibility_requirements: str | None = None
     equipment_requirements: str | None = None
     status: EventStatus
+    safety_status: str = "not_requested"
     created_at: datetime | None = None
     updated_at: datetime | None = None
     coordinator_name: str | None = None
@@ -420,6 +421,7 @@ class EventReviewSummary(BaseModel):
     start_time: datetime
     end_time: datetime
     status: EventStatus
+    safety_status: str = "not_requested"
     venue_bookings: list[dict] = Field(default_factory=list)
 
 
