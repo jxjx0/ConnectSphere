@@ -3,7 +3,7 @@
 from flask import Blueprint, g, jsonify, request
 from pydantic import ValidationError
 
-from models.equipment_request import EquipmentRequestSubmit
+from models.equipment_request import EquipmentRequestReview, EquipmentRequestSubmit
 from models.profile import Role
 from routes.auth import require_auth
 from services import auth_service, equipment_request_service
@@ -56,5 +56,37 @@ def list_equipment_requests():
             status_code=403,
         )
 
-    requests = equipment_request_service.list_equipment_requests(g.access_token)
+    requests = (
+        equipment_request_service.list_tech_support_equipment_requests(
+            g.access_token
+        )
+        if role == Role.TECH_SUPPORT
+        else equipment_request_service.list_equipment_requests(g.access_token)
+    )
     return jsonify({"requests": requests}), 200
+
+
+@equipment_requests_bp.patch("/equipment-requests/<request_id>/review")
+@require_auth
+def review_equipment_request(request_id):
+    if _get_role() != Role.TECH_SUPPORT:
+        raise AuthError(
+            "Only Technical Support can review equipment requests.",
+            status_code=403,
+        )
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"errors": ["Equipment review must be a JSON object."]}), 400
+
+    try:
+        review = EquipmentRequestReview(**payload)
+    except ValidationError as error:
+        return jsonify({"errors": _validation_messages(error)}), 400
+
+    updated_request = equipment_request_service.review_equipment_request(
+        g.access_token,
+        request_id,
+        review,
+    )
+    return jsonify({"request": updated_request}), 200

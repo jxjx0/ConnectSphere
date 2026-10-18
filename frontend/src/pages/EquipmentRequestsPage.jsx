@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import {
   getEquipmentCatalog,
   getEquipmentRequests,
+  reviewEquipmentRequest,
   submitEquipmentRequest,
 } from '../api/equipmentRequests'
 import { getAssignedEventRequests } from '../api/events'
@@ -30,6 +31,9 @@ export default function EquipmentRequestsPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [submittedMessage, setSubmittedMessage] = useState('')
+  const [reviewingRequestId, setReviewingRequestId] = useState('')
+  const [reviewErrors, setReviewErrors] = useState({})
+  const isTechSupport = user.role === 'tech_support'
 
   useEffect(() => {
     const loads = [
@@ -43,8 +47,12 @@ export default function EquipmentRequestsPage() {
       .then(([requestData, eventData, equipmentData]) => {
         setRequests(requestData.requests)
         if (isCoordinator) {
+          const eventsWithRequests = new Set(
+            requestData.requests.map((request) => request.event_id),
+          )
           setEvents(
-            equipmentRequestEligibleEvents(eventData.events),
+            equipmentRequestEligibleEvents(eventData.events)
+              .filter((eventItem) => !eventsWithRequests.has(eventItem.id)),
           )
           setEquipment(
             equipmentData.filter((item) => item.maintenance_status === 'Functional'),
@@ -115,6 +123,163 @@ export default function EquipmentRequestsPage() {
     }
   }
 
+  async function handleReview(requestId, decision) {
+    setReviewingRequestId(requestId)
+    setReviewErrors((current) => ({ ...current, [requestId]: '' }))
+    try {
+      const result = await reviewEquipmentRequest(requestId, decision, token)
+      setRequests((current) => current.map((request) => (
+        request.id === requestId
+          ? { ...request, ...result.request }
+          : request
+      )))
+      try {
+        const refreshed = await getEquipmentRequests(token)
+        setRequests(refreshed.requests)
+      } catch (refreshError) {
+        setReviewErrors((current) => ({
+          ...current,
+          [requestId]: `${decision} was saved, but the queue could not refresh: ${refreshError.message}`,
+        }))
+      }
+    } catch (caught) {
+      setReviewErrors((current) => ({ ...current, [requestId]: caught.message }))
+      if (caught.status === 409) {
+        try {
+          const refreshed = await getEquipmentRequests(token)
+          setRequests(refreshed.requests)
+        } catch (refreshError) {
+          setReviewErrors((current) => ({
+            ...current,
+            [requestId]: `${caught.message} ${refreshError.message}`,
+          }))
+        }
+      }
+    } finally {
+      setReviewingRequestId('')
+    }
+  }
+
+  function renderTechSupportRequest(request) {
+    const windows = request.bookings || []
+    const items = request.items || []
+    const bookedEquipment = request.equipment_bookings || []
+    const pending = request.status === 'Pending Technical Approval'
+    const allItemsBooked = items.length > 0 && items.every((item) => (
+      bookedEquipment.some((booking) => booking.equipment_id === item.equipment_id)
+    ))
+
+    return (
+      <article className="choice equipment-request-card" key={request.id}>
+        <div className="equipment-request-card__body">
+          <strong className="choice__title">{request.event?.name || 'Assigned event'}</strong>
+          <span className="choice__description">
+            Organiser: {request.event?.organiser_name || 'Unknown'}
+          </span>
+          <span className="choice__description">
+            Status: <span className="tag">{request.status}</span>
+            {pending && !allItemsBooked && ' · Awaiting equipment allocation'}
+          </span>
+
+          <div className="stack stack--tight">
+            <strong>Event time windows</strong>
+            {windows.length === 0 ? (
+              <span className="choice__description">
+                No valid event or venue booking time is available for allocation.
+              </span>
+            ) : windows.map((booking, index) => (
+              <span
+                className="choice__description"
+                key={booking.booking_id || `event-${index}`}
+              >
+                {booking.venue_name || 'Event schedule'}
+                {booking.room_layout ? ` · ${booking.room_layout}` : ''}
+                {' · '}
+                {formatDateRange(booking.start_at, booking.end_at)}
+                {booking.booking_status && booking.booking_status !== 'EVENT_SCHEDULE'
+                  ? ` · ${booking.booking_status}`
+                  : ''}
+              </span>
+            ))}
+          </div>
+
+          <div className="stack stack--tight">
+            <strong>Requested equipment</strong>
+            {items.length === 0 ? (
+              <span className="choice__description">No equipment items were included.</span>
+            ) : items.map((item) => (
+              <span className="choice__description" key={item.id}>
+                {item.equipment?.name || 'Equipment'} × {item.quantity}
+                {' · '}
+                {bookedEquipment.some(
+                  (booking) => booking.equipment_id === item.equipment_id,
+                )
+                  ? 'Allocated'
+                  : 'Not allocated'}
+                {pending && (
+                  <>
+                    {' · '}
+                    <Link to={`/equipment/${item.equipment_id}/bookings?request=${request.id}`}>
+                      {bookedEquipment.some(
+                        (booking) => booking.equipment_id === item.equipment_id,
+                      )
+                        ? 'View booking'
+                        : 'Check calendar and allocate'}
+                    </Link>
+                  </>
+                )}
+              </span>
+            ))}
+          </div>
+
+          <div className="stack stack--tight">
+            <strong>Booked equipment</strong>
+            {bookedEquipment.length === 0 ? (
+              <span className="choice__description">No equipment booked yet.</span>
+            ) : bookedEquipment.map((booking) => (
+              <span className="choice__description" key={booking.id}>
+                {booking.equipment_name}
+                {' · '}
+                {formatDateRange(booking.start_at, booking.end_at)}
+                {' · '}
+                <Link to={`/equipment/${booking.equipment_id}/bookings`}>Calendar</Link>
+              </span>
+            ))}
+          </div>
+
+          {reviewErrors[request.id] && (
+            <p className="form-error" role="alert">{reviewErrors[request.id]}</p>
+          )}
+
+          {pending && (
+            <div className="form-actions">
+              <button
+                className="button"
+                type="button"
+                disabled={reviewingRequestId === request.id || !allItemsBooked}
+                onClick={() => handleReview(request.id, 'Approved')}
+              >
+                {reviewingRequestId === request.id
+                  ? 'Saving…'
+                  : allItemsBooked
+                    ? 'Approve request'
+                    : 'Allocate equipment before approval'}
+              </button>
+              <button
+                className="button button--secondary"
+                type="button"
+                disabled={reviewingRequestId === request.id}
+                onClick={() => handleReview(request.id, 'Rejected')}
+              >
+                Reject request
+              </button>
+            </div>
+          )}
+        </div>
+      </article>
+    )
+  }
+
   if (loading) {
     return (
       <AppShell>
@@ -132,7 +297,7 @@ export default function EquipmentRequestsPage() {
           <p className="lead">
             {isCoordinator
               ? 'Request equipment for an event assigned to you, then track its technical approval status.'
-              : 'Review the equipment requested for events. Requests remain pending until reviewed.'}
+              : 'Review each request, allocate every requested item, then approve or reject it.'}
           </p>
         </div>
 
@@ -166,7 +331,10 @@ export default function EquipmentRequestsPage() {
               )}
 
               {events.length === 0 && (
-                <p className="note">You have no assigned events in Planning or Confirmed status that are eligible for equipment requests.</p>
+                <p className="note">
+                  There are no eligible assigned events without an equipment request.
+                  Each event can have one equipment request, submitted by its Coordinator.
+                </p>
               )}
             </section>
 
@@ -222,7 +390,7 @@ export default function EquipmentRequestsPage() {
 
         <section className="stack stack--tight">
           <h2 className="section-title">
-            {isCoordinator ? 'Submitted requests' : 'Pending technical approval'}
+            {isCoordinator ? 'Submitted requests' : 'Equipment requests to review'}
           </h2>
           {requests.length === 0 ? (
             <p className="note">
@@ -233,17 +401,36 @@ export default function EquipmentRequestsPage() {
           ) : (
             <div className="choices">
               {requests.map((request) => (
-                <article className="choice equipment-request-card" key={request.id}>
-                  <span className="choice__text">
-                    <span className="choice__title">{request.event?.name || 'Assigned event'}</span>
-                    <span className="choice__description">
-                      {formatDateRange(request.event?.start_time, request.event?.end_time)}
-                      {' · '}
-                      <span className="tag">{request.status}</span>
-                    </span>
-                    <span className="choice__description">{equipmentLines(request)}</span>
-                  </span>
-                </article>
+                isTechSupport
+                  ? renderTechSupportRequest(request)
+                  : (
+                    <article className="choice equipment-request-card" key={request.id}>
+                      <span className="choice__text">
+                        <span className="choice__title">
+                          {request.event?.name || 'Assigned event'}
+                        </span>
+                        <span className="choice__description">
+                          {formatDateRange(request.event?.start_time, request.event?.end_time)}
+                          {' · '}
+                          <span className="tag">{request.status}</span>
+                        </span>
+                        <span className="choice__description">{equipmentLines(request)}</span>
+                        {request.status === 'Pending Technical Approval' && (
+                          <span className="choice__description">
+                            Equipment allocation: {request.equipment_bookings?.length || 0}
+                            {' / '}{request.items?.length || 0} requested items booked.
+                          </span>
+                        )}
+                        <span className="choice__description">
+                          {request.equipment_bookings?.length
+                            ? `Booked equipment: ${request.equipment_bookings.map(
+                              (booking) => booking.equipment?.name || 'Equipment',
+                            ).join(', ')}`
+                            : 'No equipment has been allocated yet.'}
+                        </span>
+                      </span>
+                    </article>
+                  )
               ))}
             </div>
           )}

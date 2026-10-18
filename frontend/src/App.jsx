@@ -15,10 +15,13 @@ import VenuePage from './pages/VenuePage'
 import VenueSearchPage from './pages/VenueSearchPage'
 import VenueAvailabilityPage from './pages/VenueAvailabilityPage'
 import EquipmentPage from './pages/EquipmentPage'
+import EquipmentBookingsPage from './pages/EquipmentBookingsPage'
+import EquipmentBookingCalendarPage from './pages/EquipmentBookingCalendarPage'
 import EventReviewDetailPage from './pages/EventReviewDetailPage'
 import EquipmentRequestsPage from './pages/EquipmentRequestsPage'
 import LeadDashboardPage from './pages/LeadDashboardPage'
 import UnassignedQueuePage from './pages/UnassignedQueuePage'
+import ReviewVenueRequestsPage from './pages/ReviewVenueRequestsPage'
 
 export default function App() {
   return (
@@ -115,10 +118,19 @@ export default function App() {
       />
 
       <Route
-        path="/equipment-requests"
+        path="/equipment/bookings"
         element={
-          <AuthGuard allowedRoles={['coordinator', 'tech_support']}>
-            <EquipmentRequestsPage />
+          <AuthGuard allowedRoles={['tech_support']}>
+            <EquipmentBookingCalendarPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/equipment/:equipmentId/bookings"
+        element={
+          <AuthGuard allowedRoles={['tech_support']}>
+            <EquipmentBookingsPage />
           </AuthGuard>
         }
       />
@@ -169,6 +181,15 @@ export default function App() {
       />
 
       <Route
+        path="/venues/reviewRequests"
+        element={
+          <AuthGuard allowedRoles={['venue_staff']}>
+            <ReviewVenueRequestsPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
         path="/lead/dashboard"
         element={
           <AuthGuard allowedRoles={['event_coordinator_lead']}>
@@ -185,7 +206,7 @@ export default function App() {
           </AuthGuard>
         }
       />
-      
+
       <Route
         path="*"
         element={
