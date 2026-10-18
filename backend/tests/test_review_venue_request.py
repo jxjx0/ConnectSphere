@@ -98,17 +98,33 @@ def test_create_venue_booking_success(mock_get_client, mock_client, valid_create
     mock_get_client.return_value = mock_client
     inserted_booking = {"booking_id": "bk-100", "status": "PENDING_VENUE_APPROVAL"}
 
-    table_mock = MagicMock()
-    mock_client.table.return_value = table_mock
+    def mock_table(table_name):
+        t = MagicMock()
+        if table_name == "venues":
+            # 1. Fetch venue buffers and operating hours
+            t.select().eq().execute().data = [
+                {
+                    "setup_time_minutes": 30,
+                    "turnaround_time_minutes": 30,
+                    "operating_hours": {"open": "08:00", "close": "22:00"},
+                }
+            ]
+        elif table_name == "venue_bookings":
+            # 2. Check duplicate event bookings (return empty list so no duplicate is found)
+            query_mock = MagicMock()
+            query_mock.execute.return_value.data = []
+            
+            t.select.return_value.eq.return_value.eq.return_value.neq.return_value = query_mock
+            t.select.return_value.eq.return_value.execute.return_value.data = []
+            
+            # 3. Insert new booking
+            t.insert.return_value.execute.return_value.data = [inserted_booking]
+        elif table_name == "venue_blocks":
+            # 4. Check schedule conflicts (return empty list)
+            t.select.return_value.eq.return_value.lt.return_value.gt.return_value.execute.return_value.data = []
+        return t
 
-    # Mock venue query returning buffers and operating hours
-    table_mock.select.return_value.eq.return_value.execute.return_value.data = [
-        {"setup_time_minutes": 30, "turnaround_time_minutes": 30, "operating_hours": {"open": "08:00", "close": "22:00"}}
-    ]
-    # Mock no duplicates & no conflicts
-    table_mock.select.return_value.eq.return_value.eq.return_value.neq.return_value.neq.return_value.execute.return_value.data = []
-    table_mock.select.return_value.eq.return_value.lt.return_value.gt.return_value.execute.return_value.data = []
-    table_mock.insert.return_value.execute.return_value.data = [inserted_booking]
+    mock_client.table.side_effect = mock_table
 
     result = create_venue_booking("token", "venue-1", valid_create_request, "coord-1")
 

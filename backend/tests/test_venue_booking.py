@@ -77,22 +77,34 @@ def test_create_venue_booking_fetches_buffers_from_venue(monkeypatch):
         end_at = now + timedelta(days=1, hours=2)
 
     mock_client = MagicMock()
-    # Mock venue fetching returning 30 mins setup and 45 mins turnaround
-    mock_client.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
-        {"setup_time_minutes": 30, "turnaround_time_minutes": 45, "operating_hours": None}
-    ]
-    mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.neq.return_value.neq.return_value.execute.return_value.data = []
-    mock_client.table.return_value.select.return_value.eq.return_value.lt.return_value.gt.return_value.execute.return_value.data = []
-    
     inserted_payload = {}
-    def capture_insert(data):
-        nonlocal inserted_payload
-        inserted_payload = data
-        m = MagicMock()
-        m.execute.return_value.data = [{"booking_id": "b_1"}]
-        return m
 
-    mock_client.table.return_value.insert.side_effect = capture_insert
+    def mock_table(table_name):
+        t = MagicMock()
+        if table_name == "venues":
+            t.select().eq().execute().data = [
+                {
+                    "setup_time_minutes": 30,
+                    "turnaround_time_minutes": 45,
+                    "operating_hours": None,
+                }
+            ]
+        elif table_name == "venue_bookings":
+            t.select().eq().eq().neq().execute().data = []  # No duplicate request exists
+            
+            def capture_insert(data):
+                nonlocal inserted_payload
+                inserted_payload = data
+                m = MagicMock()
+                m.execute.return_value.data = [{"booking_id": "b_1"}]
+                return m
+            
+            t.insert.side_effect = capture_insert
+        elif table_name == "venue_blocks":
+            t.select().eq().lt().gt().execute().data = []  # No schedule conflict
+        return t
+
+    mock_client.table.side_effect = mock_table
     monkeypatch.setattr("config.get_user_client", lambda token: mock_client)
 
     result = services.venue_booking_service.create_venue_booking(

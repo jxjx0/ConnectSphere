@@ -36,8 +36,11 @@ def is_within_operating_hours(start_dt: datetime, end_dt: datetime, operating_ho
     except ValueError:
         return True
 
-    return start_dt.time() >= open_time and end_dt.time() <= close_time
+    # Strip tzinfo or use time component directly
+    s_time = start_dt.time()
+    e_time = end_dt.time()
 
+    return s_time >= open_time and e_time <= close_time
 
 def get_safety_review_queue(access_token: str) -> list[dict]:
     """Retrieve all pending safety review events in FIFO order (created_at ASC)."""
