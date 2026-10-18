@@ -73,6 +73,15 @@ def _require_safety_officer() -> Profile:
     return profile
 
 
+def _notify_coordinator_leads(event) -> None:
+    notification_service.notify_role(
+        Role.EVENT_COORDINATOR_LEAD.value,
+        "event_submitted",
+        "New event request submitted",
+        f"A new event request '{event.name}' has been submitted for assignment.",
+        event.id,
+    )
+
 
 @events_bp.post("")
 @require_auth
@@ -86,6 +95,7 @@ def submit_event():
 
     _require_organiser()
     event = event_service.submit_event(g.access_token, g.user_id, event_request)
+    _notify_coordinator_leads(event)
     return jsonify({"event": event.model_dump(mode="json")}), 201
 
 
@@ -132,6 +142,24 @@ def respond_to_event_clarification(event_id):
     _require_organiser()
     clarification = event_service.respond_to_event_clarification(
         g.access_token, g.user_id, event_id, clarification_response
+    )
+    try:
+        event = event_service.get_my_event(g.access_token, g.user_id, event_id)
+    except Exception:
+        logger.exception(
+            "Could not load event %s after saving clarification response", event_id
+        )
+        return jsonify({"clarification": clarification.model_dump(mode="json")}), 200
+
+    notification_service.notify(
+        event.coordinator_id,
+        "event_clarification_responded",
+        "Clarification response received",
+        (
+            f"The Organiser responded to the clarification for event request "
+            f"'{event.name}': {clarification.organiser_response}"
+        ),
+        event_id,
     )
     return jsonify({"clarification": clarification.model_dump(mode="json")}), 200
 
@@ -298,6 +326,13 @@ def approve_assigned_event(event_id):
     event = event_service.decide_assigned_event(
         g.access_token, g.user_id, event_id, EventStatus.PLANNING
     )
+    notification_service.notify(
+        event.organiser_id,
+        "event_approved",
+        "Event request approved",
+        f"The proposed event request '{event.name}' has been approved.",
+        event.id,
+    )
     return jsonify({"event": event.model_dump(mode="json")}), 200
 
 
@@ -307,6 +342,13 @@ def reject_assigned_event(event_id):
     _require_coordinator()
     event = event_service.decide_assigned_event(
         g.access_token, g.user_id, event_id, EventStatus.REJECTED
+    )
+    notification_service.notify(
+        event.organiser_id,
+        "event_rejected",
+        "Event request rejected",
+        f"The proposed event request '{event.name}' has been rejected.",
+        event.id,
     )
     return jsonify({"event": event.model_dump(mode="json")}), 200
 
@@ -432,6 +474,7 @@ def submit_draft(draft_id):
     event = event_service.submit_draft(
         g.access_token, g.user_id, draft_id, event_request
     )
+    _notify_coordinator_leads(event)
     return jsonify({"event": event.model_dump(mode="json")}), 200
 
 

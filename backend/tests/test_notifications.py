@@ -106,6 +106,57 @@ def test_notify_saves_row_and_sends_email(monkeypatch, sent_emails):
     ]
 
 
+def test_notify_role_sends_to_profiles_with_that_role(monkeypatch):
+    recipients = [USER_ID, "77777777-7777-7777-7777-777777777777"]
+    captured = []
+
+    class FakeProfiles:
+        def table(self, name):
+            assert name == "profiles"
+            return self
+
+        def select(self, columns):
+            assert columns == "id"
+            return self
+
+        def eq(self, column, value):
+            assert (column, value) == ("role", "event_coordinator_lead")
+            return self
+
+        def execute(self):
+            return SimpleNamespace(data=[{"id": recipient} for recipient in recipients])
+
+    monkeypatch.setattr(
+        notification_service.config,
+        "get_admin_client",
+        lambda: FakeProfiles(),
+    )
+    monkeypatch.setattr(
+        notification_service,
+        "notify",
+        lambda *args: captured.append(args),
+    )
+
+    notification_service.notify_role(
+        "event_coordinator_lead",
+        "event_submitted",
+        "New event request submitted",
+        "A new event request 'Summit' has been submitted for assignment.",
+        EVENT_ID,
+    )
+
+    assert captured == [
+        (
+            recipient,
+            "event_submitted",
+            "New event request submitted",
+            "A new event request 'Summit' has been submitted for assignment.",
+            EVENT_ID,
+        )
+        for recipient in recipients
+    ]
+
+
 def test_notify_keeps_row_when_email_fails(monkeypatch, caplog):
     use_admin_client(monkeypatch, FakeAdminClient())
 
