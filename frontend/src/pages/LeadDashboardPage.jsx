@@ -438,7 +438,9 @@ export default function LeadDashboardPage() {
                             }}
                           >
                             <div>
-                              <strong>Reassigned to: </strong>
+                              <strong>
+                                {log.action_type === 'ASSIGNMENT' ? 'Assigned to: ' : 'Reassigned to: '}
+                              </strong>
                               {log.new_coordinator?.full_name || 'Coordinator'}
                               {log.previous_coordinator && (
                                 <span> (previously {log.previous_coordinator.full_name})</span>
