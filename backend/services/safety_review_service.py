@@ -20,6 +20,8 @@ def _get_client(access_token: str | None = None):
         return get_user_client(access_token or "")
 
 
+from datetime import datetime, time, timezone
+
 def is_within_operating_hours(start_dt: datetime, end_dt: datetime, operating_hours: dict | None) -> bool:
     """Verify if requested start and end times fall within venue operating hours."""
     if not operating_hours or not isinstance(operating_hours, dict):
@@ -31,10 +33,9 @@ def is_within_operating_hours(start_dt: datetime, end_dt: datetime, operating_ho
         return True
 
     try:
-        # Support both HH:MM and HH:MM:SS formats safely
         open_raw = str(open_str).strip()
         close_raw = str(close_str).strip()
-        
+
         fmt_open = "%H:%M:%S" if len(open_raw) == 8 else "%H:%M"
         fmt_close = "%H:%M:%S" if len(close_raw) == 8 else "%H:%M"
 
@@ -44,10 +45,18 @@ def is_within_operating_hours(start_dt: datetime, end_dt: datetime, operating_ho
         logger.warning(f"Failed to parse venue operating hours '{operating_hours}': {exc}")
         return True
 
-    start_time = start_dt.time() if isinstance(start_dt, datetime) else start_dt
-    end_time = end_dt.time() if isinstance(end_dt, datetime) else end_dt
+    # Ensure naive datetime comparison or strip timezone offsets cleanly
+    if isinstance(start_dt, datetime):
+        # Convert timezone-aware datetimes to naive time
+        start_time = start_dt.timetz().replace(tzinfo=None) if start_dt.tzinfo else start_dt.time()
+    else:
+        start_time = start_dt
 
-    # Both conditions must be met: start after open AND end before close
+    if isinstance(end_dt, datetime):
+        end_time = end_dt.timetz().replace(tzinfo=None) if end_dt.tzinfo else end_dt.time()
+    else:
+        end_time = end_dt
+
     if start_time < open_time or end_time > close_time:
         return False
 
