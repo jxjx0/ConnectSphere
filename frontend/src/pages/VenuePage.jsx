@@ -20,6 +20,10 @@ import BlockForm from "../components/BlockForm";
 
 const EMPTY_LAYOUT = { name: '', capacity: '' }
 
+function RequiredMark() {
+  return <span aria-hidden="true" style={{ color: 'var(--danger)' }}>*</span>
+}
+
 function emptyForm() {
   return {
     name: '',
@@ -251,8 +255,9 @@ export default function VenuePage({ createMode = false }) {
           <h2 className="section-title">Venue details</h2>
 
           <form className="form" onSubmit={handleSubmit}>
+            <p className="field__hint">Fields marked * are required.</p>
             <div className="field">
-              <label htmlFor="venueName">Venue name</label>
+              <label htmlFor="venueName">Venue name <RequiredMark /></label>
               <input
                 id="venueName"
                 value={form.name}
@@ -272,7 +277,7 @@ export default function VenuePage({ createMode = false }) {
             </div>
 
             <div className="field">
-              <label htmlFor="capacity">Maximum Overall Capacity</label>
+              <label htmlFor="capacity">Maximum Overall Capacity <RequiredMark /></label>
               <input
                 id="capacity"
                 type="number"
@@ -284,7 +289,7 @@ export default function VenuePage({ createMode = false }) {
             </div>
 
             <div className="field">
-              <label>Facilities (optional)</label>
+              <label>Facilities</label>
               <div className="repeater">
                 {form.facilities.map((facility, index) => (
                   <div className="repeater__row" key={index}>
@@ -334,22 +339,20 @@ export default function VenuePage({ createMode = false }) {
                       value={feature}
                       onChange={(event) => updateAccessibility(index, event.target.value)}
                     />
-                    {form.accessibility.length > 1 && (
-                      <button
-                        type="button"
-                        className="button button--secondary button--small"
-                        onClick={() =>
-                          setForm((current) => ({
-                            ...current,
-                            accessibility: current.accessibility.filter(
-                              (_, featureIndex) => featureIndex !== index,
-                            ),
-                          }))
-                        }
-                      >
-                        Remove
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className="button button--secondary button--small"
+                      onClick={() =>
+                        setForm((current) => ({
+                          ...current,
+                          accessibility: current.accessibility.filter(
+                            (_, featureIndex) => featureIndex !== index,
+                          ),
+                        }))
+                      }
+                    >
+                      Remove
+                    </button>
                   </div>
                 ))}
               </div>
@@ -368,7 +371,7 @@ export default function VenuePage({ createMode = false }) {
             </div>
 
             <div className="field">
-              <label>Supported layouts</label>
+              <label>Supported layouts <RequiredMark /></label>
               <div className="repeater">
                 {form.layouts.map((layout, index) => (
                   <div className="repeater__row repeater__row--layout" key={index}>
@@ -425,7 +428,7 @@ export default function VenuePage({ createMode = false }) {
               <label>Operating hours</label>
               <div className="repeater__row repeater__row--equal">
                 <div className="repeater__field">
-                  <label htmlFor="openingTime">Opening time</label>
+                  <label htmlFor="openingTime">Opening time <RequiredMark /></label>
                   <input
                     id="openingTime"
                     type="time"
@@ -435,7 +438,7 @@ export default function VenuePage({ createMode = false }) {
                   />
                 </div>
                 <div className="repeater__field">
-                  <label htmlFor="closingTime">Closing time</label>
+                  <label htmlFor="closingTime">Closing time <RequiredMark /></label>
                   <input
                     id="closingTime"
                     type="time"
@@ -450,13 +453,13 @@ export default function VenuePage({ createMode = false }) {
             <div className="field">
               <div className="repeater__row repeater__row--equal">
                 <div className="repeater__field">
-                  <label htmlFor="setupTime">Setup time (minutes)</label>
+                  <label htmlFor="setupTime">Setup time (minutes) <RequiredMark /></label>
                   <input id="setupTime" type="number" min="0" step="1" max="2147483647" required
                     aria-describedby="venueBufferHint" value={form.setup_time_minutes}
                     onChange={(event) => updateField('setup_time_minutes', event.target.value)} />
                 </div>
                 <div className="repeater__field">
-                  <label htmlFor="turnaroundTime">Turnaround time (minutes)</label>
+                  <label htmlFor="turnaroundTime">Turnaround time (minutes) <RequiredMark /></label>
                   <input id="turnaroundTime" type="number" min="0" step="1" max="2147483647" required
                     aria-describedby="venueBufferHint" value={form.turnaround_time_minutes}
                     onChange={(event) => updateField('turnaround_time_minutes', event.target.value)} />

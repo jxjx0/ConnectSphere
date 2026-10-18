@@ -58,6 +58,7 @@ function harness({ edit = false, history = [] } = {}) {
     states, writes, navigations, tree,
     html: () => renderToStaticMarkup(tree()),
     field: id => find(tree(), node => node.props.id === id),
+    button: label => find(tree(), node => node.type === 'button' && node.props.children === label),
     submit: () => find(tree(), node => node.type === 'form').props.onSubmit({ preventDefault() {} }),
     load: async () => { tree(); effects[0](); await new Promise(resolve => setImmediate(resolve)) },
   }
@@ -118,6 +119,21 @@ for (const id of ['setupTime', 'turnaroundTime']) {
     })
   }
 }
+
+test('the final accessibility row can be removed and the venue saved without features', async () => {
+  const page = harness({ edit: true })
+  await page.load()
+  page.button('Add accessibility feature').props.onClick()
+  assert.deepEqual(page.states[0].accessibility, [''])
+  await page.submit()
+  assert.equal(page.writes.length, 0)
+  assert.match(page.html(), /Accessibility features must not be blank/)
+  page.button('Remove').props.onClick()
+  assert.deepEqual(page.states[0].accessibility, [])
+  await page.submit()
+  assert.equal(page.writes.length, 1)
+  assert.deepEqual(page.writes[0].payload.accessibility, [])
+})
 
 test('buffer audit history displays labels and minute values', async () => {
   const page = harness({ edit: true, history: [{ id: 'audit', changed_at: '2026-10-16T09:00Z',

@@ -98,10 +98,8 @@ export function venueAvailabilityLabel(venue) {
 export function venueAvailabilitySummary(result) {
   const timed = result.requested_period || result.venues.some((venue) => venue.requested_start)
   if (!timed || (!result.warnings.length && !result.venues.some((venue) => venue.availability_status === 'unverified'))) return ''
-  // TODO: Revisit this temporary summary when real booking/hold occupancy,
-  // hold expiry and persisted venue buffers are integrated. Fully verified
-  // responses already omit it; keep partial responses honest during integration.
-  return 'Availability is partially verified. Operational venue blocks have been checked, but confirmed bookings, tentative holds and setup/turnaround buffers have not all been verified.'
+  // Keep this source-neutral: completed checks vary between responses.
+  return 'Availability is partially verified. Some reservation conflicts may not be shown.'
 }
 
 export function normalizeAccessibility(value) {
