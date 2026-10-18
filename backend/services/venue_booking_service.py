@@ -41,22 +41,28 @@ def check_schedule_conflict_details(client, venue_id: str, effective_start: str,
 
 
 def check_duplicate_event_booking(client, venue_id: str, event_id: str) -> None:
-    """Prevent submitting multiple active booking requests for the same venue and event."""
+    """Disallow submitting a booking request if any prior request exists for this venue and event, including rejected ones."""
     if not event_id:
         return
 
+    # Fetch any prior request for this venue/event pair (excluding voluntarily cancelled ones)
     existing = (
         client.table("venue_bookings")
         .select("booking_id, status")
         .eq("venue_id", venue_id)
         .eq("event_id", event_id)
-        .neq("status", "REJECTED")
-        .neq("status", "CANCELLED")
+        .neq("status", "CANCELLED")  # Allows resubmission only if the coordinator voluntarily cancelled
         .execute()
         .data
     )
 
     if existing:
+        last_status = existing[0].get("status")
+        if last_status in ("REJECTED", "REJECTED_BY_SAFETY"):
+            raise AuthError(
+                "A booking request for this venue and event was previously rejected and cannot be resubmitted.",
+                status_code=409,
+            )
         raise AuthError(
             "A booking request for this venue and event has already been submitted.",
             status_code=409,

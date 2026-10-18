@@ -1,7 +1,9 @@
 """Service module for Safety Officer review queues and event safety details."""
 
+from datetime import datetime
 import logging
 from postgrest import APIError as PostgrestAPIError
+
 from config import get_user_client
 from services.auth_service import AuthError
 from services.notification_service import notify
@@ -9,15 +11,38 @@ from services.notification_service import notify
 logger = logging.getLogger(__name__)
 
 
+def _get_client(access_token: str | None = None):
+    """Utility helper to prefer service/admin client if configured, falling back to user client."""
+    try:
+        from config import get_admin_client
+        return get_admin_client()
+    except Exception:
+        return get_user_client(access_token or "")
+
+
+def is_within_operating_hours(start_dt: datetime, end_dt: datetime, operating_hours: dict | None) -> bool:
+    """Verify if requested start and end times fall within venue operating hours."""
+    if not operating_hours or not isinstance(operating_hours, dict):
+        return True
+
+    open_str = operating_hours.get("open")
+    close_str = operating_hours.get("close")
+    if not open_str or not close_str:
+        return True
+
+    try:
+        open_time = datetime.strptime(open_str, "%H:%M").time()
+        close_time = datetime.strptime(close_str, "%H:%M").time()
+    except ValueError:
+        return True
+
+    return start_dt.time() >= open_time and end_dt.time() <= close_time
+
+
 def get_safety_review_queue(access_token: str) -> list[dict]:
     """Retrieve all pending safety review events in FIFO order (created_at ASC)."""
     try:
-        try:
-            from config import get_admin_client
-            client = get_admin_client()
-        except Exception:
-            client = get_user_client(access_token)
-
+        client = _get_client(access_token)
         response = (
             client.table("events")
             .select("*, coordinator:coordinator_id!left(id, full_name, role)")
@@ -27,25 +52,15 @@ def get_safety_review_queue(access_token: str) -> list[dict]:
         )
         return response.data or []
     except PostgrestAPIError as exc:
-        raise AuthError(
-            f"Failed to fetch safety review queue: {exc.message}",
-            status_code=400,
-        )
+        raise AuthError(f"Failed to fetch safety review queue: {exc.message}", status_code=400)
     except Exception as exc:
-        raise AuthError(
-            f"Internal server error while fetching safety queue: {str(exc)}",
-            status_code=500,
-        )
+        raise AuthError(f"Internal server error while fetching safety queue: {str(exc)}", status_code=500)
 
 
 def get_safety_event_details(event_id: str, access_token: str) -> dict:
     """Retrieve full event, venue, equipment, and automated safety flags."""
     try:
-        try:
-            from config import get_admin_client
-            client = get_admin_client()
-        except Exception:
-            client = get_user_client(access_token)
+        client = _get_client(access_token)
 
         # 1. Fetch Event with Left-Joined Coordinator
         event_res = (
@@ -105,19 +120,51 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
         # 4. Automated Safety Flag & Clash Detection
         flags = []
         expected_attendance = event.get("expected_attendance") or 0
-        venue_capacity = 0
-        if isinstance(venue, dict):
-            venue_capacity = venue.get("capacity") or 0
+        
+        # Room layout capacity check
+        requested_layout = booking.get("room_layout") if isinstance(booking, dict) else None
+        supported_layouts = venue.get("layouts") or [] if isinstance(venue, dict) else []
+        
+        # Normalize layouts if stored as object dictionary or array
+        if isinstance(supported_layouts, dict):
+            supported_layouts = [{"name": k, "capacity": v} for k, v in supported_layouts.items()]
 
-        # Flag 1: Capacity Exceeded
-        if venue_capacity > 0 and expected_attendance > venue_capacity:
+        layout_capacity = 0
+        if requested_layout and isinstance(supported_layouts, list):
+            layout_match = next(
+                (l for l in supported_layouts if isinstance(l, dict) and l.get("name", "").lower() == requested_layout.lower()),
+                None
+            )
+            if layout_match:
+                layout_capacity = layout_match.get("capacity") or 0
+
+        # Flag 1: Capacity Exceeded for Selected Layout
+        if layout_capacity > 0 and expected_attendance > layout_capacity:
             flags.append({
                 "type": "CAPACITY_EXCEEDED",
                 "severity": "HIGH",
-                "message": f"Expected attendance ({expected_attendance}) exceeds venue capacity ({venue_capacity}).",
+                "message": f"Expected attendance ({expected_attendance}) exceeds capacity ({layout_capacity}) for layout '{requested_layout}'.",
             })
 
-        # Flag 2: Equipment Under Maintenance / Damaged
+        # Flag 2: Operating Hours Violation
+        if booking and isinstance(venue, dict):
+            op_hours = venue.get("operating_hours")
+            start_str = booking.get("start_at")
+            end_str = booking.get("end_at")
+            if op_hours and start_str and end_str:
+                try:
+                    start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                    end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+                    if not is_within_operating_hours(start_dt, end_dt, op_hours):
+                        flags.append({
+                            "type": "OPERATING_HOURS_VIOLATION",
+                            "severity": "HIGH",
+                            "message": f"Event schedule ({start_dt.strftime('%H:%M')} - {end_dt.strftime('%H:%M')}) falls outside venue operating hours ({op_hours.get('open')} - {op_hours.get('close')}).",
+                        })
+                except ValueError:
+                    pass
+
+        # Flag 3: Equipment Under Maintenance / Damaged
         for item in equipment_items:
             equip = item.get("equipment") or {}
             m_status = equip.get("maintenance_status") or "Unknown"
@@ -128,9 +175,9 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
                     "message": f"Requested equipment '{equip.get('name', 'Item')}' is currently marked as '{m_status}'.",
                 })
 
-        # Flag 3: Accessibility Requirements Misalignment
+        # Flag 4: Accessibility Requirements Misalignment
         accessibility_req = (event.get("accessibility_requirements") or "").lower()
-        venue_access = venue.get("accessibility") or []
+        venue_access = venue.get("accessibility") or [] if isinstance(venue, dict) else []
         is_accessible = any("wheelchair" in str(feature).lower() for feature in venue_access)
 
         if "wheelchair" in accessibility_req and not is_accessible:
@@ -140,7 +187,7 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
                 "message": "Event specifies wheelchair accessibility needs, but the venue is not marked as accessible.",
             })
 
-        # Flag 4: Large Crowd Safety Protocol
+        # Flag 5: Large Crowd Safety Protocol
         if expected_attendance >= 500:
             flags.append({
                 "type": "LARGE_CROWD_PROTOCOL",
@@ -158,15 +205,9 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
     except AuthError:
         raise
     except PostgrestAPIError as exc:
-        raise AuthError(
-            f"Failed to fetch safety event details: {exc.message}",
-            status_code=400,
-        )
+        raise AuthError(f"Failed to fetch safety event details: {exc.message}", status_code=400)
     except Exception as exc:
-        raise AuthError(
-            f"Internal error processing event details: {str(exc)}",
-            status_code=500,
-        )
+        raise AuthError(f"Internal error processing event details: {str(exc)}", status_code=500)
 
 
 def _safety_check_blockers(client, event: dict) -> list[str]:
@@ -199,11 +240,7 @@ def _safety_check_blockers(client, event: dict) -> list[str]:
 def request_safety_check(event_id: str, access_token: str) -> dict:
     """Send an event to the Safety Officer once its venue and equipment are approved."""
     try:
-        try:
-            from config import get_admin_client
-            client = get_admin_client()
-        except Exception:
-            client = get_user_client(access_token)
+        client = _get_client(access_token)
 
         event_res = (
             client.table("events")
@@ -216,17 +253,11 @@ def request_safety_check(event_id: str, access_token: str) -> dict:
         event = event_res.data[0]
 
         if event.get("safety_status") in ("pending", "approved"):
-            raise AuthError(
-                "A safety check has already been requested for this event.",
-                status_code=409,
-            )
+            raise AuthError("A safety check has already been requested for this event.", status_code=409)
 
         blockers = _safety_check_blockers(client, event)
         if blockers:
-            raise AuthError(
-                "This event is not ready for a safety check: " + "; ".join(blockers) + ".",
-                status_code=409,
-            )
+            raise AuthError("This event is not ready for a safety check: " + "; ".join(blockers) + ".", status_code=409)
 
         response = (
             client.table("events")
@@ -238,10 +269,8 @@ def request_safety_check(event_id: str, access_token: str) -> dict:
     except AuthError:
         raise
     except PostgrestAPIError as exc:
-        raise AuthError(
-            f"Failed to request safety check: {exc.message}",
-            status_code=400,
-        )
+        raise AuthError(f"Failed to request safety check: {exc.message}", status_code=400)
+
 
 def submit_safety_decision(
     event_id: str,
@@ -259,11 +288,7 @@ def submit_safety_decision(
         raise AuthError(f"A detailed reason is required when marking an event as {decision}.", status_code=400)
 
     try:
-        try:
-            from config import get_admin_client
-            client = get_admin_client()
-        except Exception:
-            client = get_user_client(access_token)
+        client = _get_client(access_token)
 
         # 1. Fetch current event state
         event_res = (
@@ -293,9 +318,6 @@ def submit_safety_decision(
         event_name = event.get("name", "your event")
 
         # 3. Handle Decision Outcomes (ONLY update safety_status on events)
-        # -------------------------------------------------------------------
-        # DECISION A: APPROVED
-        # -------------------------------------------------------------------
         if decision == "approved":
             event_update = {
                 "safety_status": "approved",
@@ -313,11 +335,8 @@ def submit_safety_decision(
                 )
             return updated_res.data[0]
 
-        # -------------------------------------------------------------------
-        # DECISION B: REJECTED
-        # -------------------------------------------------------------------
         if decision == "rejected":
-            # Release venue bookings and delete operational schedule blocks
+            # Release venue bookings to REJECTED_BY_SAFETY and delete operational schedule blocks
             venue_bookings = (
                 client.table("venue_bookings")
                 .select("booking_id, venue_id")
@@ -362,9 +381,6 @@ def submit_safety_decision(
                 )
             return updated_res.data[0]
 
-        # -------------------------------------------------------------------
-        # DECISION C: CHANGES REQUESTED
-        # -------------------------------------------------------------------
         if decision == "changes_requested":
             event_update = {
                 "safety_status": "changes_requested",
