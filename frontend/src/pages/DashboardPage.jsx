@@ -108,6 +108,20 @@ export default function DashboardPage() {
         </section> 
       )} 
 
+      {user.role === 'event_coordinator_lead' && ( 
+        <section className="stack stack--tight"> 
+          <h2 className="section-title">Event Overview</h2>
+          <div className="form-actions"> 
+            <Link to="/lead/dashboard" className="button"> 
+              View Event Overview 
+            </Link> 
+            <Link to="/events/unassigned-queue" className="button button--secondary"> 
+              View Unassigned Events 
+            </Link> 
+          </div> 
+        </section> 
+      )} 
+
       <section className="stack stack--tight">
         <h2 className="section-title">Your account</h2>
 

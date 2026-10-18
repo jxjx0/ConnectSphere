@@ -16,8 +16,9 @@ from models.event import (
 )
 from models.profile import Profile, Role
 from routes.auth import require_auth
-from services import auth_service, event_service, notification_service
+from services import auth_service, event_service, notification_service, overview_coordinator_events_service, event_assignment_service
 from services.auth_service import AuthError
+from models.event import Event
 
 events_bp = Blueprint("events", __name__, url_prefix="/events")
 
@@ -49,12 +50,17 @@ def _require_coordinator() -> Profile:
     Returns the profile, for handlers that need the Coordinator's name.
     """
     profile = auth_service.get_profile(g.access_token, g.user_id)
-    if profile.role != Role.COORDINATOR:
+    allowed_roles = [
+        Role.COORDINATOR,
+        getattr(Role, "EVENT_COORDINATOR_LEAD", "event_coordinator_lead"),
+    ]
+    if profile.role not in allowed_roles:
         raise AuthError(
-            "Only Event Coordinators can review event requests.",
+            "Only Event Coordinators and Lead Coordinators can review event requests.",
             status_code=403,
         )
     return profile
+
 
 
 @events_bp.post("")
@@ -452,7 +458,7 @@ def get_event_history(event_id):
 @events_bp.post("/review/<event_id>/reassign")
 @require_auth
 def reassign_event(event_id):
-    """Reassign event coordinator with reason logging."""
+    """Assign or reassign an event's coordinator, with an audit log entry."""
     data = request.get_json() or {}
     new_coordinator_id = data.get("new_coordinator_id")
     reason = data.get("reason", "").strip()
@@ -461,13 +467,41 @@ def reassign_event(event_id):
         return jsonify({"error": "Please select a coordinator to reassign to."}), 400
 
     try:
-        updated_event = event_service.reassign_event(
+        updated_event = event_assignment_service.assign_or_reassign_event(
             event_id=event_id,
             new_coordinator_id=new_coordinator_id,
             changed_by_id=g.user_id,
-            reason=reason,
-            access_token=g.access_token,
+            reason=reason or None,
         )
         return jsonify({"event": updated_event}), 200
+    except AuthError:
+        raise
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    
+
+@events_bp.get("/lead-overview")
+@require_auth
+def get_lead_overview():
+    try:
+        raw_events = overview_coordinator_events_service.get_lead_coordinator_events(
+            access_token=g.access_token
+        )
+        formatted_events = Event.format_lead_overview(raw_events)
+        return jsonify(formatted_events), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    
+
+@events_bp.get("/unassigned-queue")
+@require_auth
+def get_unassigned_queue():
+    """Fetch unassigned events queue for Lead Coordinators."""
+    _require_coordinator()
+    try:
+        queue = event_assignment_service.get_unassigned_events_queue(
+            access_token=g.access_token
+        )
+        return jsonify(queue), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400
