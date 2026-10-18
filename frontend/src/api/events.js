@@ -182,6 +182,14 @@ export function getSafetyEventDetails(eventId, token) {
   return request(`/events/safety/review/${eventId}`, { token })
 }
 
+export function submitSafetyDecision(eventId, { decision, notes, reason }, token) {
+  return request(`/events/safety/review/${eventId}/decision`, {
+    method: 'POST',
+    body: { decision, notes, reason },
+    token,
+  })
+}
+
 export function requestSafetyCheck(eventId, token) {
   return request(`/events/${eventId}/request-safety-check`, {
     method: 'POST',
