@@ -13,8 +13,6 @@ class VenueBookingCreateRequest(BaseModel):
     room_layout: str = Field(min_length=1, max_length=100)
     start_at: datetime
     end_at: datetime
-    setup_buffer_minutes: int = Field(default=0, ge=0, le=1440)
-    teardown_buffer_minutes: int = Field(default=0, ge=0, le=1440)
 
     @field_validator("start_at", "end_at")
     @classmethod
