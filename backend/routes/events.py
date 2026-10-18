@@ -1,6 +1,7 @@
 """Event request endpoints. Thin handlers: parse, call the service, return JSON."""
 
 import logging
+import traceback
 
 from flask import Blueprint, g, jsonify, request
 from pydantic import ValidationError
@@ -16,8 +17,9 @@ from models.event import (
 )
 from models.profile import Profile, Role
 from routes.auth import require_auth
-from services import auth_service, event_service, notification_service
+from services import auth_service, event_service, notification_service, overview_coordinator_events_service, event_assignment_service, safety_review_service
 from services.auth_service import AuthError
+from models.event import Event
 
 events_bp = Blueprint("events", __name__, url_prefix="/events")
 
@@ -49,12 +51,36 @@ def _require_coordinator() -> Profile:
     Returns the profile, for handlers that need the Coordinator's name.
     """
     profile = auth_service.get_profile(g.access_token, g.user_id)
-    if profile.role != Role.COORDINATOR:
+    allowed_roles = [
+        Role.COORDINATOR,
+        getattr(Role, "EVENT_COORDINATOR_LEAD", "event_coordinator_lead"),
+    ]
+    if profile.role not in allowed_roles:
         raise AuthError(
-            "Only Event Coordinators can review event requests.",
+            "Only Event Coordinators and Lead Coordinators can review event requests.",
             status_code=403,
         )
     return profile
+
+def _require_safety_officer() -> Profile:
+    """Require the authenticated profile to have the Safety Officer role."""
+    profile = auth_service.get_profile(g.access_token, g.user_id)
+    if profile.role != Role.SAFETY_OFFICER:
+        raise AuthError(
+            "Only Safety Officers are authorized to access safety review tasks.",
+            status_code=403,
+        )
+    return profile
+
+
+def _notify_coordinator_leads(event) -> None:
+    notification_service.notify_role(
+        Role.EVENT_COORDINATOR_LEAD.value,
+        "event_submitted",
+        "New event request submitted",
+        f"A new event request '{event.name}' has been submitted for assignment.",
+        event.id,
+    )
 
 
 @events_bp.post("")
@@ -69,6 +95,7 @@ def submit_event():
 
     _require_organiser()
     event = event_service.submit_event(g.access_token, g.user_id, event_request)
+    _notify_coordinator_leads(event)
     return jsonify({"event": event.model_dump(mode="json")}), 201
 
 
@@ -115,6 +142,24 @@ def respond_to_event_clarification(event_id):
     _require_organiser()
     clarification = event_service.respond_to_event_clarification(
         g.access_token, g.user_id, event_id, clarification_response
+    )
+    try:
+        event = event_service.get_my_event(g.access_token, g.user_id, event_id)
+    except Exception:
+        logger.exception(
+            "Could not load event %s after saving clarification response", event_id
+        )
+        return jsonify({"clarification": clarification.model_dump(mode="json")}), 200
+
+    notification_service.notify(
+        event.coordinator_id,
+        "event_clarification_responded",
+        "Clarification response received",
+        (
+            f"The Organiser responded to the clarification for event request "
+            f"'{event.name}': {clarification.organiser_response}"
+        ),
+        event_id,
     )
     return jsonify({"clarification": clarification.model_dump(mode="json")}), 200
 
@@ -281,6 +326,13 @@ def approve_assigned_event(event_id):
     event = event_service.decide_assigned_event(
         g.access_token, g.user_id, event_id, EventStatus.PLANNING
     )
+    notification_service.notify(
+        event.organiser_id,
+        "event_approved",
+        "Event request approved",
+        f"The proposed event request '{event.name}' has been approved.",
+        event.id,
+    )
     return jsonify({"event": event.model_dump(mode="json")}), 200
 
 
@@ -290,6 +342,13 @@ def reject_assigned_event(event_id):
     _require_coordinator()
     event = event_service.decide_assigned_event(
         g.access_token, g.user_id, event_id, EventStatus.REJECTED
+    )
+    notification_service.notify(
+        event.organiser_id,
+        "event_rejected",
+        "Event request rejected",
+        f"The proposed event request '{event.name}' has been rejected.",
+        event.id,
     )
     return jsonify({"event": event.model_dump(mode="json")}), 200
 
@@ -415,6 +474,7 @@ def submit_draft(draft_id):
     event = event_service.submit_draft(
         g.access_token, g.user_id, draft_id, event_request
     )
+    _notify_coordinator_leads(event)
     return jsonify({"event": event.model_dump(mode="json")}), 200
 
 
@@ -452,7 +512,7 @@ def get_event_history(event_id):
 @events_bp.post("/review/<event_id>/reassign")
 @require_auth
 def reassign_event(event_id):
-    """Reassign event coordinator with reason logging."""
+    """Assign or reassign an event's coordinator, with an audit log entry."""
     data = request.get_json() or {}
     new_coordinator_id = data.get("new_coordinator_id")
     reason = data.get("reason", "").strip()
@@ -461,13 +521,85 @@ def reassign_event(event_id):
         return jsonify({"error": "Please select a coordinator to reassign to."}), 400
 
     try:
-        updated_event = event_service.reassign_event(
+        updated_event = event_assignment_service.assign_or_reassign_event(
             event_id=event_id,
             new_coordinator_id=new_coordinator_id,
             changed_by_id=g.user_id,
-            reason=reason,
-            access_token=g.access_token,
+            reason=reason or None,
         )
         return jsonify({"event": updated_event}), 200
+    except AuthError:
+        raise
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+    
+
+@events_bp.get("/lead-overview")
+@require_auth
+def get_lead_overview():
+    try:
+        raw_events = overview_coordinator_events_service.get_lead_coordinator_events(
+            access_token=g.access_token
+        )
+        formatted_events = Event.format_lead_overview(raw_events)
+        return jsonify(formatted_events), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    
+
+@events_bp.get("/unassigned-queue")
+@require_auth
+def get_unassigned_queue():
+    """Fetch unassigned events queue for Lead Coordinators."""
+    _require_coordinator()
+    try:
+        queue = event_assignment_service.get_unassigned_events_queue(
+            access_token=g.access_token
+        )
+        return jsonify(queue), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@events_bp.get("/safety/queue")
+@require_auth
+def get_safety_queue():
+    """Endpoint for Safety Officers to get FIFO ordered pending events."""
+    try:
+        _require_safety_officer()
+        queue = safety_review_service.get_safety_review_queue(g.access_token)
+        return jsonify({"queue": queue}), 200
+    except AuthError as exc:
+        return jsonify({"error": exc.message}), exc.status_code
+    except Exception as exc:
+        logger.error(f"Error in /events/safety/queue: {traceback.format_exc()}")
+        return jsonify({"error": "Unable to load the safety queue."}), 500
+
+
+@events_bp.get("/safety/review/<event_id>")
+@require_auth
+def get_safety_review_details(event_id):
+    """Endpoint for inspecting event, layout, equipment, and safety flags."""
+    try:
+        _require_safety_officer()
+        details = safety_review_service.get_safety_event_details(event_id, g.access_token)
+        return jsonify(details), 200
+    except AuthError as exc:
+        return jsonify({"error": exc.message}), exc.status_code
+    except Exception as exc:
+        logger.error(f"Error in /events/safety/review/{event_id}: {traceback.format_exc()}")
+        return jsonify({"error": "Unable to load this safety review."}), 500
+
+
+@events_bp.post("/<event_id>/request-safety-check")
+@require_auth
+def request_safety_check(event_id):
+    """Endpoint for coordinators to submit an event to the safety queue."""
+    try:
+        res = safety_review_service.request_safety_check(event_id, g.access_token)
+        return jsonify(res), 200
+    except AuthError as exc:
+        return jsonify({"error": exc.message}), exc.status_code
+    except Exception as exc:
+        logger.error(f"Error requesting safety check for {event_id}: {traceback.format_exc()}")
+        return jsonify({"error": "Unable to request a safety check."}), 500

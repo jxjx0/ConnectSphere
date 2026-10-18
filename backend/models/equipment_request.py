@@ -1,5 +1,6 @@
 """Data shapes and validation for event equipment requests."""
 
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
@@ -20,3 +21,7 @@ class EquipmentRequestSubmit(BaseModel):
         if len(equipment_ids) != len(set(equipment_ids)):
             raise ValueError("Each equipment item can only be listed once.")
         return self
+
+
+class EquipmentRequestReview(BaseModel):
+    decision: Literal["Approved", "Rejected"]

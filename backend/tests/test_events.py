@@ -227,6 +227,33 @@ def test_organiser_can_submit_an_event_request(client, monkeypatch):
     assert response.get_json()["event"]["status"] == "under_review"
 
 
+def test_submitting_event_notifies_coordinator_lead(client, monkeypatch):
+    authenticate_as(monkeypatch, ORGANISER_PROFILE)
+    captured = {}
+    monkeypatch.setattr(
+        event_service, "submit_event", lambda *args: EVENT_RESPONSE
+    )
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify_role",
+        lambda *args: captured.setdefault("notification", args),
+    )
+
+    response = client.post(
+        "/events",
+        json=valid_event(),
+        headers={"Authorization": "Bearer organiser-token"},
+    )
+
+    assert response.status_code == 201
+    assert captured["notification"] == (
+        "event_coordinator_lead",
+        "event_submitted",
+        "New event request submitted",
+        "A new event request 'Annual Client Summit' has been submitted for assignment.",
+        EVENT_RESPONSE.id,
+    )
+
+
 def test_submit_passes_the_signed_in_organiser_to_the_service(
     client, monkeypatch
 ):
@@ -600,6 +627,54 @@ def test_coordinator_decision_updates_only_assigned_event_under_review(
     assert ("eq", "coordinator_id", COORDINATOR_PROFILE.id) in calls
     assert ("eq", "status", EventStatus.UNDER_REVIEW.value) in calls
     assert event.status is expected_status
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "status", "notification_type", "title", "body"),
+    [
+        (
+            "approve",
+            EventStatus.PLANNING,
+            "event_approved",
+            "Event request approved",
+            "The proposed event request 'Annual Client Summit' has been approved.",
+        ),
+        (
+            "reject",
+            EventStatus.REJECTED,
+            "event_rejected",
+            "Event request rejected",
+            "The proposed event request 'Annual Client Summit' has been rejected.",
+        ),
+    ],
+)
+def test_coordinator_event_decision_notifies_organiser(
+    client, monkeypatch, endpoint, status, notification_type, title, body
+):
+    authenticate_as(monkeypatch, COORDINATOR_PROFILE)
+    reviewed_event = EVENT_RESPONSE.model_copy(update={"status": status})
+    captured = {}
+    monkeypatch.setattr(
+        event_service, "decide_assigned_event", lambda *args: reviewed_event
+    )
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: captured.setdefault("notification", args),
+    )
+
+    response = client.post(
+        f"/events/review/{EVENT_RESPONSE.id}/{endpoint}",
+        headers={"Authorization": "Bearer coordinator-token"},
+    )
+
+    assert response.status_code == 200
+    assert captured["notification"] == (
+        ORGANISER_PROFILE.id,
+        notification_type,
+        title,
+        body,
+        EVENT_RESPONSE.id,
+    )
 
 
 def test_coordinator_cannot_decide_missing_event(monkeypatch):

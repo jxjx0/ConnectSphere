@@ -310,7 +310,6 @@ def test_non_organiser_cannot_submit_a_change_request(client, monkeypatch):
 def test_change_request_requires_authentication(client):
     response = client.post(
         f"/events/{EVENT_ID}/change-requests",
-        json=valid_change_request(),
     )
 
     assert response.status_code == 401
@@ -546,6 +545,8 @@ def test_coordinator_can_reject_change_request_and_notify_organiser(
     assert response.status_code == 200
     assert response.get_json()["change_request"]["rejection_reason"]
     assert captured["notification"][0] == ORGANISER_ID
+    assert captured["notification"][2] == "Event change request rejected"
+    assert f"The proposed changes to '{reviewed_request.name}' were rejected." in captured["notification"][3]
     assert "Reason:" in captured["notification"][3]
 
 
@@ -660,10 +661,7 @@ def _review_returns(monkeypatch, status):
     monkeypatch.setattr(
         event_service,
         "review_assigned_change_request",
-        lambda access_token, coordinator_id, event_id, decision, rejection: (
-            reviewed_event,
-            reviewed_request,
-        ),
+        lambda *args: (reviewed_event, reviewed_request),
     )
 
 
@@ -690,6 +688,10 @@ def test_approving_change_request_notifies_organiser_changes_were_applied(
     assert title == "Event change request approved"
     assert "Annual Client Summit" in body
     assert "approved and applied" in body
+    assert body == (
+        "The proposed changes to 'Annual Client Summit' have been "
+        "approved and applied."
+    )
     assert event_id == EVENT_ID
 
 
@@ -754,7 +756,6 @@ def test_review_still_succeeds_when_notification_fails(client, monkeypatch):
 
     assert response.status_code == 200
     assert response.get_json()["change_request"]["status"] == "approved"
-
 
 def test_coordinator_must_provide_rejection_reason(client, monkeypatch):
     authenticate_as(monkeypatch, COORDINATOR)

@@ -102,6 +102,45 @@ function getVenueBadge(venueBookings) {
   }
 }
 
+// Helper function for Safety Review Badge
+function getSafetyBadge(event) {
+  if (!event) return null
+
+  // If the event is safety approved / completed safety check
+  if (event.safety_status === 'approved' || event.status === 'safety_approved') {
+    return {
+      label: 'Safety Approved',
+      style: {
+        backgroundColor: 'var(--accent-faint)',
+        color: 'var(--accent)',
+        borderColor: 'var(--accent)',
+      },
+    }
+  }
+
+  // If the safety check was rejected / flagged with issues
+  if (event.safety_status === 'rejected' || event.status === 'safety_rejected') {
+    return {
+      label: 'Safety Concerns Flagged',
+      style: {
+        backgroundColor: 'var(--danger-faint)',
+        color: 'var(--danger)',
+        borderColor: 'var(--danger)',
+      },
+    }
+  }
+
+  // Default for all other events that haven't completed safety review yet
+  return {
+    label: 'Safety check not done',
+    style: {
+      backgroundColor: 'var(--surface)',
+      color: 'var(--ink)',
+      borderColor: 'var(--rule-strong)',
+    },
+  }
+}
+
 export default function AssignedRequestTabs({ events }) {
   // The open tab lives in the URL (?tab=ongoing), so the back button
   // returns to the same tab. Incoming is the default.
@@ -138,6 +177,7 @@ export default function AssignedRequestTabs({ events }) {
         <div className="choices">
           {tabEvents.map((event) => {
             const venueBadge = getVenueBadge(event.venue_bookings)
+            const safetyBadge = getSafetyBadge(event)
 
             return (
               <Link
@@ -154,6 +194,11 @@ export default function AssignedRequestTabs({ events }) {
                     <span className="tag" style={venueBadge.style}>
                       {venueBadge.label}
                     </span>
+                    {safetyBadge && (
+                      <span className="tag" style={safetyBadge.style}>
+                        {safetyBadge.label}
+                      </span>
+                    )}
                   </span>
                 </span>
                 <span className="choice__arrow" aria-hidden="true">→</span>

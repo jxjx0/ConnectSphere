@@ -17,8 +17,10 @@ class Role(str, Enum):
     ORGANISER = "organiser"
     ATTENDEE = "attendee"
     COORDINATOR = "coordinator"
+    EVENT_COORDINATOR_LEAD = "event_coordinator_lead"
     VENUE_STAFF = "venue_staff"
     TECH_SUPPORT = "tech_support"
+    SAFETY_OFFICER = "safety_officer"
 
 
 EXTERNAL_ROLES = {Role.ORGANISER, Role.ATTENDEE}

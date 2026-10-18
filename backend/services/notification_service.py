@@ -62,6 +62,28 @@ def notify(
     return notification
 
 
+def notify_role(
+    role: str,
+    notification_type: str,
+    title: str,
+    body: str,
+    event_id: str | None = None,
+) -> None:
+    """Notify every profile with `role`; lookup failures do not affect callers."""
+    try:
+        result = (
+            config.get_admin_client()
+            .table("profiles")
+            .select("id")
+            .eq("role", role)
+            .execute()
+        )
+        for profile in result.data or []:
+            notify(profile["id"], notification_type, title, body, event_id)
+    except Exception:
+        logger.exception("Could not notify profiles with role %s", role)
+
+
 def _save_notification(
     user_id: str,
     notification_type: str,

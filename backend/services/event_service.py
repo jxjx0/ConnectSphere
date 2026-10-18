@@ -21,7 +21,6 @@ from models.event import (
 )
 from services.auth_service import AuthError
 
-from services.notification_service import notify
 
 
 def get_event_activity_logs(event_id: str, access_token: str):
@@ -66,65 +65,6 @@ def get_event_activity_logs(event_id: str, access_token: str):
         log["changed_by"] = profiles_map.get(log.get("changed_by_id"))
 
     return logs
-
-
-def reassign_event(event_id: str, new_coordinator_id: str, changed_by_id: str, reason: str, access_token: str):
-    """Reassign event coordinator, log activity, send notifications, and set status to under_review."""
-    client = config.get_admin_client()
-
-    # 1. Fetch event details using existing service method or client query
-    event_res = client.table("events").select("*").eq("id", event_id).execute()
-    if not event_res.data:
-        raise Exception("Event not found.")
-
-    event = event_res.data[0]
-
-    if event["status"] in ["completed", "rejected"]:
-        raise Exception("Cannot reassign an event that is completed or rejected.")
-
-    previous_coordinator_id = event.get("coordinator_id")
-
-    # 2. Update event coordinator and set status to 'under_review'
-    updated_event = (
-        client.table("events")
-        .update({
-            "coordinator_id": new_coordinator_id,
-        })
-        .eq("id", event_id)
-        .execute()
-        .data[0]
-    )
-
-    # 3. Log the reassignment in event_activity_logs (Audit Trail)
-    client.table("event_activity_logs").insert({
-        "event_id": event_id,
-        "previous_coordinator_id": previous_coordinator_id,
-        "new_coordinator_id": new_coordinator_id,
-        "changed_by_id": changed_by_id,
-        "action_type": "REASSIGNMENT",
-        "reason": reason
-    }).execute()
-
-    # 4. Notify new coordinator (In-app + Email via shared notification service)
-    notify(
-        user_id=new_coordinator_id,
-        notification_type="event_reassigned",
-        title="New Event Assignment",
-        body=f"You have been assigned to manage the event '{event['name']}'.",
-        event_id=event_id,
-    )
-
-    # 5. Notify previous coordinator (if exists and different)
-    if previous_coordinator_id and previous_coordinator_id != new_coordinator_id:
-        notify(
-            user_id=previous_coordinator_id,
-            notification_type="event_reassigned",
-            title="Event Reassigned",
-            body=f"Event '{event['name']}' has been reassigned to another coordinator.",
-            event_id=event_id,
-        )
-
-    return updated_event
 
 
 def _database_error(error: PostgrestAPIError) -> AuthError:
@@ -532,7 +472,7 @@ def list_assigned_events(
     try:
         result = (
             client.table("events")
-            .select("id, name, start_time, end_time, status, venue_bookings(status)")
+            .select("id, name, start_time, end_time, status, safety_status, venue_bookings(status)")
             .eq("coordinator_id", coordinator_id)
             .neq("status", EventStatus.DRAFT.value)
             .order("start_time")
