@@ -22,6 +22,8 @@ import {
 } from '../eventDisplay'
 import { getVenueBookingsForEvent } from '../api/venues'
 
+import { requestSafetyCheck } from '../api/events'
+
 const CHANGE_FIELDS = [
   { key: 'name', label: 'Event name' },
   { key: 'description', label: 'Description' },
@@ -104,15 +106,21 @@ export default function EventReviewDetailPage() {
   const [loading, setLoading] = useState(true)
   const [venueBookings, setVenueBookings] = useState([])
 
+  const [submittingSafety, setSubmittingSafety] = useState(false)
+  const [safetyError, setSafetyError] = useState('')
 
   useEffect(() => {
     let active = true
 
-    getAssignedEventRequest(eventId, token)
-      .then((data) => {
+    Promise.all([
+      getAssignedEventRequest(eventId, token),
+      getVenueBookingsForEvent(eventId, token).catch(() => ({ bookings: [] })),
+    ])
+      .then(([data, bookingData]) => {
         if (!active) return
         setEvent(data.event)
         setOrganiser(data.organiser)
+        setVenueBookings(bookingData.bookings || [])
       })
       .catch((caught) => {
         if (active) setError(caught.message)
@@ -229,6 +237,10 @@ export default function EventReviewDetailPage() {
   }
 
 
+  const hasApprovedVenue = venueBookings.some(
+    (booking) => (booking.status || '').toUpperCase() === 'APPROVED',
+  )
+
   return (
     <AppShell>
       <div className="content">
@@ -249,11 +261,60 @@ export default function EventReviewDetailPage() {
           </p>
 
           {/* --- ADD THIS BUTTON & MODAL RIGHT HERE --- */}
-          {event.status === 'planning' && (
+          {/* {event.status === 'planning' && (
             <div className="form-actions">
               <Link to={`/venues/search?eventId=${encodeURIComponent(eventId)}`} className="button">
                 {venueBookings.length > 0 ? 'Find / Request Additional Venue' : 'Find Venue'}
               </Link>
+              <Link to={`/safetyreview/${eventId}`} className="button button--secondary">
+                Request Safety Check
+              </Link>
+            </div>
+          )} */}
+
+          {event.status === 'planning' && (
+            <div className="stack stack--tight">
+              <div className="form-actions">
+                <Link to={`/venues/search?eventId=${encodeURIComponent(eventId)}`} className="button">
+                  {venueBookings.length > 0 ? 'Find / Request Additional Venue' : 'Find Venue'}
+                </Link>
+
+                {event.safety_status === 'pending' ? (
+                  <span className="tag tag--orange">Safety Review Pending</span>
+                ) : event.safety_status === 'approved' ? (
+                  <span className="tag tag--green">Safety Approved</span>
+                ) : (
+                  <button
+                    type="button"
+                    className="button button--secondary"
+                    disabled={submittingSafety || !hasApprovedVenue}
+                    onClick={async () => {
+                      setSubmittingSafety(true)
+                      setSafetyError('')
+                      try {
+                        await requestSafetyCheck(eventId, token)
+                        setEvent((prev) => ({ ...prev, safety_status: 'pending' }))
+                      } catch (err) {
+                        setSafetyError(err.message || 'Failed to request safety check')
+                      } finally {
+                        setSubmittingSafety(false)
+                      }
+                    }}
+                  >
+                    {submittingSafety ? 'Requesting...' : 'Request Safety Check'}
+                  </button>
+                )}
+              </div>
+
+              {event.safety_status === 'pending' && (
+                <p className="note">Waiting for the Safety Officer's review.</p>
+              )}
+              {!hasApprovedVenue && !['pending', 'approved'].includes(event.safety_status) && (
+                <p className="note">
+                  A safety check can be requested once a venue booking is approved and no equipment request is still pending.
+                </p>
+              )}
+              {safetyError && <p className="form-error" role="alert">{safetyError}</p>}
             </div>
           )}
         </header>
