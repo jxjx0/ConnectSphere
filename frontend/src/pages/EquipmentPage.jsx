@@ -110,6 +110,9 @@ export default function EquipmentPage() {
           </p>
         </div>
         <div className="form-actions">
+          <Link to="/equipment/bookings" className="button button--secondary">
+            Shared bookings calendar
+          </Link>
           <Link to="/equipment/new" className="button button--secondary">
             Create Equipment Profile
           </Link>
@@ -247,6 +250,13 @@ export default function EquipmentPage() {
                       >
                         Edit
                       </button>
+                      {' '}
+                      <Link
+                        to={`/equipment/${item.id}/bookings`}
+                        className="button button--secondary button--small"
+                      >
+                        Bookings
+                      </Link>
                     </td>
                   </tr>
                 ))}

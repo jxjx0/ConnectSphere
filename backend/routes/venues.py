@@ -209,3 +209,14 @@ def get_venue_booking_for_event(event_id: str):
 
     # Fixed: Returns array of all bookings for the event rather than just the latest single item
     return jsonify({"bookings": result.data or []}), 200
+
+@venues_bp.get("/bookings/pending")
+@require_auth
+def list_pending_venue_bookings():
+    """Retrieve all pending venue booking requests."""
+    _require_venue_staff("Only Venue Staff can view pending booking requests.")
+    
+    venue_id = request.args.get("venue_id")
+    bookings = venue_booking_service.get_pending_venue_bookings(g.access_token, venue_id)
+    
+    return jsonify({"bookings": bookings}), 200

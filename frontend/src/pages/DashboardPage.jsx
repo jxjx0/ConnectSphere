@@ -84,6 +84,9 @@ export default function DashboardPage() {
             <Link to="/venues/availability" className="button button--secondary">
               View Venue Availability
             </Link>
+            <Link to="/venues/reviewRequests" className="button button--secondary">
+              Review Venue Requests
+            </Link>
           </div>
         </section>
       )}
@@ -100,6 +103,20 @@ export default function DashboardPage() {
             </Link> 
             <Link to="/equipment/new" className="button button--secondary"> 
               Create Equipment Profile 
+            </Link> 
+          </div> 
+        </section> 
+      )} 
+
+      {user.role === 'event_coordinator_lead' && ( 
+        <section className="stack stack--tight"> 
+          <h2 className="section-title">Event Overview</h2>
+          <div className="form-actions"> 
+            <Link to="/lead/dashboard" className="button"> 
+              View Event Overview 
+            </Link> 
+            <Link to="/events/unassigned-queue" className="button button--secondary"> 
+              View Unassigned Events 
             </Link> 
           </div> 
         </section> 

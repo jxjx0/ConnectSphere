@@ -15,8 +15,13 @@ import VenuePage from './pages/VenuePage'
 import VenueSearchPage from './pages/VenueSearchPage'
 import VenueAvailabilityPage from './pages/VenueAvailabilityPage'
 import EquipmentPage from './pages/EquipmentPage'
+import EquipmentBookingsPage from './pages/EquipmentBookingsPage'
+import EquipmentBookingCalendarPage from './pages/EquipmentBookingCalendarPage'
 import EventReviewDetailPage from './pages/EventReviewDetailPage'
 import EquipmentRequestsPage from './pages/EquipmentRequestsPage'
+import LeadDashboardPage from './pages/LeadDashboardPage'
+import UnassignedQueuePage from './pages/UnassignedQueuePage'
+import ReviewVenueRequestsPage from './pages/ReviewVenueRequestsPage'
 
 export default function App() {
   return (
@@ -113,6 +118,24 @@ export default function App() {
       />
 
       <Route
+        path="/equipment/bookings"
+        element={
+          <AuthGuard allowedRoles={['tech_support']}>
+            <EquipmentBookingCalendarPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/equipment/:equipmentId/bookings"
+        element={
+          <AuthGuard allowedRoles={['tech_support']}>
+            <EquipmentBookingsPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
         path="/equipment-requests"
         element={
           <AuthGuard allowedRoles={['coordinator', 'tech_support']}>
@@ -153,6 +176,33 @@ export default function App() {
         element={
           <AuthGuard allowedRoles={['venue_staff']}>
             <VenuePage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/venues/reviewRequests"
+        element={
+          <AuthGuard allowedRoles={['venue_staff']}>
+            <ReviewVenueRequestsPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/lead/dashboard"
+        element={
+          <AuthGuard allowedRoles={['event_coordinator_lead']}>
+            <LeadDashboardPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/events/unassigned-queue"
+        element={
+          <AuthGuard allowedRoles={['event_coordinator_lead']}>
+            <UnassignedQueuePage />
           </AuthGuard>
         }
       />

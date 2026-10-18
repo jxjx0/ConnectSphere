@@ -10,9 +10,6 @@ import {
   requestEventClarification,
   rejectAssignedEvent,
 
-  getCoordinators,
-  getEventActivityLogs,
-  reassignAssignedEvent,
 } from '../api/events'
 import AppShell from '../components/AppShell'
 import { useAuth } from '../context/AuthContext'
@@ -107,30 +104,15 @@ export default function EventReviewDetailPage() {
   const [loading, setLoading] = useState(true)
   const [venueBookings, setVenueBookings] = useState([])
 
-  // --- ADD THIS STATE FOR AUDIT TRAIL & REASSIGNMENT ---
-  const [activityLogs, setActivityLogs] = useState([])
-  const [showReassignModal, setShowReassignModal] = useState(false)
-  const [coordinators, setCoordinators] = useState([])
-  const [selectedCoordinator, setSelectedCoordinator] = useState('')
-  const [reassignReason, setReassignReason] = useState('')
-  const [reassigning, setReassigning] = useState(false)
-  const [reassignError, setReassignError] = useState('')
-  const [reassignedTo, setReassignedTo] = useState('')
 
   useEffect(() => {
     let active = true
 
-    Promise.all([
-      getAssignedEventRequest(eventId, token),
-      getEventActivityLogs(eventId, token).catch(() => ({ logs: [] })),
-      getVenueBookingsForEvent(eventId, token).catch(() => ({ bookings: [] })),
-    ])
-      .then(([data, historyData, bookingData]) => {
+    getAssignedEventRequest(eventId, token)
+      .then((data) => {
         if (!active) return
         setEvent(data.event)
         setOrganiser(data.organiser)
-        setActivityLogs(historyData.logs || [])
-        setVenueBookings(bookingData.bookings || (bookingData.booking ? [bookingData.booking] : []))
       })
       .catch((caught) => {
         if (active) setError(caught.message)
@@ -153,23 +135,6 @@ export default function EventReviewDetailPage() {
   }, [eventId, token])
 
 
-  //   getAssignedEventRequest(eventId, token)
-  //     .then((data) => {
-  //       if (!active) return
-  //       setEvent(data.event)
-  //       setOrganiser(data.organiser)
-  //     })
-  //     .catch((caught) => {
-  //       if (active) setError(caught.message)
-  //     })
-  //     .finally(() => {
-  //       if (active) setLoading(false)
-  //     })
-
-  //   return () => {
-  //     active = false
-  //   }
-  // }, [eventId, token])
 
   async function requestClarification(eventTarget) {
     eventTarget.preventDefault()
@@ -242,46 +207,6 @@ export default function EventReviewDetailPage() {
     }
   }
 
-  async function handleOpenReassignModal() {
-    setShowReassignModal(true)
-    setReassignError('')
-    try {
-      const data = await getCoordinators(token)
-      const available = (data.coordinators || []).filter(
-        (c) => c.id !== event?.coordinator_id
-      )
-      setCoordinators(available)
-    } catch (caught) {
-      setReassignError('Failed to load coordinator list.')
-    }
-  }
-
-  async function handleReassignSubmit(e) {
-    e.preventDefault()
-    if (!selectedCoordinator) {
-      setReassignError('Please select a coordinator.')
-      return
-    }
-
-    setReassignError('')
-    setReassigning(true)
-
-    try {
-      await reassignAssignedEvent(
-        eventId,
-        { newCoordinatorId: selectedCoordinator, reason: reassignReason },
-        token
-      )
-      // The event now belongs to another Coordinator, so this page's
-      // actions would all fail. Replace the page with a confirmation.
-      const newCoordinator = coordinators.find((c) => c.id === selectedCoordinator)
-      setReassignedTo(newCoordinator?.full_name || 'another coordinator')
-    } catch (caught) {
-      setReassignError(caught.message)
-    } finally {
-      setReassigning(false)
-    }
-  }
 
 
   if (loading) {
@@ -303,19 +228,6 @@ export default function EventReviewDetailPage() {
     )
   }
 
-  if (reassignedTo) {
-    return (
-      <AppShell>
-        <div className="page-state">
-          <p>
-            "{event.name}" has been reassigned to {reassignedTo}. It is no
-            longer in your queue.
-          </p>
-          <Link to="/dashboard">Back to dashboard</Link>
-        </div>
-      </AppShell>
-    )
-  }
 
   return (
     <AppShell>
@@ -344,73 +256,8 @@ export default function EventReviewDetailPage() {
               </Link>
             </div>
           )}
-          {!['completed', 'rejected'].includes(event.status) && (
-            <div className="form-actions" style={{ marginTop: '1rem' }}>
-              <button
-                type="button"
-                className="button button--secondary"
-                onClick={handleOpenReassignModal}
-              >
-                Reassign Coordinator
-              </button>
-            </div>
-          )}
         </header>
 
-        {/* --- ADD THIS REASSIGNMENT MODAL JSX --- */}
-        {showReassignModal && (
-          <section className="stack stack--tight" style={{ border: '1px solid #ccc', padding: '1rem', borderRadius: '8px' }}>
-            <h2 className="section-title">Reassign Event Coordinator</h2>
-            <form onSubmit={handleReassignSubmit} className="stack stack--tight">
-              <div className="field">
-                <label htmlFor="coordinatorSelect">Select New Coordinator</label>
-                <select
-                  id="coordinatorSelect"
-                  value={selectedCoordinator}
-                  onChange={(e) => setSelectedCoordinator(e.target.value)}
-                  required
-                >
-                  <option value="">Choose a coordinator…</option>
-                  {coordinators.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.full_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="field">
-                <label htmlFor="reassignReason">Reason for Reassignment</label>
-                <textarea
-                  id="reassignReason"
-                  rows={3}
-                  value={reassignReason}
-                  onChange={(e) => setReassignReason(e.target.value)}
-                  placeholder="State the reason for reassigning this request."
-                  required
-                />
-              </div>
-
-              {reassignError && (
-                <p className="form-error" role="alert">{reassignError}</p>
-              )}
-
-              <div className="form-actions">
-                <button className="button" disabled={reassigning}>
-                  {reassigning ? 'Reassigning…' : 'Confirm Reassignment'}
-                </button>
-                <button
-                  type="button"
-                  className="button button--secondary"
-                  disabled={reassigning}
-                  onClick={() => setShowReassignModal(false)}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </section>
-        )}
 
         <section className="stack stack--tight">
           <h2 className="section-title">
@@ -536,44 +383,6 @@ export default function EventReviewDetailPage() {
           </dl>
         </section>
 
-        {/* --- ADD THIS AUDIT TRAIL SECTION BEFORE DECISION BUTTONS --- */}
-        <section className="stack stack--tight">
-          <h2 className="section-title">Audit Trail & Reassignment History</h2>
-          {activityLogs.length === 0 ? (
-            <p className="note">No reassignments recorded for this event.</p>
-          ) : (
-            <ul className="stack stack--tight" style={{ listStyle: 'none', paddingLeft: 0 }}>
-              {activityLogs.map((log) => (
-                <li
-                  key={log.id}
-                  style={{
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '6px',
-                    padding: '0.75rem 1rem',
-                  }}
-                >
-                  <div>
-                    <strong>Reassigned to: </strong>
-                    {log.new_coordinator?.full_name || 'Coordinator'}
-                    {log.previous_coordinator && (
-                      <span> (previously {log.previous_coordinator.full_name})</span>
-                    )}
-                  </div>
-                  <div>
-                    <small className="note">
-                      By {log.changed_by?.full_name || 'System'} on {formatDateTime(log.created_at)}
-                    </small>
-                  </div>
-                  {log.reason && (
-                    <div style={{ marginTop: '0.25rem' }}>
-                      <em>Reason: "{log.reason}"</em>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
         {/* Shown while the change is pending, including while a clarification
             is open, so the Coordinator can see what they asked about. */}
         {event.change_request?.status === 'pending' && (
