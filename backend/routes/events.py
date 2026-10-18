@@ -1,5 +1,7 @@
 """Event request endpoints. Thin handlers: parse, call the service, return JSON."""
 
+import logging
+
 from flask import Blueprint, g, jsonify, request
 from pydantic import ValidationError
 
@@ -12,12 +14,14 @@ from models.event import (
     EventStatus,
     EventSubmitRequest,
 )
-from models.profile import Role
+from models.profile import Profile, Role
 from routes.auth import require_auth
 from services import auth_service, event_service, notification_service
 from services.auth_service import AuthError
 
 events_bp = Blueprint("events", __name__, url_prefix="/events")
+
+logger = logging.getLogger(__name__)
 
 
 def _validation_messages(error: ValidationError) -> list[str]:
@@ -25,24 +29,32 @@ def _validation_messages(error: ValidationError) -> list[str]:
     return [item["msg"].removeprefix("Value error, ") for item in error.errors()]
 
 
-def _require_organiser() -> None:
-    """Require the authenticated profile to have the organiser role."""
+def _require_organiser() -> Profile:
+    """Require the authenticated profile to have the organiser role.
+
+    Returns the profile, for handlers that need the Organiser's name.
+    """
     profile = auth_service.get_profile(g.access_token, g.user_id)
     if profile.role != Role.ORGANISER:
         raise AuthError(
             "Only Event Organisers can submit event requests.",
             status_code=403,
         )
+    return profile
 
 
-def _require_coordinator() -> None:
-    """Require the authenticated profile to have the coordinator role."""
+def _require_coordinator() -> Profile:
+    """Require the authenticated profile to have the coordinator role.
+
+    Returns the profile, for handlers that need the Coordinator's name.
+    """
     profile = auth_service.get_profile(g.access_token, g.user_id)
     if profile.role != Role.COORDINATOR:
         raise AuthError(
             "Only Event Coordinators can review event requests.",
             status_code=403,
         )
+    return profile
 
 
 @events_bp.post("")
@@ -116,6 +128,7 @@ def list_assigned_events():
     )
     return jsonify(
         {"events": [event.model_dump(mode="json") for event in events]}
+        # {"events": events}
     ), 200
 
 
@@ -222,11 +235,43 @@ def request_event_clarification(event_id):
     except ValidationError as error:
         return jsonify({"errors": _validation_messages(error)}), 400
 
-    _require_coordinator()
+    coordinator = _require_coordinator()
     clarification = event_service.request_event_clarification(
         g.access_token, g.user_id, event_id, clarification_request
     )
+    _notify_clarification_requested(coordinator, clarification)
     return jsonify({"clarification": clarification.model_dump(mode="json")}), 201
+
+
+def _notify_clarification_requested(coordinator, clarification) -> None:
+    """Tell the Organiser their event needs clarification (T7-160).
+
+    Runs only after the clarification is saved. Looking up the event name
+    can fail too, and like notify() itself that must not undo the saved
+    clarification, so a failed lookup is logged and no notification is sent.
+    """
+    try:
+        event = event_service.get_assigned_event(
+            g.access_token, g.user_id, clarification.event_id
+        )
+    except AuthError:
+        logger.exception(
+            "Clarification %s was saved but its notification failed",
+            clarification.id,
+        )
+        return
+
+    notification_service.notify(
+        clarification.organiser_id,
+        "clarification_requested",
+        "Clarification requested",
+        (
+            f"{coordinator.full_name} has requested clarification on "
+            f"'{event.name}'. Your event is now Awaiting Clarification and "
+            f"needs your response. Notes: {clarification.coordinator_notes}"
+        ),
+        clarification.event_id,
+    )
 
 
 @events_bp.post("/review/<event_id>/approve")
@@ -259,11 +304,44 @@ def submit_event_change_request(event_id):
     except ValidationError as error:
         return jsonify({"errors": _validation_messages(error)}), 400
 
-    _require_organiser()
+    organiser = _require_organiser()
     event_service.submit_event_change_request(
         g.access_token, g.user_id, event_id, change_request
     )
+    _notify_change_request_submitted(organiser, event_id, change_request)
     return jsonify({"message": "Change request submitted."}), 201
+
+
+def _notify_change_request_submitted(organiser, event_id, change_request) -> None:
+    """Tell the event's Coordinator a change request needs review (T7-164).
+
+    Runs only after the change request is saved. A failed event lookup is
+    logged rather than raised, so it cannot undo the saved change request.
+    """
+    try:
+        event = event_service.get_my_event(g.access_token, g.user_id, event_id)
+    except AuthError:
+        logger.exception(
+            "Change request for event %s was saved but its notification failed",
+            event_id,
+        )
+        return
+
+    # Every event should have a Coordinator by the time it can be changed,
+    # but there is no one to notify if it does not.
+    if not event.coordinator_id:
+        return
+
+    notification_service.notify(
+        event.coordinator_id,
+        "change_request_submitted",
+        "Change request submitted",
+        (
+            f"{organiser.full_name} has submitted a change request for "
+            f"'{event.name}'. Reason: {change_request.reason_for_change}"
+        ),
+        event_id,
+    )
 
 
 # --- Draft event requests (T7-37) ------------------------------------------
