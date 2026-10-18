@@ -132,9 +132,16 @@ def respond_to_event_clarification(event_id):
     clarification = event_service.respond_to_event_clarification(
         g.access_token, g.user_id, event_id, clarification_response
     )
-    event = event_service.get_my_event(g.access_token, g.user_id, event_id)
+    try:
+        event = event_service.get_my_event(g.access_token, g.user_id, event_id)
+    except Exception:
+        logger.exception(
+            "Could not load event %s after saving clarification response", event_id
+        )
+        return jsonify({"clarification": clarification.model_dump(mode="json")}), 200
+
     notification_service.notify(
-        clarification.coordinator_id,
+        event.coordinator_id,
         "event_clarification_responded",
         "Clarification response received",
         (

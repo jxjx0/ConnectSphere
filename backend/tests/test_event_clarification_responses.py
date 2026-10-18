@@ -169,7 +169,9 @@ def test_response_route_returns_saved_exchange_and_uses_signed_in_organiser(
     monkeypatch.setattr(
         event_service,
         "get_my_event",
-        lambda *args: SimpleNamespace(name="Annual Client Summit"),
+        lambda *args: SimpleNamespace(
+            name="Annual Client Summit", coordinator_id="current-coordinator-id"
+        ),
     )
     monkeypatch.setattr(
         "routes.events.notification_service.notify",
@@ -192,13 +194,44 @@ def test_response_route_returns_saved_exchange_and_uses_signed_in_organiser(
     assert result.get_json()["clarification"]["organiser_response"]
     assert result.get_json()["clarification"]["coordinator_notes"]
     assert captured["notification"] == (
-        COORDINATOR_ID,
+        "current-coordinator-id",
         "event_clarification_responded",
         "Clarification response received",
         "The Organiser responded to the clarification for event request "
         "'Annual Client Summit': Theatre layout for 80 attendees.",
         EVENT_ID,
     )
+
+
+def test_response_route_succeeds_when_event_lookup_fails(client, monkeypatch):
+    authenticate_as(monkeypatch, ORGANISER)
+    saved = EventClarification(**clarification_row())
+    notified = []
+
+    monkeypatch.setattr(
+        event_service,
+        "respond_to_event_clarification",
+        lambda *args: saved,
+    )
+
+    def fail_to_load_event(*args):
+        raise RuntimeError("event lookup failed")
+
+    monkeypatch.setattr(event_service, "get_my_event", fail_to_load_event)
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: notified.append(args),
+    )
+
+    result = client.post(
+        f"/events/{EVENT_ID}/clarification-response",
+        headers={"Authorization": "Bearer organiser-token"},
+        json={"response": "Details provided."},
+    )
+
+    assert result.status_code == 200
+    assert result.get_json()["clarification"]["event_id"] == EVENT_ID
+    assert notified == []
 
 
 def test_organiser_can_view_clarification_history(client, monkeypatch):
