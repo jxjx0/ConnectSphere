@@ -244,10 +244,7 @@ def create_venue_booking(
     """Submit a venue booking request with operating hours & buffer validation."""
     client = config.get_user_client(access_token)
 
-    if request.event_id:
-        check_duplicate_event_booking(client, venue_id, request.event_id)
-
-    # 1. Query setup/turnaround buffers and operating hours from venue catalog
+    # 1. Query setup/turnaround buffers and operating hours from venue catalog FIRST
     venue_res = (
         client.table("venues")
         .select("setup_time_minutes, turnaround_time_minutes, operating_hours")
@@ -262,7 +259,7 @@ def create_venue_booking(
     turnaround_mins = venue_info.get("turnaround_time_minutes") or 0
     operating_hours = venue_info.get("operating_hours")
 
-    # 2. Prevent bookings outside of venue operating hours
+    # 2. Enforce operating hours check BEFORE duplicate/conflict checks
     if not is_within_operating_hours(request.start_at, request.end_at, operating_hours):
         open_time = operating_hours.get("open", "N/A") if isinstance(operating_hours, dict) else "N/A"
         close_time = operating_hours.get("close", "N/A") if isinstance(operating_hours, dict) else "N/A"
@@ -271,7 +268,11 @@ def create_venue_booking(
             status_code=400,
         )
 
-    # 3. Compute effective operational interval using venue-defined buffers
+    # 3. Check duplicate event bookings
+    if request.event_id:
+        check_duplicate_event_booking(client, venue_id, request.event_id)
+
+    # 4. Compute effective operational interval using venue-defined buffers
     effective_start = request.start_at - timedelta(minutes=setup_mins)
     effective_end = request.end_at + timedelta(minutes=turnaround_mins)
 
