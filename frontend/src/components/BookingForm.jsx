@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getAssignedEventRequests } from '../api/events' // or ../api/events depending on path
+import { getAssignedEventRequests } from '../api/events'
 import { createVenueBooking } from '../api/venues'
 import { useAuth } from '../context/AuthContext'
 
@@ -15,15 +15,12 @@ export default function BookingForm({ venue, eventId: initialEventId, initialVal
     startTime: initialValues.startTime || '',
     endTime: initialValues.endTime || '',
     roomLayout: initialValues.layout || (venue?.layouts?.[0]?.name || ''),
-    setupBufferMinutes: 0,
-    teardownBufferMinutes: 0,
   })
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
 
-  // Fetch coordinator's assigned events if no eventId was passed via URL/props
   useEffect(() => {
     if (!initialEventId) {
       getAssignedEventRequests(token)
@@ -65,13 +62,11 @@ export default function BookingForm({ venue, eventId: initialEventId, initialVal
       room_layout: form.roomLayout,
       start_at: new Date(`${form.startDate}T${form.startTime}`).toISOString(),
       end_at: new Date(`${form.endDate}T${form.endTime}`).toISOString(),
-      setup_buffer_minutes: Number(form.setupBufferMinutes) || 0,
-      teardown_buffer_minutes: Number(form.teardownBufferMinutes) || 0,
     }
 
     try {
       await createVenueBooking(venue.id, payload, token)
-      onCreated() // Triggers parent callback instantly
+      onCreated()
     } catch (err) {
       setError(err.message)
       setLoading(false)
@@ -88,7 +83,6 @@ export default function BookingForm({ venue, eventId: initialEventId, initialVal
           </button>
         </div>
 
-        {/* --- SUCCESS CONFIRMATION BADGE / BANNER --- */}
         {successMessage && (
           <div className="notice" style={{ backgroundColor: 'var(--accent-faint)', borderColor: 'var(--accent)', color: 'var(--accent)' }} role="status">
             <p><strong>✓ {successMessage}</strong></p>
@@ -98,7 +92,6 @@ export default function BookingForm({ venue, eventId: initialEventId, initialVal
         {error && <p className="form-error" role="alert">{error}</p>}
 
         <form className="form stack stack--tight" onSubmit={handleSubmit}>
-          {/* --- ASSIGNED EVENT SELECTION --- */}
           <div className="field">
             <label htmlFor="bookingEvent">Assigned Event (Required)</label>
             {initialEventId ? (
@@ -202,33 +195,6 @@ export default function BookingForm({ venue, eventId: initialEventId, initialVal
                 </option>
               ))}
             </select>
-          </div>
-
-          <div className="field-group" style={{ display: 'flex', gap: '1rem' }}>
-            <div className="field" style={{ flex: 1 }}>
-              <label htmlFor="setupBuffer">Setup Buffer (mins)</label>
-              <input
-                id="setupBuffer"
-                type="number"
-                min="0"
-                step="5"
-                disabled={Boolean(successMessage)}
-                value={form.setupBufferMinutes}
-                onChange={(e) => updateField('setupBufferMinutes', e.target.value)}
-              />
-            </div>
-            <div className="field" style={{ flex: 1 }}>
-              <label htmlFor="teardownBuffer">Teardown Buffer (mins)</label>
-              <input
-                id="teardownBuffer"
-                type="number"
-                min="0"
-                step="5"
-                disabled={Boolean(successMessage)}
-                value={form.teardownBufferMinutes}
-                onChange={(e) => updateField('teardownBufferMinutes', e.target.value)}
-              />
-            </div>
           </div>
 
           <div className="form-actions" style={{ marginTop: '1rem' }}>
