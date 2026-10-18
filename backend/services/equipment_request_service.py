@@ -10,7 +10,9 @@ _REQUEST_SELECT = (
     "*, "
     "event:events(id,name,start_time,end_time), "
     "items:equipment_request_items("
-    "id,equipment_id,quantity,equipment:equipment(id,name,type))"
+    "id,equipment_id,quantity,equipment:equipment(id,name,type)), "
+    "equipment_bookings(id,equipment_id,start_at,end_at,"
+    "equipment:equipment(id,name))"
 )
 
 
@@ -57,6 +59,11 @@ def submit_equipment_request(
             },
         ).execute()
     except PostgrestAPIError as error:
+        if error.code == "P0001":
+            raise AuthError(
+                "An equipment request has already been submitted for this event.",
+                status_code=409,
+            ) from error
         raise _database_error(error) from error
 
     request_id = result.data
@@ -113,7 +120,7 @@ def review_equipment_request(
     request_id: str,
     review: EquipmentRequestReview,
 ) -> dict:
-    """Record an approve or reject decision; equipment is booked separately."""
+    """Record an approve or reject decision after required equipment allocation."""
     client = config.get_user_client(access_token)
     try:
         result = client.rpc(
@@ -133,6 +140,11 @@ def review_equipment_request(
             raise AuthError(
                 "The review decision is invalid.",
                 status_code=400,
+            ) from error
+        if error.code == "P0001":
+            raise AuthError(
+                "Allocate every requested equipment item before approving this request.",
+                status_code=409,
             ) from error
         raise _database_error(error) from error
 

@@ -54,6 +54,14 @@ export function getEquipmentBookings(equipmentId, from, to, token) {
   return request(`/equipment-bookings?${params}`, token)
 }
 
+export function getAllEquipmentBookings(from, to, token) {
+  const params = new URLSearchParams({
+    from: from.toISOString(),
+    to: to.toISOString(),
+  })
+  return request(`/equipment-bookings/calendar?${params}`, token)
+}
+
 export function createEquipmentBooking(booking, token) {
   return request('/equipment-bookings', token, {
     method: 'POST',

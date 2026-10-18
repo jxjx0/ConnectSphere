@@ -7,7 +7,11 @@ import pytest
 from postgrest import APIError as PostgrestAPIError
 
 import config
-from models.equipment_booking import EquipmentBookingCreate, EquipmentBookingRange
+from models.equipment_booking import (
+    EquipmentBookingCalendarRange,
+    EquipmentBookingCreate,
+    EquipmentBookingRange,
+)
 from models.profile import Profile, Role
 from services import auth_service, equipment_booking_service
 from services.auth_service import AuthError
@@ -42,6 +46,11 @@ RANGE_QUERY = {
     "equipment_id": EQUIPMENT_ID,
     "from": "2026-10-01T00:00:00+08:00",
     "to": "2026-11-01T00:00:00+08:00",
+}
+
+CALENDAR_RANGE_QUERY = {
+    "from": RANGE_QUERY["from"],
+    "to": RANGE_QUERY["to"],
 }
 
 
@@ -88,6 +97,44 @@ def test_technical_support_can_list_item_bookings(client, monkeypatch):
     assert response.get_json()["bookings"] == [SAVED_BOOKING]
     assert list_bookings.call_args.args[0] == "tech-token"
     assert str(list_bookings.call_args.args[1].equipment_id) == EQUIPMENT_ID
+
+
+def test_technical_support_can_list_shared_calendar(client, monkeypatch):
+    authenticate_as(monkeypatch, TECH_SUPPORT)
+    list_bookings = Mock(return_value=[SAVED_BOOKING])
+    monkeypatch.setattr(
+        equipment_booking_service, "list_all_equipment_bookings", list_bookings
+    )
+
+    response = client.get(
+        "/equipment-bookings/calendar",
+        query_string=CALENDAR_RANGE_QUERY,
+        headers={"Authorization": "Bearer tech-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["bookings"] == [SAVED_BOOKING]
+    assert list_bookings.call_args.args[0] == "tech-token"
+    assert isinstance(
+        list_bookings.call_args.args[1], EquipmentBookingCalendarRange
+    )
+
+
+def test_shared_calendar_rejects_invalid_range(client, monkeypatch):
+    authenticate_as(monkeypatch, TECH_SUPPORT)
+    list_bookings = Mock(side_effect=AssertionError("must not reach the service"))
+    monkeypatch.setattr(
+        equipment_booking_service, "list_all_equipment_bookings", list_bookings
+    )
+
+    response = client.get(
+        "/equipment-bookings/calendar",
+        query_string={"from": RANGE_QUERY["from"], "to": RANGE_QUERY["from"]},
+        headers={"Authorization": "Bearer tech-token"},
+    )
+
+    assert response.status_code == 400
+    list_bookings.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -182,10 +229,15 @@ def test_technical_support_can_remove_booking(client, monkeypatch):
     "method,path,kwargs",
     [
         ("get", "/equipment-bookings", {"query_string": RANGE_QUERY}),
+        (
+            "get",
+            "/equipment-bookings/calendar",
+            {"query_string": CALENDAR_RANGE_QUERY},
+        ),
         ("post", "/equipment-bookings", {"json": VALID_BOOKING}),
         ("delete", f"/equipment-bookings/{BOOKING_ID}", {}),
     ],
-    ids=["list", "create", "delete"],
+    ids=["list", "shared-calendar", "create", "delete"],
 )
 def test_non_technical_support_cannot_manage_bookings(
     client, monkeypatch, method, path, kwargs
@@ -193,6 +245,7 @@ def test_non_technical_support_cannot_manage_bookings(
     authenticate_as(monkeypatch, COORDINATOR)
     for name in (
         "list_equipment_bookings",
+        "list_all_equipment_bookings",
         "create_equipment_booking",
         "delete_equipment_booking",
     ):
@@ -236,23 +289,154 @@ def test_service_lists_bookings_through_rpc(booking_database):
     assert result == [SAVED_BOOKING]
 
 
-def test_service_inserts_booking(booking_database):
+def test_service_lists_shared_bookings_through_rpc(booking_database):
+    client, client_factory = booking_database
+    rpc_query = Mock()
+    rpc_query.execute.return_value = SimpleNamespace(data=[SAVED_BOOKING])
+    client.rpc.return_value = rpc_query
+    booking_range = EquipmentBookingCalendarRange(
+        start=CALENDAR_RANGE_QUERY["from"],
+        end=CALENDAR_RANGE_QUERY["to"],
+    )
+
+    result = equipment_booking_service.list_all_equipment_bookings(
+        "tech-token", booking_range
+    )
+
+    client_factory.assert_called_once_with("tech-token")
+    client.rpc.assert_called_once_with(
+        "list_all_equipment_bookings",
+        {
+            "p_from": "2026-10-01T00:00:00+08:00",
+            "p_to": "2026-11-01T00:00:00+08:00",
+        },
+    )
+    assert result == [SAVED_BOOKING]
+
+
+def test_service_creates_booking_through_guarded_rpc(booking_database):
     client, _ = booking_database
-    query = table_query(data=[SAVED_BOOKING])
-    client.table.return_value = query
+    query = Mock()
+    query.execute.return_value = SimpleNamespace(
+        data={"outcome": "booked", "booking": SAVED_BOOKING}
+    )
+    client.rpc.return_value = query
 
     result = equipment_booking_service.create_equipment_booking(
         "tech-token", EquipmentBookingCreate(**VALID_BOOKING)
     )
 
-    client.table.assert_called_once_with("equipment_bookings")
-    query.insert.assert_called_once_with(VALID_BOOKING)
+    client.rpc.assert_called_once_with(
+        "create_equipment_booking",
+        {
+            "p_equipment_id": EQUIPMENT_ID,
+            "p_request_id": REQUEST_ID,
+            "p_start_at": "2026-10-23T02:00:00+00:00",
+            "p_end_at": "2026-10-23T04:00:00+00:00",
+        },
+    )
     assert result == SAVED_BOOKING
+
+
+def test_service_notifies_coordinator_when_equipment_is_unavailable(
+    booking_database, monkeypatch
+):
+    client, _ = booking_database
+    coordinator_id = "11111111-1111-1111-1111-111111111111"
+    event_id = "33333333-3333-3333-3333-333333333333"
+    query = Mock()
+    query.execute.return_value = SimpleNamespace(
+        data={
+            "outcome": "unavailable",
+            "reason": "overlap",
+            "coordinator_id": coordinator_id,
+            "event_id": event_id,
+            "event_name": "Planning Summit",
+            "equipment_name": "Projector",
+        }
+    )
+    client.rpc.return_value = query
+    notify = Mock(return_value={"id": "notification-id"})
+    monkeypatch.setattr(
+        equipment_booking_service.notification_service, "notify", notify
+    )
+
+    with pytest.raises(AuthError) as caught:
+        equipment_booking_service.create_equipment_booking(
+            "tech-token", EquipmentBookingCreate(**VALID_BOOKING)
+        )
+
+    assert caught.value.status_code == 409
+    assert caught.value.message == (
+        "This equipment is already booked during Planning Summit's scheduled time. "
+        "The Coordinator has been notified."
+    )
+    notify.assert_called_once_with(
+        user_id=coordinator_id,
+        notification_type="equipment_requirement_unavailable",
+        title="Equipment is unavailable",
+        body=(
+            "Projector is already booked during Planning Summit's "
+            "scheduled time. Please contact Technical Support about alternatives."
+        ),
+        event_id=event_id,
+    )
+
+
+def test_service_notifies_coordinator_when_equipment_is_not_functional(
+    booking_database, monkeypatch
+):
+    client, _ = booking_database
+    query = Mock()
+    query.execute.return_value = SimpleNamespace(
+        data={
+            "outcome": "unavailable",
+            "reason": "maintenance",
+            "equipment_status": "Under Maintenance",
+            "coordinator_id": "11111111-1111-1111-1111-111111111111",
+            "event_id": "33333333-3333-3333-3333-333333333333",
+            "event_name": "Planning Summit",
+            "equipment_name": "Projector",
+        }
+    )
+    client.rpc.return_value = query
+    notify = Mock(return_value={"id": "notification-id"})
+    monkeypatch.setattr(
+        equipment_booking_service.notification_service, "notify", notify
+    )
+
+    with pytest.raises(AuthError) as caught:
+        equipment_booking_service.create_equipment_booking(
+            "tech-token", EquipmentBookingCreate(**VALID_BOOKING)
+        )
+
+    assert caught.value.status_code == 409
+    assert caught.value.message == (
+        "Projector is unavailable because it is Under Maintenance. "
+        "The Coordinator has been notified."
+    )
+    notify.assert_called_once_with(
+        user_id="11111111-1111-1111-1111-111111111111",
+        notification_type="equipment_requirement_unavailable",
+        title="Equipment is unavailable",
+        body=(
+            "Projector is Under Maintenance and cannot be allocated to Planning "
+            "Summit. Please contact Technical Support about alternatives."
+        ),
+        event_id="33333333-3333-3333-3333-333333333333",
+    )
 
 
 @pytest.mark.parametrize(
     "code,status,message",
     [
+        (
+            "PGRST202",
+            503,
+            "The equipment booking database setup is missing or out of date. "
+            "Apply the equipment booking migrations in the documented order, "
+            "then retry.",
+        ),
         ("23P01", 409, "This equipment is already booked for an overlapping time."),
         ("23503", 404, "The equipment or equipment request was not found."),
         ("42501", 403, "Only Technical Support can manage equipment bookings."),
@@ -265,7 +449,9 @@ def test_service_maps_booking_database_errors(booking_database, code, status, me
     database_error = PostgrestAPIError(
         {"code": code, "message": "Private database detail"}
     )
-    client.table.return_value = table_query(error=database_error)
+    query = Mock()
+    query.execute.side_effect = database_error
+    client.rpc.return_value = query
 
     with pytest.raises(AuthError) as caught:
         equipment_booking_service.create_equipment_booking(
@@ -279,18 +465,22 @@ def test_service_maps_booking_database_errors(booking_database, code, status, me
 
 def test_service_deletes_booking(booking_database):
     client, _ = booking_database
-    query = table_query(data=[SAVED_BOOKING])
-    client.table.return_value = query
+    query = Mock()
+    query.execute.return_value = SimpleNamespace(data=True)
+    client.rpc.return_value = query
 
     equipment_booking_service.delete_equipment_booking("tech-token", BOOKING_ID)
 
-    query.delete.assert_called_once_with()
-    query.eq.assert_called_once_with("id", BOOKING_ID)
+    client.rpc.assert_called_once_with(
+        "delete_equipment_booking", {"p_booking_id": BOOKING_ID}
+    )
 
 
 def test_service_reports_missing_booking_on_delete(booking_database):
     client, _ = booking_database
-    client.table.return_value = table_query(data=[])
+    query = Mock()
+    query.execute.return_value = SimpleNamespace(data=False)
+    client.rpc.return_value = query
 
     with pytest.raises(AuthError) as caught:
         equipment_booking_service.delete_equipment_booking("tech-token", BOOKING_ID)

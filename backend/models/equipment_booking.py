@@ -28,3 +28,14 @@ class EquipmentBookingRange(BaseModel):
         if self.end <= self.start:
             raise ValueError("The range end must be after its start.")
         return self
+
+
+class EquipmentBookingCalendarRange(BaseModel):
+    start: AwareDatetime
+    end: AwareDatetime
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "EquipmentBookingCalendarRange":
+        if self.end <= self.start:
+            raise ValueError("The range end must be after its start.")
+        return self

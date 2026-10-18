@@ -378,6 +378,20 @@ a:hover {
   overflow-wrap: anywhere;
 }
 
+.booking-calendar__booking-button {
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.booking-calendar__booking-button:hover,
+.booking-calendar__booking-button[aria-pressed="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 @media (max-width: 35rem) {
   .booking-calendar__day {
     min-height: 3.5rem;
@@ -388,6 +402,13 @@ a:hover {
     font-size: 0;
     height: 6px;
     padding: 0;
+  }
+
+  .booking-calendar__booking-button {
+    height: auto;
+    min-height: 1.25rem;
+    padding: 2px;
+    font-size: 0.65rem;
   }
 }
 

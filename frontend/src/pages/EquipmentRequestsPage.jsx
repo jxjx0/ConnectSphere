@@ -47,8 +47,12 @@ export default function EquipmentRequestsPage() {
       .then(([requestData, eventData, equipmentData]) => {
         setRequests(requestData.requests)
         if (isCoordinator) {
+          const eventsWithRequests = new Set(
+            requestData.requests.map((request) => request.event_id),
+          )
           setEvents(
-            equipmentRequestEligibleEvents(eventData.events),
+            equipmentRequestEligibleEvents(eventData.events)
+              .filter((eventItem) => !eventsWithRequests.has(eventItem.id)),
           )
           setEquipment(
             equipmentData.filter((item) => item.maintenance_status === 'Functional'),
@@ -161,6 +165,9 @@ export default function EquipmentRequestsPage() {
     const items = request.items || []
     const bookedEquipment = request.equipment_bookings || []
     const pending = request.status === 'Pending Technical Approval'
+    const allItemsBooked = items.length > 0 && items.every((item) => (
+      bookedEquipment.some((booking) => booking.equipment_id === item.equipment_id)
+    ))
 
     return (
       <article className="choice equipment-request-card" key={request.id}>
@@ -171,8 +178,7 @@ export default function EquipmentRequestsPage() {
           </span>
           <span className="choice__description">
             Status: <span className="tag">{request.status}</span>
-            {request.technical_requirement_outstanding
-              && ' · Outstanding technical requirement'}
+            {pending && !allItemsBooked && ' · Awaiting equipment allocation'}
           </span>
 
           <div className="stack stack--tight">
@@ -204,11 +210,21 @@ export default function EquipmentRequestsPage() {
             ) : items.map((item) => (
               <span className="choice__description" key={item.id}>
                 {item.equipment?.name || 'Equipment'} × {item.quantity}
+                {' · '}
+                {bookedEquipment.some(
+                  (booking) => booking.equipment_id === item.equipment_id,
+                )
+                  ? 'Allocated'
+                  : 'Not allocated'}
                 {pending && (
                   <>
                     {' · '}
                     <Link to={`/equipment/${item.equipment_id}/bookings?request=${request.id}`}>
-                      Check calendar and book
+                      {bookedEquipment.some(
+                        (booking) => booking.equipment_id === item.equipment_id,
+                      )
+                        ? 'View booking'
+                        : 'Check calendar and allocate'}
                     </Link>
                   </>
                 )}
@@ -240,10 +256,14 @@ export default function EquipmentRequestsPage() {
               <button
                 className="button"
                 type="button"
-                disabled={reviewingRequestId === request.id}
+                disabled={reviewingRequestId === request.id || !allItemsBooked}
                 onClick={() => handleReview(request.id, 'Approved')}
               >
-                {reviewingRequestId === request.id ? 'Saving…' : 'Approve request'}
+                {reviewingRequestId === request.id
+                  ? 'Saving…'
+                  : allItemsBooked
+                    ? 'Approve request'
+                    : 'Allocate equipment before approval'}
               </button>
               <button
                 className="button button--secondary"
@@ -277,7 +297,7 @@ export default function EquipmentRequestsPage() {
           <p className="lead">
             {isCoordinator
               ? 'Request equipment for an event assigned to you, then track its technical approval status.'
-              : 'Review the equipment requested for events. Requests remain pending until reviewed.'}
+              : 'Review each request, allocate every requested item, then approve or reject it.'}
           </p>
         </div>
 
@@ -311,7 +331,10 @@ export default function EquipmentRequestsPage() {
               )}
 
               {events.length === 0 && (
-                <p className="note">You have no assigned events in Planning or Confirmed status that are eligible for equipment requests.</p>
+                <p className="note">
+                  There are no eligible assigned events without an equipment request.
+                  Each event can have one equipment request, submitted by its Coordinator.
+                </p>
               )}
             </section>
 
@@ -389,16 +412,22 @@ export default function EquipmentRequestsPage() {
                         <span className="choice__description">
                           {formatDateRange(request.event?.start_time, request.event?.end_time)}
                           {' · '}
-                          <span className="tag">
-                            {request.status === 'Approved' ? 'Equipment reserved' : request.status}
-                          </span>
+                          <span className="tag">{request.status}</span>
                         </span>
+                        <span className="choice__description">{equipmentLines(request)}</span>
                         {request.status === 'Pending Technical Approval' && (
                           <span className="choice__description">
-                            Outstanding technical requirement
+                            Equipment allocation: {request.equipment_bookings?.length || 0}
+                            {' / '}{request.items?.length || 0} requested items booked.
                           </span>
                         )}
-                        <span className="choice__description">{equipmentLines(request)}</span>
+                        <span className="choice__description">
+                          {request.equipment_bookings?.length
+                            ? `Booked equipment: ${request.equipment_bookings.map(
+                              (booking) => booking.equipment?.name || 'Equipment',
+                            ).join(', ')}`
+                            : 'No equipment has been allocated yet.'}
+                        </span>
                       </span>
                     </article>
                   )

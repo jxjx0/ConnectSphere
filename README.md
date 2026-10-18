@@ -154,16 +154,25 @@ Supabase SQL Editor; it creates the request tables and the atomic submission
 function. If an earlier version of that migration was already applied, also
 apply `database/equipment_request_hardening.sql` to update assignment access,
 eligible event statuses and request review statuses without deleting rows.
-Then apply `database/equipment_request_review.sql` to enable the Technical
-Support review queue and atomic availability checks. The review migration adds
-functions only: approving a request reserves its requested equipment for the
-event's active venue-booking windows (including setup and teardown buffers),
-and the request status represents whether its technical requirement is still
-outstanding. It does not change equipment catalogue maintenance status or add
-tables or columns. The current schema has no stock-count field, so availability
-is tracked by equipment row as an exclusive resource; it cannot verify whether
-a requested quantity greater than one represents enough physical units.
-Other SQL files in `database` document the existing schema.
+Then apply `database/equipment_request_review.sql`, followed by
+`database/equipment_bookings.sql`, and finally
+`database/equipment_request_workflow.sql`. Apply these files in this order.
+The last migration resets previously Approved requests to Pending when their
+requested equipment is not fully allocated; it does not delete request or
+booking records.
+
+The equipment workflow lets the assigned Coordinator submit one request per
+event. Technical Support allocates each requested catalogue item for the full
+event window, including venue setup and teardown buffers, then approves or
+rejects the request. Approval is rejected unless every requested item has a
+booking covering that window. A shared calendar shows reservations across the
+equipment catalogue, and overlapping reservations are blocked. The workflow
+migration adds or replaces database functions and policies but does not add
+tables or columns. The `equipment_bookings` table itself is introduced by
+`equipment_bookings.sql`. The current schema has no stock-count field, so
+availability is tracked by equipment row as an exclusive resource; it cannot
+verify that a requested quantity greater than one corresponds to enough
+physical units. Other SQL files in `database` document the existing schema.
 
 ---
 

@@ -40,6 +40,10 @@ export default function EquipmentBookingsPage() {
   const [month, setMonth] = useState({ year: today.getFullYear(), month: today.getMonth() })
   const [bookings, setBookings] = useState([])
   const [bookingsError, setBookingsError] = useState('')
+  const [availabilityBookings, setAvailabilityBookings] = useState([])
+  const [availabilityChecked, setAvailabilityChecked] = useState(false)
+  const [availabilityLoading, setAvailabilityLoading] = useState(false)
+  const [availabilityError, setAvailabilityError] = useState('')
 
   const [requestId, setRequestId] = useState('')
   const [startAt, setStartAt] = useState('')
@@ -50,14 +54,27 @@ export default function EquipmentBookingsPage() {
   const [removingId, setRemovingId] = useState('')
 
   const pendingRequests = useMemo(
-    () => requests.filter((request) => request.status === PENDING),
-    [requests],
+    () => requests.filter((request) => (
+      request.status === PENDING
+      && request.items?.some((requestItem) => requestItem.equipment_id === equipmentId)
+    )),
+    [equipmentId, requests],
+  )
+  const alreadyAllocated = availabilityBookings.some(
+    (booking) => booking.request_id === requestId,
+  )
+  const hasOverlappingReservation = availabilityBookings.some(
+    (booking) => booking.request_id !== requestId,
   )
 
   const chooseRequest = useCallback((id, requestList) => {
     setRequestId(id)
     const window = defaultBookingWindow(requestList.find((request) => request.id === id))
-    if (!window) return
+    if (!window) {
+      setStartAt('')
+      setEndAt('')
+      return
+    }
     setStartAt(toLocalInputValue(window.start))
     setEndAt(toLocalInputValue(window.end))
     setMonth({ year: window.start.getFullYear(), month: window.start.getMonth() })
@@ -75,7 +92,11 @@ export default function EquipmentBookingsPage() {
         setRequests(requestData.requests)
         const preselected = searchParams.get('request')
         if (preselected && requestData.requests.some(
-          (request) => request.id === preselected && request.status === PENDING,
+          (request) => (
+            request.id === preselected
+            && request.status === PENDING
+            && request.items?.some((requestItem) => requestItem.equipment_id === equipmentId)
+          ),
         )) {
           chooseRequest(preselected, requestData.requests)
         }
@@ -96,6 +117,50 @@ export default function EquipmentBookingsPage() {
     loadBookings()
   }, [loadBookings])
 
+  useEffect(() => {
+    if (!requestId || !startAt || !endAt) {
+      setAvailabilityBookings([])
+      setAvailabilityChecked(false)
+      setAvailabilityError('')
+      return undefined
+    }
+
+    const start = new Date(startAt)
+    const end = new Date(endAt)
+    if (
+      Number.isNaN(start.getTime())
+      || Number.isNaN(end.getTime())
+      || end <= start
+    ) {
+      setAvailabilityBookings([])
+      setAvailabilityChecked(false)
+      setAvailabilityError('')
+      return undefined
+    }
+
+    let active = true
+    setAvailabilityChecked(false)
+    setAvailabilityLoading(true)
+    setAvailabilityError('')
+    getEquipmentBookings(equipmentId, start, end, token)
+      .then((data) => {
+        if (active) {
+          setAvailabilityBookings(data.bookings)
+          setAvailabilityChecked(true)
+        }
+      })
+      .catch((caught) => {
+        if (active) setAvailabilityError(caught.message)
+      })
+      .finally(() => {
+        if (active) setAvailabilityLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [equipmentId, endAt, requestId, startAt, token])
+
   function changeMonth(step) {
     setMonth((current) => {
       const date = new Date(current.year, current.month + step, 1)
@@ -112,6 +177,10 @@ export default function EquipmentBookingsPage() {
       setFormError('Choose the equipment request this booking is for.')
       return
     }
+    if (!availabilityChecked || alreadyAllocated) {
+      setFormError('This equipment is not available for the required event time.')
+      return
+    }
     const start = new Date(startAt)
     const end = new Date(endAt)
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
@@ -125,12 +194,14 @@ export default function EquipmentBookingsPage() {
 
     setSaving(true)
     try {
-      await createEquipmentBooking({
+      const result = await createEquipmentBooking({
         equipment_id: equipmentId,
         request_id: requestId,
         start_at: start.toISOString(),
         end_at: end.toISOString(),
       }, token)
+      setAvailabilityBookings((current) => [...current, result.booking])
+      setAvailabilityChecked(true)
       setFormMessage(`${item.name} booked for ${formatDateRange(start, end)}.`)
       setMonth({ year: start.getFullYear(), month: start.getMonth() })
       await loadBookings()
@@ -146,6 +217,9 @@ export default function EquipmentBookingsPage() {
     setBookingsError('')
     try {
       await deleteEquipmentBooking(bookingId, token)
+      setAvailabilityBookings((current) => current.filter(
+        (booking) => booking.id !== bookingId,
+      ))
       await loadBookings()
     } catch (caught) {
       setBookingsError(caught.message)
@@ -167,6 +241,8 @@ export default function EquipmentBookingsPage() {
       <AppShell>
         <div className="content">
           <Link to="/equipment" className="backlink">← Equipment catalogue</Link>
+          {' · '}
+          <Link to="/equipment/bookings" className="backlink">Shared bookings calendar</Link>
           <p className="form-error" role="alert">{error}</p>
         </div>
       </AppShell>
@@ -268,7 +344,8 @@ export default function EquipmentBookingsPage() {
           <h2 className="section-title">Add a booking</h2>
           {!functional && (
             <p className="note" role="status">
-              This item is {item.maintenance_status.toLowerCase()}, so it cannot be booked.
+              This item is {item.maintenance_status.toLowerCase()} and cannot be allocated.
+              Use the notification action below so the Coordinator can arrange an alternative.
             </p>
           )}
           {functional && pendingRequests.length === 0 && (
@@ -279,7 +356,6 @@ export default function EquipmentBookingsPage() {
             <select
               id="booking-request"
               value={requestId}
-              disabled={!functional}
               onChange={(change) => chooseRequest(change.target.value, requests)}
             >
               <option value="">Choose a pending request…</option>
@@ -297,9 +373,10 @@ export default function EquipmentBookingsPage() {
             <input
               id="booking-start"
               type="datetime-local"
+              step="1"
               value={startAt}
               disabled={!functional}
-              onChange={(change) => setStartAt(change.target.value)}
+              readOnly
             />
           </div>
           <div className="field">
@@ -307,16 +384,50 @@ export default function EquipmentBookingsPage() {
             <input
               id="booking-end"
               type="datetime-local"
+              step="1"
               value={endAt}
               disabled={!functional}
-              onChange={(change) => setEndAt(change.target.value)}
+              readOnly
             />
           </div>
+          {requestId && (
+            <p
+              className={availabilityError ? 'form-error' : 'note'}
+              role={availabilityError ? 'alert' : 'status'}
+            >
+              {availabilityError
+                || (availabilityLoading
+                  ? 'Checking availability for the complete event time…'
+                  : availabilityChecked && alreadyAllocated
+                    ? 'Already allocated to this request.'
+                    : availabilityChecked && hasOverlappingReservation
+                        ? 'Unavailable: this equipment overlaps another reservation. Submit to notify the Coordinator.'
+                        : !functional
+                          ? `Unavailable: this item is ${item.maintenance_status.toLowerCase()}. Submit to notify the Coordinator.`
+                        : availabilityChecked
+                          ? 'Available for the complete event time, including setup and teardown.'
+                          : 'Availability has not been checked.')}
+            </p>
+          )}
           {formError && <p className="form-error" role="alert">{formError}</p>}
           {formMessage && <p className="form-success" role="status">{formMessage}</p>}
           <div className="form-actions">
-            <button type="submit" className="button" disabled={saving || !functional}>
-              {saving ? 'Booking…' : 'Add booking'}
+            <button
+              type="submit"
+              className="button"
+              disabled={
+                saving
+                || !availabilityChecked
+                || !requestId
+                || alreadyAllocated
+                || Boolean(availabilityError)
+              }
+            >
+              {saving
+                ? 'Saving…'
+                : !functional || hasOverlappingReservation
+                  ? 'Notify Coordinator — unavailable'
+                  : 'Allocate equipment'}
             </button>
             <Link to="/equipment-requests" className="button button--secondary">
               Back to requests

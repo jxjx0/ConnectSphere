@@ -70,9 +70,9 @@ test('requests without event windows have no default booking time', () => {
   assert.equal(defaultBookingWindow(undefined), null)
 })
 
-test('local input values round-trip through datetime-local', () => {
-  const date = new Date(2026, 9, 3, 9, 5)
+test('local input values preserve seconds when round-tripping datetime-local', () => {
+  const date = new Date(2026, 9, 3, 9, 5, 7)
   const value = toLocalInputValue(date)
-  assert.equal(value, '2026-10-03T09:05')
+  assert.equal(value, '2026-10-03T09:05:07')
   assert.equal(new Date(value).getTime(), date.getTime())
 })

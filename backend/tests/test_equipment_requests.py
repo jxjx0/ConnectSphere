@@ -65,7 +65,8 @@ SAVED_REQUEST = {
 REQUEST_SELECT = (
     "*, event:events(id,name,start_time,end_time), "
     "items:equipment_request_items("
-    "id,equipment_id,quantity,equipment:equipment(id,name,type))"
+    "id,equipment_id,quantity,equipment:equipment(id,name,type)), "
+    "equipment_bookings(id,equipment_id,start_at,end_at,equipment:equipment(id,name))"
 )
 
 
@@ -395,6 +396,11 @@ def test_service_reports_missing_rpc_result(
             "P0002",
             404,
             "The event was not found, is not assigned to you, or is not eligible for an equipment request.",
+        ),
+        (
+            "P0001",
+            409,
+            "An equipment request has already been submitted for this event.",
         ),
         (
             "22023",

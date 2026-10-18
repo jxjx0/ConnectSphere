@@ -3,7 +3,11 @@
 from flask import Blueprint, g, jsonify, request
 from pydantic import ValidationError
 
-from models.equipment_booking import EquipmentBookingCreate, EquipmentBookingRange
+from models.equipment_booking import (
+    EquipmentBookingCalendarRange,
+    EquipmentBookingCreate,
+    EquipmentBookingRange,
+)
 from models.profile import Role
 from routes.auth import require_auth
 from services import auth_service, equipment_booking_service
@@ -22,6 +26,25 @@ def _require_tech_support() -> None:
             "Only Technical Support can manage equipment bookings.",
             status_code=403,
         )
+
+
+@equipment_bookings_bp.get("/equipment-bookings/calendar")
+@require_auth
+def list_calendar_equipment_bookings():
+    try:
+        booking_range = EquipmentBookingCalendarRange(
+            start=request.args.get("from"),
+            end=request.args.get("to"),
+        )
+    except ValidationError as error:
+        return jsonify({"errors": _validation_messages(error)}), 400
+
+    _require_tech_support()
+    bookings = equipment_booking_service.list_all_equipment_bookings(
+        g.access_token,
+        booking_range,
+    )
+    return jsonify({"bookings": bookings}), 200
 
 
 @equipment_bookings_bp.get("/equipment-bookings")
