@@ -75,8 +75,22 @@ def create_venue_booking(
     if request.event_id:
         check_duplicate_event_booking(client, venue_id, request.event_id)
 
-    effective_start = request.start_at - timedelta(minutes=request.setup_buffer_minutes)
-    effective_end = request.end_at + timedelta(minutes=request.teardown_buffer_minutes)
+    # Fetch setup_time_minutes and turnaround_time_minutes from venue catalog
+    venue_res = (
+        client.table("venues")
+        .select("setup_time_minutes, turnaround_time_minutes")
+        .eq("id", venue_id)
+        .execute()
+    )
+    if not venue_res.data:
+        raise AuthError("Venue not found.", status_code=404)
+
+    venue_info = venue_res.data[0]
+    setup_mins = venue_info.get("setup_time_minutes") or 0
+    turnaround_mins = venue_info.get("turnaround_time_minutes") or 0
+
+    effective_start = request.start_at - timedelta(minutes=setup_mins)
+    effective_end = request.end_at + timedelta(minutes=turnaround_mins)
 
     effective_start_iso = effective_start.isoformat()
     effective_end_iso = effective_end.isoformat()
@@ -97,8 +111,8 @@ def create_venue_booking(
         "room_layout": request.room_layout,
         "start_at": request.start_at.isoformat(),
         "end_at": request.end_at.isoformat(),
-        "setup_buffer_minutes": request.setup_buffer_minutes,
-        "teardown_buffer_minutes": request.teardown_buffer_minutes,
+        "setup_buffer_minutes": setup_mins,
+        "teardown_buffer_minutes": turnaround_mins,
         "effective_start_at": effective_start_iso,
         "effective_end_at": effective_end_iso,
         "status": "PENDING_VENUE_APPROVAL",
@@ -121,7 +135,7 @@ def review_venue_booking(
     reviewer_id: str,
     review: VenueBookingReviewRequest,
 ) -> dict:
-    """Approve or reject a request. On approval/rejection, dispatches a notification to the event coordinator."""
+    """Approve or reject a request. On approval, attaches booking_id to venue_blocks."""
     client = config.get_user_client(access_token)
 
     booking_res = (
@@ -181,8 +195,10 @@ def review_venue_booking(
                 status_code=409,
             )
 
+        # Include booking_id in calendar operational block creation
         block_data = {
             "venue_id": booking["venue_id"],
+            "booking_id": booking["booking_id"],
             "start_at": booking["effective_start_at"],
             "end_at": booking["effective_end_at"],
             "block_reason": f"Approved Booking: {event.get('name', 'Event')} ({requested_layout})",
@@ -205,7 +221,6 @@ def review_venue_booking(
 
         approved_booking = update_res.data[0]
 
-        # Dispatch notification with positional notification_type
         if booking.get("coordinator_id"):
             notify(
                 booking["coordinator_id"],
@@ -229,7 +244,6 @@ def review_venue_booking(
 
     rejected_booking = update_res.data[0]
 
-    # Dispatch notification with positional notification_type
     if booking.get("coordinator_id"):
         reason_text = f" Reason: {review.rejection_reason}" if review.rejection_reason else ""
         notify(
