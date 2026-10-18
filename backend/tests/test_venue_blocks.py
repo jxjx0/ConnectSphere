@@ -51,6 +51,14 @@ def authenticate_as_venue_staff(monkeypatch):
     )
 
 
+@pytest.fixture
+def unavailable_impact(monkeypatch):
+    """Keep creation/route tests isolated from the separately tested RPC reader."""
+    monkeypatch.setattr(venue_block_service, "check_booking_impact", lambda *args: {
+        "status": "unavailable", "affected_bookings": None,
+    })
+
+
 # ============================================================================
 # 1. Model Validation Tests (VenueBlockCreateRequest)
 # ============================================================================
@@ -128,7 +136,7 @@ def test_route_rejects_mixed_naive_aware_times_without_server_error(client, monk
 # 2. HTTP Route Tests (POST /venues/<venue_id>/blocks)
 # ============================================================================
 
-def test_venue_staff_can_create_venue_block(client, monkeypatch):
+def test_venue_staff_can_create_venue_block(client, monkeypatch, unavailable_impact):
     authenticate_as_venue_staff(monkeypatch)
     captured = {}
 
@@ -348,7 +356,7 @@ def test_service_create_venue_block_empty_response_raises_502(monkeypatch):
     assert exc_info.value.message == "Venue block was not created."
 
 
-def test_block_saves_without_reading_or_mutating_other_arrangements(monkeypatch):
+def test_block_saves_without_mutating_other_arrangements_when_impact_is_unavailable(monkeypatch, unavailable_impact):
     # Missing booking integration is explicit; only operational blocks are written.
     writes = []
 
@@ -380,7 +388,7 @@ def test_block_saves_without_reading_or_mutating_other_arrangements(monkeypatch)
     ("10:00", "11:00", ["hall", "other"]),  # touches end
     ("11:00", "12:00", ["hall", "other"]),  # block has ended
 ])
-def test_saved_block_is_consumed_by_timed_search(monkeypatch, venue_payload, search_start, search_end, expected):
+def test_saved_block_is_consumed_by_timed_search(monkeypatch, venue_payload, search_start, search_end, expected, unavailable_impact):
     stored = []
 
     class Query:

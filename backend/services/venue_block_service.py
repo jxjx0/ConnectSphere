@@ -1,12 +1,16 @@
 """Venue block persistence through Supabase."""
 
+from httpx import HTTPError
 from postgrest import APIError as PostgrestAPIError
 from pydantic import ValidationError
 
 import config
 from models.venue_block import VenueBlockCreateRequest
 from models.venue_availability import OperationalBlockItem
+from models.venue_search import OccupiedPeriod
 from services.auth_service import AuthError
+from services import venue_availability_service as availability
+from services.notification_service import notify
 
 
 def read_operational_blocks(client, venue_id, start, end) -> list[OperationalBlockItem]:
@@ -38,16 +42,51 @@ def read_operational_blocks(client, venue_id, start, end) -> list[OperationalBlo
 
 
 def check_booking_impact(access_token: str, venue_id: str, request: VenueBlockCreateRequest) -> dict:
-    """Integration boundary: unavailable is not a verified empty booking list.
+    """Report affected approved bookings and notify without cancelling anything."""
+    client = config.get_user_client(access_token)
+    try:
+        bookings = availability.read_approved_venue_bookings(client, venue_id)
+        affected = []
+        for booking in bookings:
+            start, end = availability.effective_period(
+                booking.start_at, booking.end_at,
+                booking.setup_time_minutes, booking.turnaround_time_minutes,
+            )
+            period = OccupiedPeriod(start_at=start, end_at=end)
+            if availability.overlaps(request.start_at, request.end_at, period):
+                affected.append({
+                    "booking_id": booking.booking_id, "event_id": booking.event_id,
+                    "event_name": booking.event_name, "coordinator_id": booking.coordinator_id,
+                    "effective_start": start.isoformat(), "effective_end": end.isoformat(),
+                    "venue_name": booking.venue_name,
+                })
+    except (PostgrestAPIError, HTTPError, ValidationError, ValueError, KeyError, TypeError, OverflowError):
+        # The block is already saved: never turn an impact-read failure into a
+        # failed creation response that encourages duplicate block submissions.
+        return {"status": "unavailable", "affected_bookings": None}
 
-    TODO T7-90/T7-33: use authoritative booking reads with booking/event/
-    coordinator identities and configured effective periods. Compare with
-    availability.overlaps(), then reuse notification_service.notify(). A
-    verified result carries affected_bookings (an empty list means none).
-    Do not claim verification without persisted buffers or notification success
-    when notify() fails. No booking/event writes belong here.
-    """
-    return {"status": "unavailable", "affected_bookings": None}
+    for booking in affected:
+        booking["notification_status"] = _notify_affected_coordinator(booking, request)
+    complete = all(booking["notification_status"] == "saved" for booking in affected)
+    return {"status": "verified" if complete else "partial", "affected_bookings": affected}
+
+
+def _notify_affected_coordinator(booking: dict, request: VenueBlockCreateRequest) -> str:
+    if not booking["coordinator_id"]:
+        return "missing_coordinator"
+    start = request.start_at.astimezone(availability.VENUE_TIMEZONE).strftime("%d %b %Y, %H:%M")
+    end = request.end_at.astimezone(availability.VENUE_TIMEZONE).strftime("%d %b %Y, %H:%M")
+    notification = notify(
+        user_id=booking["coordinator_id"], notification_type="venue_booking_affected",
+        title="Venue booking affected by unavailability",
+        body=(f"{booking['venue_name']} is unavailable from {start} to {end} (Singapore time). "
+              f"Reason: {request.block_reason}. Your booking for "
+              f"{booking['event_name'] or 'this venue'} is affected, including setup/turnaround. "
+              "Your booking and event have been preserved. Please arrange an alternative venue."),
+        event_id=booking["event_id"],
+    )
+    # notify() confirms the in-app record only; email delivery is best-effort.
+    return "saved" if notification is not None else "failed"
 
 
 def create_venue_block_outcome(access_token, venue_id, request, block_issuer) -> dict:

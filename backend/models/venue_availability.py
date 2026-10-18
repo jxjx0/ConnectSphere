@@ -26,6 +26,20 @@ class OperationalBlockItem(OccupiedPeriod):
     reason: str = Field(min_length=1)
 
 
+class ApprovedVenueBooking(OccupiedPeriod):
+    """Staff-only occupancy projection with the event's current Coordinator."""
+
+    booking_id: str = Field(min_length=1)
+    venue_id: str = Field(min_length=1)
+    venue_name: str = Field(min_length=1)
+    event_id: str | None = None
+    event_name: str | None = None
+    coordinator_id: str | None = Field(default=None, min_length=1)
+    status: Literal["APPROVED"]
+    setup_time_minutes: int = Field(strict=True, ge=0, le=2147483647)
+    turnaround_time_minutes: int = Field(strict=True, ge=0, le=2147483647)
+
+
 class AvailabilitySources(BaseModel):
     operational_blocks: Literal["verified"] = "verified"
     confirmed_bookings: Literal["unavailable"] = "unavailable"

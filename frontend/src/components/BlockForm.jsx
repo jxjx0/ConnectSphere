@@ -63,7 +63,9 @@ export default function BlockForm({ venue, onClose, onCreated }) {
   if (outcome) {
     const impact = outcome.booking_impact
     const verified = impact?.status === 'verified' && Array.isArray(impact.affected_bookings)
-    const affected = verified ? impact.affected_bookings : []
+    const identified = verified || (impact?.status === 'partial'
+      && Array.isArray(impact.affected_bookings) && impact.affected_bookings.length > 0)
+    const affected = identified ? impact.affected_bookings : []
     const sameDay = new Date(outcome.block.start_at).toDateString() === new Date(outcome.block.end_at).toDateString()
     const period = formatDateRange(outcome.block.start_at, outcome.block.end_at)
     const periodLines = period.split(sameDay ? ', ' : ' – ')
@@ -83,18 +85,34 @@ export default function BlockForm({ venue, onClose, onCreated }) {
           <h3 className="note">Reason</h3>
           <p className="venue-block-dialog__reason">{outcome.block.block_reason}</p>
         </div>
-        {/* TODO: Revisit impact presentation once real booking reads and venue buffers are integrated. */}
-        {verified && <section className="progress venue-block-dialog__impact">
+        {identified && <section className="progress venue-block-dialog__impact">
           <h3 className="note">Booking impact</h3>
           <p>
             {affected.length === 0
               ? 'No existing bookings are affected.'
               : `${affected.length} existing booking${affected.length === 1 ? '' : 's'} affected.`}
           </p>
-              {affected.length > 0 && <ul>{affected.map((booking, index) => (
-                <li key={booking.booking_id || index}>{booking.event_name || 'Affected venue booking'}</li>
-              ))}</ul>}
+          {affected.length > 0 && <ul>{affected.map((booking, index) => (
+            <li key={booking.booking_id || index}>
+              {booking.event_name || 'Affected venue booking'}
+              {booking.effective_start && booking.effective_end && <span className="note">
+                {' — '}{formatDateRange(booking.effective_start, booking.effective_end)}
+              </span>}
+              <span className="note">
+                {' — '}{booking.notification_status === 'saved' ? 'Notification saved.'
+                  : booking.notification_status === 'missing_coordinator' ? 'No Coordinator is assigned; follow up manually.'
+                    : booking.notification_status === 'failed' ? 'Notification could not be saved; follow up manually.'
+                      : 'Notification status could not be confirmed.'}
+              </span>
+            </li>
+          ))}</ul>}
+          {affected.length > 0 && <p className="note">
+            {verified && affected.every((booking) => booking.notification_status === 'saved')
+              ? 'Coordinator notifications saved. Existing bookings and events have been preserved.'
+              : 'Some Coordinator notifications could not be confirmed. Follow up on the affected bookings.'}
+          </p>}
         </section>}
+        {!identified && <p className="note" role="status">Booking impact could not be checked. Review existing bookings before making arrangements.</p>}
         <div className="form-actions">
           <button type="button" className="button button--secondary" onClick={onClose}>Close</button>
         </div>
