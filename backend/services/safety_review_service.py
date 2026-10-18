@@ -82,6 +82,7 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
                 client.table("equipment_requests")
                 .select("id, status, created_at")
                 .eq("event_id", event_id)
+                .eq("status", "Approved")
                 .execute()
             )
             if equip_res.data:
@@ -118,8 +119,8 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
         # Flag 2: Equipment Under Maintenance / Damaged
         for item in equipment_items:
             equip = item.get("equipment") or {}
-            m_status = (equip.get("maintenance_status") or "").lower()
-            if m_status in ["maintenance", "damaged", "inoperable", "under_repair"]:
+            m_status = equip.get("maintenance_status") or "Unknown"
+            if m_status != "Functional":
                 flags.append({
                     "type": "EQUIPMENT_HAZARD",
                     "severity": "CRITICAL",
@@ -128,8 +129,8 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
 
         # Flag 3: Accessibility Requirements Misalignment
         accessibility_req = (event.get("accessibility_requirements") or "").lower()
-        venue_access = venue.get("accessibility") or {}
-        is_accessible = venue_access.get("wheelchair_accessible", True) if isinstance(venue_access, dict) else True
+        venue_access = venue.get("accessibility") or []
+        is_accessible = any("wheelchair" in str(feature).lower() for feature in venue_access)
 
         if "wheelchair" in accessibility_req and not is_accessible:
             flags.append({
@@ -167,14 +168,64 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
         )
 
 
+def _safety_check_blockers(client, event: dict) -> list[str]:
+    """What still stops this event from being sent for its safety check."""
+    blockers = []
+    if event.get("status") != "planning":
+        blockers.append("the event must be in Planning")
+
+    bookings = (
+        client.table("venue_bookings")
+        .select("status")
+        .eq("event_id", event["id"])
+        .execute()
+    ).data or []
+    if not any((booking.get("status") or "").upper() == "APPROVED" for booking in bookings):
+        blockers.append("it needs an approved venue booking")
+
+    equipment_requests = (
+        client.table("equipment_requests")
+        .select("status")
+        .eq("event_id", event["id"])
+        .execute()
+    ).data or []
+    if any(request.get("status") == "Pending Technical Approval" for request in equipment_requests):
+        blockers.append("pending equipment requests must be reviewed first")
+
+    return blockers
+
+
 def request_safety_check(event_id: str, access_token: str) -> dict:
-    """Update event safety_status to pending for safety officer inspection."""
+    """Send an event to the Safety Officer once its venue and equipment are approved."""
     try:
         try:
             from config import get_admin_client
             client = get_admin_client()
         except Exception:
             client = get_user_client(access_token)
+
+        event_res = (
+            client.table("events")
+            .select("id, status, safety_status")
+            .eq("id", event_id)
+            .execute()
+        )
+        if not event_res.data:
+            raise AuthError("Event not found", status_code=404)
+        event = event_res.data[0]
+
+        if event.get("safety_status") in ("pending", "approved"):
+            raise AuthError(
+                "A safety check has already been requested for this event.",
+                status_code=409,
+            )
+
+        blockers = _safety_check_blockers(client, event)
+        if blockers:
+            raise AuthError(
+                "This event is not ready for a safety check: " + "; ".join(blockers) + ".",
+                status_code=409,
+            )
 
         response = (
             client.table("events")
@@ -183,6 +234,8 @@ def request_safety_check(event_id: str, access_token: str) -> dict:
             .execute()
         )
         return {"message": "Safety review requested successfully", "data": response.data}
+    except AuthError:
+        raise
     except PostgrestAPIError as exc:
         raise AuthError(
             f"Failed to request safety check: {exc.message}",

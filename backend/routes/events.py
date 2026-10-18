@@ -60,11 +60,7 @@ def _require_coordinator() -> Profile:
 def _require_safety_officer() -> Profile:
     """Require the authenticated profile to have the Safety Officer role."""
     profile = auth_service.get_profile(g.access_token, g.user_id)
-    allowed_roles = [
-        Role.SAFETY_OFFICER,
-        getattr(Role, "SAFETY_OFFICER", "safety_officer"),
-    ]
-    if profile.role not in allowed_roles:
+    if profile.role != Role.SAFETY_OFFICER:
         raise AuthError(
             "Only Safety Officers are authorized to access safety review tasks.",
             status_code=403,
@@ -500,7 +496,7 @@ def get_safety_queue():
         return jsonify({"error": exc.message}), exc.status_code
     except Exception as exc:
         logger.error(f"Error in /events/safety/queue: {traceback.format_exc()}")
-        return jsonify({"error": str(exc), "trace": traceback.format_exc()}), 500
+        return jsonify({"error": "Unable to load the safety queue."}), 500
 
 
 @events_bp.get("/safety/review/<event_id>")
@@ -515,7 +511,7 @@ def get_safety_review_details(event_id):
         return jsonify({"error": exc.message}), exc.status_code
     except Exception as exc:
         logger.error(f"Error in /events/safety/review/{event_id}: {traceback.format_exc()}")
-        return jsonify({"error": str(exc), "trace": traceback.format_exc()}), 500
+        return jsonify({"error": "Unable to load this safety review."}), 500
 
 
 @events_bp.post("/<event_id>/request-safety-check")
@@ -529,4 +525,4 @@ def request_safety_check(event_id):
         return jsonify({"error": exc.message}), exc.status_code
     except Exception as exc:
         logger.error(f"Error requesting safety check for {event_id}: {traceback.format_exc()}")
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "Unable to request a safety check."}), 500

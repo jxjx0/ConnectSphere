@@ -110,6 +110,7 @@ export default function EventReviewDetailPage() {
   const [venueBookings, setVenueBookings] = useState([])
 
   const [submittingSafety, setSubmittingSafety] = useState(false)
+  const [safetyError, setSafetyError] = useState('')
 
   // --- ADD THIS STATE FOR AUDIT TRAIL & REASSIGNMENT ---
   const [activityLogs, setActivityLogs] = useState([])
@@ -304,6 +305,10 @@ export default function EventReviewDetailPage() {
     )
   }
 
+  const hasApprovedVenue = venueBookings.some(
+    (booking) => (booking.status || '').toUpperCase() === 'APPROVED',
+  )
+
   return (
     <AppShell>
       <div className="content">
@@ -342,7 +347,6 @@ export default function EventReviewDetailPage() {
                   {venueBookings.length > 0 ? 'Find / Request Additional Venue' : 'Find Venue'}
                 </Link>
 
-                {/* Dynamic Safety Check Status / Button */}
                 {event.safety_status === 'pending' ? (
                   <span className="tag tag--orange">Safety Review Pending</span>
                 ) : event.safety_status === 'approved' ? (
@@ -351,14 +355,15 @@ export default function EventReviewDetailPage() {
                   <button
                     type="button"
                     className="button button--secondary"
-                    disabled={submittingSafety}
+                    disabled={submittingSafety || !hasApprovedVenue}
                     onClick={async () => {
                       setSubmittingSafety(true)
+                      setSafetyError('')
                       try {
                         await requestSafetyCheck(eventId, token)
                         setEvent((prev) => ({ ...prev, safety_status: 'pending' }))
                       } catch (err) {
-                        alert(err.message || 'Failed to request safety check')
+                        setSafetyError(err.message || 'Failed to request safety check')
                       } finally {
                         setSubmittingSafety(false)
                       }
@@ -369,12 +374,15 @@ export default function EventReviewDetailPage() {
                 )}
               </div>
 
-              {/* Success Confirmation */}
               {event.safety_status === 'pending' && (
-                <p className="note" style={{ color: 'var(--accent)', marginTop: '0.5rem' }}>
-                  ✓ Safety check request submitted successfully!
+                <p className="note">Waiting for the Safety Officer's review.</p>
+              )}
+              {!hasApprovedVenue && !['pending', 'approved'].includes(event.safety_status) && (
+                <p className="note">
+                  A safety check can be requested once a venue booking is approved and no equipment request is still pending.
                 </p>
               )}
+              {safetyError && <p className="form-error" role="alert">{safetyError}</p>}
             </div>
           )}
           {!['completed', 'rejected'].includes(event.status) && (
