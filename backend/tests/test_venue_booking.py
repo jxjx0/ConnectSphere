@@ -115,10 +115,11 @@ def test_create_venue_booking_success(monkeypatch):
     assert result["booking_id"] == "b_1"
 
 
-def test_create_venue_booking_duplicate_raises_conflict(monkeypatch):
+@pytest.mark.parametrize("status", ["APPROVED", "AFFECTED_BY_UNAVAILABILITY"])
+def test_create_venue_booking_duplicate_raises_conflict(monkeypatch, status):
     """Test rejection when active booking for event already exists."""
     mock_client = MagicMock()
-    mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.neq.return_value.neq.return_value.execute.return_value.data = [{"booking_id": "b_old"}]
+    mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.neq.return_value.neq.return_value.execute.return_value.data = [{"booking_id": "b_old", "status": status}]
     monkeypatch.setattr("config.get_user_client", lambda token: mock_client)
 
     class Req:
@@ -129,6 +130,9 @@ def test_create_venue_booking_duplicate_raises_conflict(monkeypatch):
             access_token="token", venue_id="v_1", request=Req(), coordinator_id="coord_1"
         )
     assert exc.value.status_code == 409
+    excluded = mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value
+    excluded.neq.assert_called_once_with("status", "REJECTED")
+    excluded.neq.return_value.neq.assert_called_once_with("status", "CANCELLED")
 
 
 def test_review_venue_booking_rejection(monkeypatch):

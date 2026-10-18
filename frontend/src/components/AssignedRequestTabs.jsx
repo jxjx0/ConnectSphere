@@ -57,6 +57,17 @@ function getVenueBadge(venueBookings) {
     }
   }
 
+  if (venueBookings.some((b) => b.status === 'AFFECTED_BY_UNAVAILABILITY')) {
+    return {
+      label: 'Venue Affected',
+      style: {
+        backgroundColor: 'var(--danger-faint)',
+        color: 'var(--danger)',
+        borderColor: 'var(--danger)',
+      },
+    }
+  }
+
   const hasApproved = venueBookings.some((b) => b.status === 'APPROVED')
   if (hasApproved) {
     return {

@@ -177,9 +177,10 @@ def test_review_venue_booking_not_found(mock_get_client, mock_client):
 
 
 @patch("config.get_user_client")
-def test_review_venue_booking_already_processed(mock_get_client, mock_client):
+@pytest.mark.parametrize("status", ["APPROVED", "AFFECTED_BY_UNAVAILABILITY"])
+def test_review_venue_booking_already_processed(mock_get_client, mock_client, status):
     mock_get_client.return_value = mock_client
-    mock_client.table().select().eq().execute().data = [{"status": "APPROVED"}]
+    mock_client.table().select().eq().execute().data = [{"status": status}]
 
     review = VenueBookingReviewRequest(status="APPROVED")
     with pytest.raises(AuthError) as exc:

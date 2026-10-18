@@ -8,6 +8,7 @@ function getStatusClass(status) {
       return styles.approved
     case 'PENDING_VENUE_APPROVAL':
       return styles.pending
+    case 'AFFECTED_BY_UNAVAILABILITY':
     case 'REJECTED':
       return styles.rejected
     default:
@@ -60,6 +61,12 @@ export default function VenueBookingCard({ booking, validationError, actions }) 
           </div>
         )}
       </div>
+
+      {booking.status === 'AFFECTED_BY_UNAVAILABILITY' && (
+        <p className="form-error" role="status">
+          Originally approved. Venue now unavailable. Please arrange another venue.
+        </p>
+      )}
 
       {/* Validation Failure Banner */}
       {validationError && (

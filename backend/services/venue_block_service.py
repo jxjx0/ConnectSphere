@@ -42,7 +42,7 @@ def read_operational_blocks(client, venue_id, start, end) -> list[OperationalBlo
 
 
 def check_booking_impact(access_token: str, venue_id: str, request: VenueBlockCreateRequest) -> dict:
-    """Report affected approved bookings and notify without cancelling anything."""
+    """Mark affected approvals and notify without cancelling any arrangements."""
     client = config.get_user_client(access_token)
     try:
         bookings = availability.read_approved_venue_bookings(client, venue_id)
@@ -65,24 +65,59 @@ def check_booking_impact(access_token: str, venue_id: str, request: VenueBlockCr
         # failed creation response that encourages duplicate block submissions.
         return {"status": "unavailable", "affected_bookings": None}
 
+    updates = _mark_affected_bookings(client, venue_id, affected)
     for booking in affected:
-        booking["notification_status"] = _notify_affected_coordinator(booking, request)
-    complete = all(booking["notification_status"] == "saved" for booking in affected)
+        booking["status_update"] = updates[booking["booking_id"]]
+        booking["notification_status"] = (
+            "not_required" if booking["status_update"] == "not_updated"
+            else _notify_affected_coordinator(booking, request)
+        )
+    complete = all(booking["status_update"] == "updated" and booking["notification_status"] == "saved"
+                   for booking in affected)
     return {"status": "verified" if complete else "partial", "affected_bookings": affected}
+
+
+def _mark_affected_bookings(client, venue_id: str, affected: list[dict]) -> dict[str, str]:
+    """One conditional UPDATE is atomic; never overwrite a concurrently changed status."""
+    identities = {booking["booking_id"] for booking in affected}
+    if not identities:
+        return {}
+    try:
+        records = client.rpc("mark_venue_block_bookings_affected", {
+            "p_venue_id": venue_id, "p_booking_ids": sorted(identities),
+        }).execute().data
+    except PostgrestAPIError:
+        # The operational block stays saved. Still warn Coordinators, but make
+        # the failed status update explicit to staff rather than claiming success.
+        return dict.fromkeys(identities, "failed")
+    except HTTPError:
+        # A timeout may happen after commit; do not claim either success or rollback.
+        return dict.fromkeys(identities, "unverified")
+    try:
+        if not isinstance(records, list):
+            raise ValueError("status update response must be a list")
+        changed = {record["booking_id"] for record in records
+                   if record["status"] == "AFFECTED_BY_UNAVAILABILITY"}
+        if len(changed) != len(records) or not changed <= identities:
+            raise ValueError("status update response cannot be verified")
+    except (ValueError, KeyError, TypeError):
+        return dict.fromkeys(identities, "unverified")
+    return {identity: "updated" if identity in changed else "not_updated" for identity in identities}
 
 
 def _notify_affected_coordinator(booking: dict, request: VenueBlockCreateRequest) -> str:
     if not booking["coordinator_id"]:
         return "missing_coordinator"
-    start = request.start_at.astimezone(availability.VENUE_TIMEZONE).strftime("%d %b %Y, %H:%M")
-    end = request.end_at.astimezone(availability.VENUE_TIMEZONE).strftime("%d %b %Y, %H:%M")
+    local_start = request.start_at.astimezone(availability.VENUE_TIMEZONE)
+    local_end = request.end_at.astimezone(availability.VENUE_TIMEZONE)
+    start = local_start.strftime("%d %b %Y, %H:%M")
+    end = local_end.strftime("%H:%M" if local_start.date() == local_end.date() else "%d %b %Y, %H:%M")
     notification = notify(
         user_id=booking["coordinator_id"], notification_type="venue_booking_affected",
-        title="Venue booking affected by unavailability",
-        body=(f"{booking['venue_name']} is unavailable from {start} to {end} (Singapore time). "
-              f"Reason: {request.block_reason}. Your booking for "
-              f"{booking['event_name'] or 'this venue'} is affected, including setup/turnaround. "
-              "Your booking and event have been preserved. Please arrange an alternative venue."),
+        title="Venue unavailable",
+        body=(f"{booking['venue_name']} is unavailable: {start}–{end} (Singapore time). "
+              f"This affects {booking['event_name'] or 'your booking'}. "
+              f"Reason: {request.block_reason}. Please arrange another venue."),
         event_id=booking["event_id"],
     )
     # notify() confirms the in-app record only; email delivery is best-effort.

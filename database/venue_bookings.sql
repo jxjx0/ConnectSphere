@@ -11,6 +11,8 @@ CREATE TABLE venue_bookings (
     teardown_buffer_minutes INT NOT NULL DEFAULT 0,
     effective_start_at TIMESTAMPTZ NOT NULL,
     effective_end_at TIMESTAMPTZ NOT NULL,
+    -- APPROVED may become AFFECTED_BY_UNAVAILABILITY after a later operational block.
+    -- Preserve the booking and its reservation; this is not rejection/cancellation.
     status VARCHAR(50) NOT NULL DEFAULT 'PENDING_VENUE_APPROVAL',
     rejection_reason TEXT NULL,
     reviewed_by UUID NULL REFERENCES profiles(id),

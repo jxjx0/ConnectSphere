@@ -124,7 +124,7 @@ test('saved block stays visible with an honest unavailable-impact notice and can
   assert.ok(!page.html().includes('Could not be fully verified yet'))
   assert.doesNotMatch(page.html(), /<h3[^>]*>Booking impact<\/h3>/)
   assert.ok(!page.html().includes('No existing bookings are affected'))
-  assert.match(page.html(), /Booking impact could not be checked/)
+  assert.match(page.html(), /Impact check unavailable/)
   assert.ok(!page.html().includes('Submit'))
   find(page.tree(), (node) => node.type === 'button').props.onClick()
   assert.equal(page.closed(), 1)
@@ -138,7 +138,7 @@ test('verified-zero response differs from missing or incomplete impact data', as
     assert.equal(page.html().includes('No existing bookings are affected.'), verified)
     assert.ok(!page.html().includes('Could not be fully verified yet'))
     assert.equal(/<h3[^>]*>Booking impact<\/h3>/.test(page.html()), verified)
-    assert.equal(page.html().includes('Booking impact could not be checked'), !verified)
+    assert.equal(page.html().includes('Impact check unavailable'), !verified)
   }
 })
 
@@ -169,17 +169,17 @@ test('view supports supplied affected-booking summaries without claiming notific
   assert.match(page.html(), /Workshop/)
   assert.match(page.html(), /Seminar/)
   assert.ok(!page.html().includes('notified'))
-  assert.match(page.html(), /Some Coordinator notifications could not be confirmed/)
+  assert.match(page.html(), /Please follow up on the items above/)
 })
 
 test('saved Coordinator notifications are shown without claiming email delivery', async () => {
   const page = harness(async () => ({ block: { block_id: 'block-1' }, booking_impact: {
-    status: 'verified', affected_bookings: [{ booking_id: 'a', event_name: 'Workshop', notification_status: 'saved' }],
+    status: 'verified', affected_bookings: [{ booking_id: 'a', event_name: 'Workshop', status_update: 'updated', notification_status: 'saved' }],
   } }))
   await submit(page)
   assert.match(page.html(), /1 existing booking affected/)
-  assert.match(page.html(), /Coordinator notifications saved/)
-  assert.match(page.html(), /bookings and events have been preserved/)
+  assert.match(page.html(), /Coordinator notified/)
+  assert.doesNotMatch(page.html(), /saved|Bookings updated|Booking marked affected/)
   assert.doesNotMatch(page.html(), /email.*(delivered|sent)/i)
 })
 
@@ -192,12 +192,34 @@ test('partial notification results keep affected bookings visible for staff foll
     assert.match(page.html(), /Block created successfully/)
     assert.match(page.html(), /1 existing booking affected/)
     assert.match(page.html(), /Workshop/)
-    assert.match(page.html(), /Some Coordinator notifications could not be confirmed/)
-    assert.doesNotMatch(page.html(), /Coordinator notifications saved|No existing bookings are affected/)
+    assert.match(page.html(), /Please follow up on the items above/)
+    assert.doesNotMatch(page.html(), /Coordinators? notified|No existing bookings are affected/)
     assert.match(page.html(), notification_status === 'failed'
-      ? /Notification could not be saved/
-      : /No Coordinator is assigned/)
+      ? /Coordinator could not be notified/
+      : /No Coordinator assigned/)
     assert.equal(find(page.tree(), node => node.type === 'form'), undefined)
+  }
+})
+
+test('staff sees status-update outcome separately from notification success', async () => {
+  for (const [status_update, expected] of [
+    ['updated', /Coordinator notified/],
+    ['failed', /Booking status unchanged/],
+    ['unverified', /Booking status unconfirmed/],
+    ['not_updated', /Booking may have changed/],
+  ]) {
+    const page = harness(async () => ({ block: { block_id: 'saved' }, booking_impact: {
+      status: status_update === 'updated' ? 'verified' : 'partial',
+      affected_bookings: [{ booking_id: 'a', event_name: 'Workshop', status_update,
+        notification_status: status_update === 'not_updated' ? 'not_required' : 'saved' }],
+    } }))
+    await submit(page)
+    assert.match(page.html(), /Block created successfully/)
+    assert.match(page.html(), expected)
+    if (status_update !== 'updated') {
+      assert.doesNotMatch(page.html(), /Booking marked affected/)
+      assert.match(page.html(), /Please follow up on the items above/)
+    }
   }
 })
 

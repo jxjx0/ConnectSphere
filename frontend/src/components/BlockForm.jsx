@@ -98,21 +98,26 @@ export default function BlockForm({ venue, onClose, onCreated }) {
               {booking.effective_start && booking.effective_end && <span className="note">
                 {' — '}{formatDateRange(booking.effective_start, booking.effective_end)}
               </span>}
-              <span className="note">
-                {' — '}{booking.notification_status === 'saved' ? 'Notification saved.'
-                  : booking.notification_status === 'missing_coordinator' ? 'No Coordinator is assigned; follow up manually.'
-                    : booking.notification_status === 'failed' ? 'Notification could not be saved; follow up manually.'
-                      : 'Notification status could not be confirmed.'}
-              </span>
+              {booking.status_update !== 'updated' && <span className="note">
+                {' — '}{booking.status_update === 'failed' ? 'Booking status unchanged. Please follow up.'
+                  : booking.status_update === 'not_updated' ? 'Booking may have changed. Refresh to review.'
+                    : 'Booking status unconfirmed. Refresh to review.'}
+              </span>}
+              {booking.notification_status !== 'saved' && <span className="note">
+                {' — '}{booking.notification_status === 'missing_coordinator' ? 'No Coordinator assigned. Please follow up.'
+                  : booking.notification_status === 'failed' ? 'Coordinator could not be notified. Please follow up.'
+                    : booking.notification_status === 'not_required' ? 'Coordinator not notified.'
+                      : 'Notification unconfirmed. Please follow up.'}
+              </span>}
             </li>
           ))}</ul>}
           {affected.length > 0 && <p className="note">
-            {verified && affected.every((booking) => booking.notification_status === 'saved')
-              ? 'Coordinator notifications saved. Existing bookings and events have been preserved.'
-              : 'Some Coordinator notifications could not be confirmed. Follow up on the affected bookings.'}
+            {verified && affected.every((booking) => booking.status_update === 'updated' && booking.notification_status === 'saved')
+              ? (affected.length === 1 ? 'Coordinator notified.' : 'Coordinators notified.')
+              : 'Please follow up on the items above.'}
           </p>}
         </section>}
-        {!identified && <p className="note" role="status">Booking impact could not be checked. Review existing bookings before making arrangements.</p>}
+        {!identified && <p className="note" role="status">Impact check unavailable. Review existing bookings.</p>}
         <div className="form-actions">
           <button type="button" className="button button--secondary" onClick={onClose}>Close</button>
         </div>
