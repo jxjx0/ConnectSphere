@@ -62,6 +62,16 @@ def _require_coordinator() -> Profile:
     return profile
 
 
+def _notify_coordinator_leads(event) -> None:
+    notification_service.notify_role(
+        Role.EVENT_COORDINATOR_LEAD.value,
+        "event_submitted",
+        "New event request submitted",
+        f"A new event request '{event.name}' has been submitted for assignment.",
+        event.id,
+    )
+
+
 @events_bp.post("")
 @require_auth
 def submit_event():
