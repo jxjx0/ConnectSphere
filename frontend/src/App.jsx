@@ -19,6 +19,7 @@ import EquipmentBookingsPage from './pages/EquipmentBookingsPage'
 import EquipmentBookingCalendarPage from './pages/EquipmentBookingCalendarPage'
 import EventReviewDetailPage from './pages/EventReviewDetailPage'
 import EquipmentRequestsPage from './pages/EquipmentRequestsPage'
+import ReviewVenueRequestsPage from './pages/ReviewVenueRequestsPage'
 
 export default function App() {
   return (
@@ -173,6 +174,15 @@ export default function App() {
         element={
           <AuthGuard allowedRoles={['venue_staff']}>
             <VenuePage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/venues/reviewRequests"
+        element={
+          <AuthGuard allowedRoles={['venue_staff']}>
+            <ReviewVenueRequestsPage />
           </AuthGuard>
         }
       />

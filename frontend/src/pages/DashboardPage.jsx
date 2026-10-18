@@ -84,6 +84,9 @@ export default function DashboardPage() {
             <Link to="/venues/availability" className="button button--secondary">
               View Venue Availability
             </Link>
+            <Link to="/venues/reviewRequests" className="button button--secondary">
+              Review Venue Requests
+            </Link>
           </div>
         </section>
       )}
