@@ -8,6 +8,8 @@ from models.venue_booking import VenueBookingCreateRequest, VenueBookingReviewRe
 from services.auth_service import AuthError
 from services.notification_service import notify
 
+from services.safety_review_service import check_and_update_safety_status
+
 
 def get_pending_venue_bookings(access_token: str, venue_id: str | None = None) -> list[dict]:
     """Retrieve all venue bookings with status 'PENDING_VENUE_APPROVAL'."""
@@ -204,6 +206,13 @@ def review_venue_booking(
         )
 
         approved_booking = update_res.data[0]
+
+        # ➕ TRIGGER SAFETY CHECK AUTO-TRANSITION HERE:
+        if approved_booking.get("event_id"):
+            check_and_update_safety_status(
+                event_id=approved_booking["event_id"], 
+                access_token=access_token
+            )
 
         # Dispatch notification with positional notification_type
         if booking.get("coordinator_id"):

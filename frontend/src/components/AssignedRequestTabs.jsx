@@ -6,9 +6,15 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { formatDateRange, readableStatus } from '../eventDisplay'
 
 const TABS = [
+  // {
+  //   id: 'incoming',
+  //   label: 'Incoming',
+  //   statuses: ['under_review'],
+  //   empty: 'No requests are waiting for your decision.',
+  // },
   {
-    id: 'incoming',
-    label: 'Incoming',
+    id: 'under_review',
+    label: 'Under Review',
     statuses: ['under_review'],
     empty: 'No requests are waiting for your decision.',
   },
@@ -18,11 +24,29 @@ const TABS = [
     statuses: ['awaiting_clarification'],
     empty: 'No events are awaiting clarification.',
   },
+  // {
+  //   id: 'ongoing',
+  //   label: 'Ongoing',
+  //   statuses: ['planning', 'confirmed'],
+  //   empty: 'You have no ongoing events.',
+  // },
   {
-    id: 'ongoing',
-    label: 'Ongoing',
-    statuses: ['planning', 'confirmed'],
+    id: 'planning',
+    label: 'Planning',
+    statuses: ['planning'],
     empty: 'You have no ongoing events.',
+  },
+  {
+    id: 'awaiting_safety_check',
+    label: 'Awaiting Safety Check',
+    statuses: ['awaiting_safety_check'],
+    empty: 'No events are awaiting safety checks.',
+  },
+  {
+    id: 'confirmed',
+    label: 'Confirmed',
+    statuses: ['confirmed'],
+    empty: 'You have no confirmed events.',
   },
   {
     id: 'change-requested',

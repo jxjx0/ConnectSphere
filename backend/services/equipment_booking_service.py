@@ -10,6 +10,7 @@ from models.equipment_booking import (
 )
 from services import notification_service
 from services.auth_service import AuthError
+from services.safety_review_service import check_and_update_safety_status
 
 
 def _database_error(error: PostgrestAPIError) -> AuthError:
@@ -164,6 +165,15 @@ def create_equipment_booking(
         outcome.get("booking"), dict
     ):
         raise AuthError("Equipment booking was not saved.", status_code=502)
+    
+    # ➕ TRIGGER SAFETY CHECK AUTO-TRANSITION HERE:
+    event_id = outcome.get("event_id") or outcome["booking"].get("event_id")
+    if event_id:
+        check_and_update_safety_status(
+            event_id=str(event_id),
+            access_token=access_token
+        )
+        
     return outcome["booking"]
 
 

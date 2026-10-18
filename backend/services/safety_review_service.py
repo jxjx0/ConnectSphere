@@ -2,26 +2,32 @@
 
 import logging
 from postgrest import APIError as PostgrestAPIError
-from config import get_user_client
+from config import get_admin_client, get_user_client
 from services.auth_service import AuthError
 
 logger = logging.getLogger(__name__)
 
 
-def get_safety_review_queue(access_token: str) -> list[dict]:
-    """Retrieve all pending safety review events in FIFO order (created_at ASC)."""
+def _get_client(access_token: str = None):
+    """Helper to resolve admin client or fallback to user client with access token."""
     try:
-        try:
-            from config import get_admin_client
-            client = get_admin_client()
-        except Exception:
-            client = get_user_client(access_token)
+        return get_admin_client()
+    except Exception:
+        if access_token:
+            return get_user_client(access_token)
+        raise AuthError("Database client initialization failed.", status_code=500)
+
+
+def get_safety_review_queue(access_token: str) -> list[dict]:
+    """Retrieve all events in 'awaiting_safety_check' status in FIFO order (updated_at ASC)."""
+    try:
+        client = _get_client(access_token)
 
         response = (
             client.table("events")
             .select("*, coordinator:coordinator_id!left(id, full_name, role)")
-            .eq("safety_status", "pending")
-            .order("created_at", desc=False)
+            .eq("status", "awaiting_safety_check")  # 👈 Updated to check event status
+            .order("updated_at", desc=False)         # 👈 FIFO queue based on when it reached this status
             .execute()
         )
         return response.data or []
@@ -40,11 +46,7 @@ def get_safety_review_queue(access_token: str) -> list[dict]:
 def get_safety_event_details(event_id: str, access_token: str) -> dict:
     """Retrieve full event, venue, equipment, and automated safety flags."""
     try:
-        try:
-            from config import get_admin_client
-            client = get_admin_client()
-        except Exception:
-            client = get_user_client(access_token)
+        client = _get_client(access_token)
 
         # 1. Fetch Event with Left-Joined Coordinator
         event_res = (
@@ -198,11 +200,7 @@ def _safety_check_blockers(client, event: dict) -> list[str]:
 def request_safety_check(event_id: str, access_token: str) -> dict:
     """Send an event to the Safety Officer once its venue and equipment are approved."""
     try:
-        try:
-            from config import get_admin_client
-            client = get_admin_client()
-        except Exception:
-            client = get_user_client(access_token)
+        client = _get_client(access_token)
 
         event_res = (
             client.table("events")
@@ -241,3 +239,52 @@ def request_safety_check(event_id: str, access_token: str) -> dict:
             f"Failed to request safety check: {exc.message}",
             status_code=400,
         )
+
+
+# services/safety_review_service.py
+
+def check_and_update_safety_status(event_id: str, access_token: str = None) -> bool:
+    """
+    Evaluates if an event has an approved venue and approved (or no) equipment.
+    If conditions pass, updates event status to 'awaiting_safety_check'.
+    Uses get_admin_client() to bypass user RLS restrictions.
+    """
+    try:
+        # 1. Force using the Admin Client for system-level status evaluations
+        client = get_admin_client()
+    except Exception as exc:
+        logger.error(f"Could not initialize admin client for safety check: {exc}")
+        return False
+
+    # 2. Check venue approval (Admin rights allow reading venue_bookings)
+    venue_res = (
+        client.table("venue_bookings")
+        .select("status")
+        .eq("event_id", event_id)
+        .eq("status", "APPROVED")
+        .execute()
+    )
+    if not venue_res.data:
+        return False
+
+    # 3. Check equipment requests (Admin rights allow reading equipment_requests)
+    equip_res = (
+        client.table("equipment_requests")
+        .select("status")
+        .eq("event_id", event_id)
+        .execute()
+    )
+    equip_requests = equip_res.data or []
+
+    # Valid if no requests exist OR all existing requests are APPROVED
+    all_equip_approved = not equip_requests or all(
+        req.get("status") == "APPROVED" for req in equip_requests
+    )
+
+    # 4. Transition status if both pass
+    if all_equip_approved:
+        client.table("events").update({"status": "awaiting_safety_check"}).eq("id", event_id).execute()
+        logger.info(f"Event {event_id} status automatically transitioned to 'awaiting_safety_check'")
+        return True
+
+    return False
