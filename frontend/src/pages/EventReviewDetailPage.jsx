@@ -112,11 +112,15 @@ export default function EventReviewDetailPage() {
   useEffect(() => {
     let active = true
 
-    getAssignedEventRequest(eventId, token)
-      .then((data) => {
+    Promise.all([
+      getAssignedEventRequest(eventId, token),
+      getVenueBookingsForEvent(eventId, token).catch(() => ({ bookings: [] })),
+    ])
+      .then(([data, bookingData]) => {
         if (!active) return
         setEvent(data.event)
         setOrganiser(data.organiser)
+        setVenueBookings(bookingData.bookings || [])
       })
       .catch((caught) => {
         if (active) setError(caught.message)
