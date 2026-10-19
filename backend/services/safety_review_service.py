@@ -1,26 +1,24 @@
 """Service module for Safety Officer review queues and event safety details."""
 
-from datetime import datetime
 import logging
+from datetime import datetime, timezone
 from postgrest import APIError as PostgrestAPIError
-
-from config import get_user_client
+from config import get_admin_client, get_user_client
 from services.auth_service import AuthError
 from services.notification_service import notify
 
 logger = logging.getLogger(__name__)
 
 
-def _get_client(access_token: str | None = None):
-    """Utility helper to prefer service/admin client if configured, falling back to user client."""
+def _get_client(access_token: str = None):
+    """Helper to resolve admin client or fallback to user client with access token."""
     try:
-        from config import get_admin_client
         return get_admin_client()
     except Exception:
-        return get_user_client(access_token or "")
+        if access_token:
+            return get_user_client(access_token)
+        raise AuthError("Database client initialization failed.", status_code=500)
 
-
-from datetime import datetime, time, timezone
 
 def is_within_operating_hours(start_dt: datetime, end_dt: datetime, operating_hours: dict | None) -> bool:
     """Verify if requested start and end times fall within venue operating hours."""
@@ -62,15 +60,17 @@ def is_within_operating_hours(start_dt: datetime, end_dt: datetime, operating_ho
 
     return True
 
+
 def get_safety_review_queue(access_token: str) -> list[dict]:
-    """Retrieve all pending safety review events in FIFO order (created_at ASC)."""
+    """Retrieve all events in 'awaiting_safety_check' status in FIFO order (updated_at ASC)."""
     try:
         client = _get_client(access_token)
+
         response = (
             client.table("events")
             .select("*, coordinator:coordinator_id!left(id, full_name, role)")
-            .eq("safety_status", "pending")
-            .order("created_at", desc=False)
+            .eq("status", "awaiting_safety_check")  # 👈 Updated to check event status
+            .order("updated_at", desc=False)         # 👈 FIFO queue based on when it reached this status
             .execute()
         )
         return response.data or []
@@ -245,8 +245,12 @@ def _safety_check_blockers(client, event: dict) -> list[str]:
         .eq("event_id", event["id"])
         .execute()
     ).data or []
-    if not any((booking.get("status") or "").upper() == "APPROVED" for booking in bookings):
+    booking_statuses = [(booking.get("status") or "").upper() for booking in bookings]
+    live_statuses = [status for status in booking_statuses if status != "CANCELLED"]
+    if "APPROVED" not in live_statuses:
         blockers.append("it needs an approved venue booking")
+    elif any(status != "APPROVED" for status in live_statuses):
+        blockers.append("every venue booking must be approved first")
 
     equipment_requests = (
         client.table("equipment_requests")
@@ -261,13 +265,13 @@ def _safety_check_blockers(client, event: dict) -> list[str]:
 
 
 def request_safety_check(event_id: str, access_token: str) -> dict:
-    """Send an event to the Safety Officer once its venue and equipment are approved."""
+    """Send an event to the Safety Officer queue once venue and equipment prerequisites are met."""
     try:
         client = _get_client(access_token)
 
         event_res = (
             client.table("events")
-            .select("id, status, safety_status")
+            .select("id, status")
             .eq("id", event_id)
             .execute()
         )
@@ -275,8 +279,11 @@ def request_safety_check(event_id: str, access_token: str) -> dict:
             raise AuthError("Event not found", status_code=404)
         event = event_res.data[0]
 
-        if event.get("safety_status") in ("pending", "approved"):
-            raise AuthError("A safety check has already been requested for this event.", status_code=409)
+        if event.get("status") == "awaiting_safety_check":
+            raise AuthError(
+                "A safety check has already been requested for this event.",
+                status_code=409,
+            )
 
         blockers = _safety_check_blockers(client, event)
         if blockers:
@@ -284,7 +291,10 @@ def request_safety_check(event_id: str, access_token: str) -> dict:
 
         response = (
             client.table("events")
-            .update({"safety_status": "pending"})
+            .update({
+                "status": "awaiting_safety_check",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
             .eq("id", event_id)
             .execute()
         )
@@ -293,6 +303,11 @@ def request_safety_check(event_id: str, access_token: str) -> dict:
         raise
     except PostgrestAPIError as exc:
         raise AuthError(f"Failed to request safety check: {exc.message}", status_code=400)
+    except Exception as exc:
+        raise AuthError(
+            f"Internal error requesting safety check: {str(exc)}",
+            status_code=500,
+        )
 
 
 def submit_safety_decision(

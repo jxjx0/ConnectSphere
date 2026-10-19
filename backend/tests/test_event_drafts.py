@@ -1,5 +1,4 @@
 """Tests for saving, continuing and submitting draft event requests (T7-37)."""
-
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 

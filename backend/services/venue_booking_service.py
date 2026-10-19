@@ -175,6 +175,8 @@ def review_venue_booking(
 
         approved_booking = update_res.data[0]
 
+
+        # Dispatch notification with positional notification_type
         if booking.get("coordinator_id"):
             notify(
                 booking["coordinator_id"],
