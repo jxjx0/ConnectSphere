@@ -100,6 +100,10 @@ export default function EquipmentRequestsPage() {
       }
       setRequests((current) => [submittedRequest, ...current])
       setEvents((current) => current.filter((eventItem) => eventItem.id !== eventId))
+      if (!requestedEventId) {
+        setEventId('')
+        setRequestDetails('')
+      }
       setSubmittedMessage('Equipment request submitted for technical approval.')
     } catch (caught) {
       setError(caught.message)
@@ -150,11 +154,6 @@ export default function EquipmentRequestsPage() {
     const items = request.items || []
     const bookedEquipment = request.equipment_bookings || []
     const pending = request.status === 'Pending Technical Approval'
-    const allItemsBooked = items.length > 0
-      ? items.every((item) => bookedEquipment.some(
-        (booking) => booking.equipment_id === item.equipment_id,
-      ))
-      : bookedEquipment.length > 0
 
     return (
       <article className="choice equipment-request-card" key={request.id}>
@@ -165,7 +164,6 @@ export default function EquipmentRequestsPage() {
           </span>
           <span className="choice__description">
             Status: <span className="tag">{request.status}</span>
-            {pending && !allItemsBooked && ' · Awaiting equipment allocation'}
           </span>
 
           <div className="stack stack--tight">
@@ -245,20 +243,19 @@ export default function EquipmentRequestsPage() {
 
           {pending && (
             <div className="form-actions">
-              <Link to="/equipment" className="button button--secondary">
+              <Link
+                to={`/equipment?request=${encodeURIComponent(request.id)}`}
+                className="button button--secondary"
+              >
                 Choose equipment to allocate
               </Link>
               <button
                 className="button"
                 type="button"
-                disabled={reviewingRequestId === request.id || !allItemsBooked}
+                disabled={reviewingRequestId === request.id}
                 onClick={() => handleReview(request.id, 'Approved')}
               >
-                {reviewingRequestId === request.id
-                  ? 'Saving…'
-                  : allItemsBooked
-                    ? 'Approve request'
-                    : 'Allocate equipment before approval'}
+                {reviewingRequestId === request.id ? 'Saving…' : 'Approve request'}
               </button>
               <button
                 className="button button--secondary"
@@ -292,7 +289,7 @@ export default function EquipmentRequestsPage() {
           <p className="lead">
             {isCoordinator
               ? 'Request equipment for an event assigned to you, then track its technical approval status.'
-              : 'Review each request, allocate every requested item, then approve or reject it.'}
+              : 'Review each request, book the equipment it needs, then approve or reject it.'}
           </p>
         </div>
 

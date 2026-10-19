@@ -89,16 +89,17 @@ def submit_equipment_request(
     }
 
 
-def list_equipment_requests(access_token: str) -> list[dict]:
+def list_equipment_requests(
+    access_token: str,
+    event_id: str | None = None,
+) -> list[dict]:
     """List requests visible to the caller under the table's RLS policies."""
     client = config.get_user_client(access_token)
     try:
-        result = (
-            client.table("equipment_requests")
-            .select(_REQUEST_SELECT)
-            .order("created_at", desc=True)
-            .execute()
-        )
+        query = client.table("equipment_requests").select(_REQUEST_SELECT)
+        if event_id is not None:
+            query = query.eq("event_id", event_id)
+        result = query.order("created_at", desc=True).execute()
     except PostgrestAPIError as error:
         raise _database_error(error) from error
     return result.data
@@ -122,7 +123,7 @@ def review_equipment_request(
     request_id: str,
     review: EquipmentRequestReview,
 ) -> dict:
-    """Record an approve or reject decision after required equipment allocation."""
+    """Record an approve or reject decision; approval does not check bookings."""
     client = config.get_user_client(access_token)
     try:
         result = client.rpc(

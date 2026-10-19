@@ -1,5 +1,7 @@
 """Event equipment request endpoints."""
 
+from uuid import UUID
+
 from flask import Blueprint, g, jsonify, request
 from pydantic import ValidationError
 
@@ -56,13 +58,24 @@ def list_equipment_requests():
             status_code=403,
         )
 
-    requests = (
-        equipment_request_service.list_tech_support_equipment_requests(
+    if role == Role.TECH_SUPPORT:
+        requests = equipment_request_service.list_tech_support_equipment_requests(
             g.access_token
         )
-        if role == Role.TECH_SUPPORT
-        else equipment_request_service.list_equipment_requests(g.access_token)
-    )
+        return jsonify({"requests": requests}), 200
+
+    # A Coordinator's event page asks for just that event's request.
+    event_id = request.args.get("event_id")
+    if event_id is None:
+        requests = equipment_request_service.list_equipment_requests(g.access_token)
+    else:
+        try:
+            event_id = str(UUID(event_id))
+        except ValueError:
+            return jsonify({"errors": ["event_id must be a valid ID."]}), 400
+        requests = equipment_request_service.list_equipment_requests(
+            g.access_token, event_id
+        )
     return jsonify({"requests": requests}), 200
 
 

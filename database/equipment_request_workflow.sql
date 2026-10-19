@@ -1,6 +1,6 @@
 -- Apply after equipment_bookings.sql.
--- Keeps one text-described equipment request per event and requires Technical
--- Support to allocate at least one catalogue item before approving it.
+-- Keeps one text-described equipment request per event. Technical Support
+-- books equipment by hand; approving or rejecting only changes the status.
 
 alter table public.equipment_requests
     add column if not exists request_details text;
@@ -22,39 +22,6 @@ revoke update on public.equipment_requests from authenticated;
 revoke update (status) on public.equipment_requests from authenticated;
 drop policy if exists "Technical Support can review equipment requests"
     on public.equipment_requests;
-
--- Earlier versions allowed status approval without any allocation. Restore
--- those requests to the actionable pending state instead of showing a false
--- approval.
-update public.equipment_requests as equipment_request
-set status = 'Pending Technical Approval'
-where equipment_request.status = 'Approved'
-  and (
-      not exists (
-          select 1
-          from public.equipment_request_items as request_item
-          where request_item.request_id = equipment_request.id
-      )
-      or exists (
-          select 1
-          from public.equipment_request_items as request_item
-          where request_item.request_id = equipment_request.id
-            and not exists (
-                select 1
-                from public.equipment_bookings as booking
-                where booking.request_id = equipment_request.id
-                  and booking.equipment_id = request_item.equipment_id
-                  and booking.start_at <= (
-                      select min(event_window.start_at)
-                      from public.equipment_request_time_windows(equipment_request.event_id) as event_window
-                  )
-                  and booking.end_at >= (
-                      select max(event_window.end_at)
-                      from public.equipment_request_time_windows(equipment_request.event_id) as event_window
-                  )
-            )
-      )
-  );
 
 -- A request is created by the assigned Coordinator after reviewing the
 -- Organiser's event request. The advisory lock serializes competing attempts
@@ -364,14 +331,6 @@ begin
             );
     end;
 
-    insert into public.equipment_request_items (
-        request_id,
-        equipment_id,
-        quantity
-    )
-    values (current_request.id, p_equipment_id, 1)
-    on conflict (request_id, equipment_id) do nothing;
-
     return jsonb_build_object(
         'outcome', 'booked',
         'booking', jsonb_build_object(
@@ -398,16 +357,14 @@ set search_path = ''
 as $$
 declare
     booking_request_id uuid;
-    request_status text;
-    removed_equipment_id uuid;
 begin
     if auth.uid() is null or not public.is_tech_support() then
         raise exception 'Only Technical Support can remove equipment bookings.'
             using errcode = '42501';
     end if;
 
-    select request.id, request.status
-    into booking_request_id, request_status
+    select request.id
+    into booking_request_id
     from public.equipment_bookings as booking
     join public.equipment_requests as request
       on request.id = booking.request_id
@@ -418,24 +375,10 @@ begin
         return false;
     end if;
 
-    if request_status <> 'Pending Technical Approval' then
-        raise exception 'Equipment allocated to an approved request cannot be removed.'
-            using errcode = 'P0001';
-    end if;
-
+    -- Bookings are managed by hand, so they can be removed whatever the
+    -- request's status.
     delete from public.equipment_bookings
-    where id = p_booking_id
-    returning equipment_id into removed_equipment_id;
-
-    delete from public.equipment_request_items
-    where request_id = booking_request_id
-      and equipment_id = removed_equipment_id
-      and not exists (
-          select 1
-          from public.equipment_bookings
-          where request_id = booking_request_id
-            and equipment_id = removed_equipment_id
-      );
+    where id = p_booking_id;
 
     return true;
 end;
@@ -571,8 +514,6 @@ set search_path = ''
 as $$
 declare
     current_request public.equipment_requests%rowtype;
-    requested_item_count integer;
-    allocated_item_count integer;
 begin
     if auth.uid() is null or not public.is_tech_support() then
         raise exception 'Only Technical Support can review equipment requests.'
@@ -600,51 +541,8 @@ begin
             using errcode = 'P0001';
     end if;
 
-    if p_decision = 'Rejected' then
-        delete from public.equipment_bookings
-        where request_id = current_request.id;
-    else
-        select count(*)
-        into requested_item_count
-        from public.equipment_request_items
-        where request_id = current_request.id;
-
-        select count(distinct request_item.equipment_id)
-        into allocated_item_count
-        from public.equipment_request_items as request_item
-        join public.equipment_bookings as booking
-          on booking.request_id = request_item.request_id
-         and booking.equipment_id = request_item.equipment_id
-        where request_item.request_id = current_request.id;
-
-        if requested_item_count = 0 or allocated_item_count <> requested_item_count then
-            raise exception 'Allocate every requested equipment item before approving this request.'
-                using errcode = 'P0001';
-        end if;
-
-        if exists (
-            select 1
-            from public.equipment_request_items as request_item
-            join public.equipment_bookings as booking
-              on booking.request_id = request_item.request_id
-             and booking.equipment_id = request_item.equipment_id
-            where request_item.request_id = current_request.id
-              and (
-                  booking.start_at > (
-                      select min(event_window.start_at)
-                      from public.equipment_request_time_windows(current_request.event_id) as event_window
-                  )
-                  or booking.end_at < (
-                      select max(event_window.end_at)
-                      from public.equipment_request_time_windows(current_request.event_id) as event_window
-                  )
-              )
-        ) then
-            raise exception 'Allocated equipment must cover the full event time, including venue setup and teardown buffers.'
-                using errcode = 'P0001';
-        end if;
-    end if;
-
+    -- Technical Support books equipment by hand, so the decision only changes
+    -- the request status and never checks or changes bookings.
     update public.equipment_requests
     set status = p_decision
     where id = current_request.id;

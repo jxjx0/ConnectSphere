@@ -332,6 +332,41 @@ def test_attendee_cannot_view_equipment_requests(client, monkeypatch):
     list_requests.assert_not_called()
 
 
+def test_coordinator_can_list_one_events_equipment_request(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+    list_requests = Mock(return_value=[SAVED_REQUEST])
+    monkeypatch.setattr(
+        equipment_request_service, "list_equipment_requests", list_requests
+    )
+
+    response = client.get(
+        f"/equipment-requests?event_id={VALID_REQUEST['event_id']}",
+        headers={"Authorization": "Bearer coordinator-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["requests"] == [SAVED_REQUEST]
+    list_requests.assert_called_once_with(
+        "coordinator-token", VALID_REQUEST["event_id"]
+    )
+
+
+def test_equipment_request_list_rejects_invalid_event_id(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+    list_requests = Mock(side_effect=AssertionError("invalid ID must not be queried"))
+    monkeypatch.setattr(
+        equipment_request_service, "list_equipment_requests", list_requests
+    )
+
+    response = client.get(
+        "/equipment-requests?event_id=not-an-id",
+        headers={"Authorization": "Bearer coordinator-token"},
+    )
+
+    assert response.status_code == 400
+    list_requests.assert_not_called()
+
+
 def test_equipment_catalog_is_registered_at_its_frontend_api_path(
     client, monkeypatch
 ):
@@ -473,6 +508,19 @@ def test_service_list_returns_requests_ordered_by_recent_creation(
     client.table.assert_called_once_with("equipment_requests")
     query.select.assert_called_once_with(REQUEST_SELECT)
     query.order.assert_called_once_with("created_at", desc=True)
+    assert result == [SAVED_REQUEST]
+
+
+def test_service_list_can_filter_to_one_event(equipment_request_database):
+    client, _ = equipment_request_database
+    query = query_returning([SAVED_REQUEST])
+    client.table.return_value = query
+
+    result = equipment_request_service.list_equipment_requests(
+        "coordinator-token", VALID_REQUEST["event_id"]
+    )
+
+    query.eq.assert_called_once_with("event_id", VALID_REQUEST["event_id"])
     assert result == [SAVED_REQUEST]
 
 

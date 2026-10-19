@@ -108,7 +108,7 @@ test('Coordinator event page shows stored affected status and retains other appr
       getAssignedEventClarifications: async () => ({ clarifications: [] }),
     },
     '../api/venues': { getVenueBookingsForEvent: async () => ({ bookings }) },
-    '../api/equipmentRequests': { getEquipmentRequests: async () => ({ requests }) },
+    '../api/equipmentRequests': { getEventEquipmentRequests: async () => ({ requests }) },
   })
   Page()
   effects.forEach(fn => fn())
@@ -119,8 +119,7 @@ test('Coordinator event page shows stored affected status and retains other appr
   assert.match(markup, /Originally approved/)
   assert.match(markup, /Other Hall/)
   assert.match(markup, />APPROVED<\/span>/)
-  assert.match(markup, /href="\/equipment-requests\?eventId=event-1"/)
-  assert.match(markup, /Request Equipment/)
+  assert.doesNotMatch(markup, /href="\/equipment-requests\?eventId=event-1"/)
   assert.match(markup, /Two projectors and a wireless microphone/)
   assert.match(markup, /Needed for:/)
   assert.ok(markup.indexOf('Venue Booking Requests') < markup.indexOf('Equipment request'))

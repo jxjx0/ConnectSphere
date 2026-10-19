@@ -21,7 +21,7 @@ import {
   readableStatus,
 } from '../eventDisplay'
 import { getVenueBookingsForEvent } from '../api/venues'
-import { getEquipmentRequests } from '../api/equipmentRequests'
+import { getEventEquipmentRequests } from '../api/equipmentRequests'
 
 import { requestSafetyCheck } from '../api/events'
 
@@ -119,9 +119,9 @@ export default function EventReviewDetailPage() {
     Promise.all([
       getAssignedEventRequest(eventId, token),
       getVenueBookingsForEvent(eventId, token).catch(() => ({ bookings: [] })),
-      getEquipmentRequests(token).catch((caught) => {
+      getEventEquipmentRequests(eventId, token).catch((caught) => {
         if (active) setEquipmentRequestError(caught.message)
-        return { requests: [] }
+        return null
       }),
     ])
       .then(([data, bookingData, requestData]) => {
@@ -129,9 +129,7 @@ export default function EventReviewDetailPage() {
         setEvent(data.event)
         setOrganiser(data.organiser)
         setVenueBookings(bookingData.bookings || [])
-        setEquipmentRequest(
-          requestData.requests.find((request) => request.event_id === eventId) || null,
-        )
+        if (requestData) setEquipmentRequest(requestData.requests[0] || null)
       })
       .catch((caught) => {
         if (active) setError(caught.message)
@@ -251,6 +249,9 @@ export default function EventReviewDetailPage() {
   const hasApprovedVenue = venueBookings.some(
     (booking) => (booking.status || '').toUpperCase() === 'APPROVED',
   )
+  // Each event has one equipment request, so hide the link once one exists
+  // (or while we can't tell because loading it failed).
+  const canRequestEquipment = !equipmentRequest && !equipmentRequestError
 
   return (
     <AppShell>
@@ -290,12 +291,14 @@ export default function EventReviewDetailPage() {
                   {venueBookings.length > 0 ? 'Find / Request Additional Venue' : 'Find Venue'}
                 </Link>
 
-                <Link
-                  to={`/equipment-requests?eventId=${encodeURIComponent(eventId)}`}
-                  className="button button--secondary"
-                >
-                  Request Equipment
-                </Link>
+                {canRequestEquipment && (
+                  <Link
+                    to={`/equipment-requests?eventId=${encodeURIComponent(eventId)}`}
+                    className="button button--secondary"
+                  >
+                    Request Equipment
+                  </Link>
+                )}
 
                 {event.safety_status === 'pending' ? (
                   <span className="tag tag--orange">Safety Review Pending</span>
@@ -337,7 +340,7 @@ export default function EventReviewDetailPage() {
           )}
         </header>
 
-        {event.status === 'confirmed' && (
+        {event.status === 'confirmed' && canRequestEquipment && (
           <div className="form-actions">
             <Link
               to={`/equipment-requests?eventId=${encodeURIComponent(eventId)}`}
@@ -429,13 +432,13 @@ export default function EventReviewDetailPage() {
           )}
         </section>
 
-        {(event.status === 'planning' || equipmentRequest) && (
+        {(event.status === 'planning' || equipmentRequest || equipmentRequestError) && (
           <section className="stack stack--tight">
             <h2 className="section-title">Equipment request</h2>
             {equipmentRequestError && (
               <p className="form-error" role="alert">{equipmentRequestError}</p>
             )}
-            {equipmentRequest ? (
+            {equipmentRequestError ? null : equipmentRequest ? (
               <>
                 <p>
                   Status: <span className="tag">{equipmentRequest.status}</span>
