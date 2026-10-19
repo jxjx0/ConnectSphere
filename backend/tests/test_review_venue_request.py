@@ -15,9 +15,17 @@ from services.venue_booking_service import (
 )
 
 
+@pytest.fixture(autouse=True)
+def venue_configuration(monkeypatch):
+    monkeypatch.setattr("services.venue_booking_service.notify", lambda *args, **kwargs: object())
+    monkeypatch.setattr("services.venue_booking_service._venue_configuration",
+                        lambda *_: {"setup_time_minutes": 0, "turnaround_time_minutes": 0})
+
+
 @pytest.fixture
 def mock_client():
     client = MagicMock()
+    client.rpc.return_value.execute.return_value.data = []
     return client
 
 
@@ -196,7 +204,7 @@ def test_review_venue_booking_unsupported_layout(mock_get_client, mock_client):
         "venue_id": "v-1",
         "status": "PENDING_VENUE_APPROVAL",
         "room_layout": "Theater",
-        "venues": {"layouts": [{"name": "Banquet", "capacity": 100}]},
+        "venues": {"setup_time_minutes": 0, "turnaround_time_minutes": 0, "layouts": [{"name": "Banquet", "capacity": 100}]},
         "events": {"expected_attendance": 50},
     }
     mock_client.table().select().eq().execute().data = [booking]
@@ -215,7 +223,7 @@ def test_review_venue_booking_exceeds_capacity(mock_get_client, mock_client):
         "venue_id": "v-1",
         "status": "PENDING_VENUE_APPROVAL",
         "room_layout": "Banquet",
-        "venues": {"layouts": [{"name": "Banquet", "capacity": 100}]},
+        "venues": {"setup_time_minutes": 0, "turnaround_time_minutes": 0, "layouts": [{"name": "Banquet", "capacity": 100}]},
         "events": {"expected_attendance": 150},
     }
     mock_client.table().select().eq().execute().data = [booking]
@@ -234,9 +242,11 @@ def test_review_venue_booking_approval_conflict_exists(mock_get_client, mock_cli
         "venue_id": "v-1",
         "status": "PENDING_VENUE_APPROVAL",
         "room_layout": "Banquet",
+        "start_at": "2026-11-01T09:30:00Z",
         "effective_start_at": "2026-11-01T09:30:00Z",
+        "end_at": "2026-11-01T12:30:00Z",
         "effective_end_at": "2026-11-01T12:30:00Z",
-        "venues": {"layouts": [{"name": "Banquet", "capacity": 100}]},
+        "venues": {"setup_time_minutes": 0, "turnaround_time_minutes": 0, "layouts": [{"name": "Banquet", "capacity": 100}]},
         "events": {"expected_attendance": 50},
     }
     table_mock = MagicMock()
@@ -260,9 +270,11 @@ def test_review_venue_booking_block_insert_failed(mock_get_client, mock_client):
         "venue_id": "v-1",
         "status": "PENDING_VENUE_APPROVAL",
         "room_layout": "Banquet",
+        "start_at": "2026-11-01T09:30:00Z",
         "effective_start_at": "2026-11-01T09:30:00Z",
+        "end_at": "2026-11-01T12:30:00Z",
         "effective_end_at": "2026-11-01T12:30:00Z",
-        "venues": {"layouts": [{"name": "Banquet", "capacity": 100}]},
+        "venues": {"setup_time_minutes": 0, "turnaround_time_minutes": 0, "layouts": [{"name": "Banquet", "capacity": 100}]},
         "events": {"expected_attendance": 50},
     }
     table_mock = MagicMock()
@@ -285,9 +297,11 @@ def test_review_venue_booking_block_insert_api_error(mock_get_client, mock_clien
         "venue_id": "v-1",
         "status": "PENDING_VENUE_APPROVAL",
         "room_layout": "Banquet",
+        "start_at": "2026-11-01T09:30:00Z",
         "effective_start_at": "2026-11-01T09:30:00Z",
+        "end_at": "2026-11-01T12:30:00Z",
         "effective_end_at": "2026-11-01T12:30:00Z",
-        "venues": {"layouts": [{"name": "Banquet", "capacity": 100}]},
+        "venues": {"setup_time_minutes": 0, "turnaround_time_minutes": 0, "layouts": [{"name": "Banquet", "capacity": 100}]},
         "events": {"expected_attendance": 50},
     }
     table_mock = MagicMock()
@@ -311,9 +325,11 @@ def test_review_venue_booking_approved_success_full(mock_get_client, mock_client
         "coordinator_id": "c-1",
         "status": "PENDING_VENUE_APPROVAL",
         "room_layout": "Banquet",
+        "start_at": "2026-11-01T09:30:00Z",
         "effective_start_at": "2026-11-01T09:30:00Z",
+        "end_at": "2026-11-01T12:30:00Z",
         "effective_end_at": "2026-11-01T12:30:00Z",
-        "venues": {"name": "Hall", "layouts": [{"name": "Banquet", "capacity": 100}]},
+        "venues": {"setup_time_minutes": 0, "turnaround_time_minutes": 0, "name": "Hall", "layouts": [{"name": "Banquet", "capacity": 100}]},
         "events": {"name": "Party", "expected_attendance": 50},
     }
 
@@ -344,7 +360,7 @@ def test_review_venue_booking_rejected_success(mock_get_client, mock_client):
         "venue_id": "v-1",
         "coordinator_id": "c-1",
         "status": "PENDING_VENUE_APPROVAL",
-        "venues": {"name": "Hall"},
+        "venues": {"setup_time_minutes": 0, "turnaround_time_minutes": 0, "name": "Hall"},
     }
 
     table_mock = MagicMock()

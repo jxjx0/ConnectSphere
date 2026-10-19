@@ -7,6 +7,19 @@ from services.auth_service import AuthError
 import services.venue_booking_service
 
 
+@pytest.fixture(autouse=True)
+def venue_configuration(monkeypatch):
+    monkeypatch.setattr("services.venue_booking_service.notify", lambda *args, **kwargs: object())
+    monkeypatch.setattr("services.venue_booking_service._venue_configuration",
+                        lambda *_: {"setup_time_minutes": 0, "turnaround_time_minutes": 0})
+
+
+@pytest.fixture(autouse=True)
+def no_holds_in_booking_regressions(monkeypatch):
+    # These existing tests isolate booking/block rules; hold integration has its own suite.
+    monkeypatch.setattr(services.venue_booking_service, "read_reservations", lambda *args, **kwargs: [])
+
+
 def test_check_schedule_conflict_detects_overlap(monkeypatch):
     """Test that check_schedule_conflict_details accurately identifies overlapping blocks."""
     now = datetime.now(timezone.utc)
@@ -36,9 +49,11 @@ def test_review_venue_booking_locks_calendar_first(monkeypatch):
         "venue_id": "v_100",
         "room_layout": "Banquet",
         "status": "PENDING_VENUE_APPROVAL",
+        "start_at": now.isoformat(),
         "effective_start_at": now.isoformat(),
+        "end_at": (now + timedelta(hours=2)).isoformat(),
         "effective_end_at": (now + timedelta(hours=2)).isoformat(),
-        "venues": {"layouts": [{"name": "Banquet", "capacity": 100}]},
+        "venues": {"setup_time_minutes": 0, "turnaround_time_minutes": 0, "layouts": [{"name": "Banquet", "capacity": 100}]},
         "events": {"name": "Gala", "expected_attendance": 50},
     }
 
@@ -253,9 +268,11 @@ def test_review_venue_booking_approval_conflict_recheck_fails(monkeypatch):
         "venue_id": "v_100",
         "room_layout": "Banquet",
         "status": "PENDING_VENUE_APPROVAL",
+        "start_at": now.isoformat(),
         "effective_start_at": now.isoformat(),
+        "end_at": (now + timedelta(hours=2)).isoformat(),
         "effective_end_at": (now + timedelta(hours=2)).isoformat(),
-        "venues": {"layouts": [{"name": "Banquet", "capacity": 100}]},
+        "venues": {"setup_time_minutes": 0, "turnaround_time_minutes": 0, "layouts": [{"name": "Banquet", "capacity": 100}]},
     }
 
     mock_client = MagicMock()
@@ -284,9 +301,11 @@ def test_review_venue_booking_empty_block_insert_data(monkeypatch):
         "venue_id": "v_100",
         "room_layout": "Banquet",
         "status": "PENDING_VENUE_APPROVAL",
+        "start_at": now.isoformat(),
         "effective_start_at": now.isoformat(),
+        "end_at": (now + timedelta(hours=2)).isoformat(),
         "effective_end_at": (now + timedelta(hours=2)).isoformat(),
-        "venues": {"layouts": [{"name": "Banquet", "capacity": 100}]},
+        "venues": {"setup_time_minutes": 0, "turnaround_time_minutes": 0, "layouts": [{"name": "Banquet", "capacity": 100}]},
     }
 
     mock_client = MagicMock()
@@ -313,9 +332,11 @@ def test_review_venue_booking_postgrest_error_on_block_insert(monkeypatch):
         "venue_id": "v_100",
         "room_layout": "Banquet",
         "status": "PENDING_VENUE_APPROVAL",
+        "start_at": now.isoformat(),
         "effective_start_at": now.isoformat(),
+        "end_at": (now + timedelta(hours=2)).isoformat(),
         "effective_end_at": (now + timedelta(hours=2)).isoformat(),
-        "venues": {"layouts": [{"name": "Banquet", "capacity": 100}]},
+        "venues": {"setup_time_minutes": 0, "turnaround_time_minutes": 0, "layouts": [{"name": "Banquet", "capacity": 100}]},
     }
 
     mock_client = MagicMock()
@@ -344,7 +365,7 @@ def test_create_venue_booking_schedule_conflict_raises_409(monkeypatch):
     monkeypatch.setattr(
         services.venue_booking_service,
         "check_schedule_conflict_details",
-        lambda client, venue_id, start, end: [{"block_id": "blk_1"}]
+        lambda client, venue_id, start, end, event_id=None: [{"block_id": "blk_1"}]
     )
     
     monkeypatch.setattr("config.get_user_client", lambda token: mock_client)
@@ -373,9 +394,11 @@ def test_review_venue_booking_conflict_recheck_raises_409(monkeypatch):
         "venue_id": "v_100",
         "room_layout": "Banquet",
         "status": "PENDING_VENUE_APPROVAL",
+        "start_at": now.isoformat(),
         "effective_start_at": now.isoformat(),
+        "end_at": (now + timedelta(hours=2)).isoformat(),
         "effective_end_at": (now + timedelta(hours=2)).isoformat(),
-        "venues": {"layouts": [{"name": "Banquet", "capacity": 100}]},
+        "venues": {"setup_time_minutes": 0, "turnaround_time_minutes": 0, "layouts": [{"name": "Banquet", "capacity": 100}]},
     }
 
     mock_client = MagicMock()
@@ -385,7 +408,7 @@ def test_review_venue_booking_conflict_recheck_raises_409(monkeypatch):
     monkeypatch.setattr(
         services.venue_booking_service,
         "check_schedule_conflict_details",
-        lambda client, venue_id, start, end: [{"block_reason": "Conflict"}]
+        lambda client, venue_id, start, end, event_id=None: [{"block_reason": "Conflict"}]
     )
 
     class ReviewReq:
