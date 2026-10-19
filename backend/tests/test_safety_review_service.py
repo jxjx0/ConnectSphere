@@ -41,10 +41,10 @@ def test_is_within_operating_hours_valid():
     assert is_within_operating_hours(start, end, op_hours) is True
 
 def test_is_within_operating_hours_out_of_bounds():
-    start = datetime(2026, 11, 1, 1, 0)
-    end = datetime(2026, 11, 1, 3, 0)
+    start = datetime(2026, 11, 1, 1, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 11, 1, 3, 0, tzinfo=timezone.utc)
     op_hours = {"open": "08:00", "close": "22:00"}
-    assert is_within_operating_hours(start, end, op_hours) is False
+    assert is_within_operating_hours(start, end, op_hours, utc_offset_hours=0) is False
 
 
 # --- get_pending_venue_bookings ---
