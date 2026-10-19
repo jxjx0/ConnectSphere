@@ -191,7 +191,7 @@ def test_rejected_equipment_requests_do_not_block_the_request(monkeypatch):
 
     safety_review_service.request_safety_check(EVENT_ID, "token")
 
-    assert updates == [("events", {"safety_status": "pending"})]
+    assert updates == [("events", {"status": "awaiting_safety_check"})]
 
 
 def test_request_is_refused_outside_planning(monkeypatch):
@@ -206,10 +206,9 @@ def test_request_is_refused_outside_planning(monkeypatch):
     assert "Planning" in caught.value.message
 
 
-@pytest.mark.parametrize("safety_status", ["pending", "approved"])
-def test_request_is_refused_when_already_requested(monkeypatch, safety_status):
+def test_request_is_refused_when_already_requested(monkeypatch):
     _, updates = fake_database(monkeypatch, {
-        "events": [{**PLANNING_EVENT, "safety_status": safety_status}],
+        "events": [{**PLANNING_EVENT, "status": "awaiting_safety_check"}],
         "venue_bookings": [{"status": "APPROVED"}],
     })
 
@@ -229,7 +228,7 @@ def test_ready_event_is_sent_for_safety_check(monkeypatch):
 
     safety_review_service.request_safety_check(EVENT_ID, "token")
 
-    assert updates == [("events", {"safety_status": "pending"})]
+    assert updates == [("events", {"status": "awaiting_safety_check"})]
 
 
 def test_event_without_equipment_can_be_sent(monkeypatch):
@@ -240,7 +239,7 @@ def test_event_without_equipment_can_be_sent(monkeypatch):
 
     safety_review_service.request_safety_check(EVENT_ID, "token")
 
-    assert updates == [("events", {"safety_status": "pending"})]
+    assert updates == [("events", {"status": "awaiting_safety_check"})]
 
 
 def test_missing_event_returns_not_found(monkeypatch):

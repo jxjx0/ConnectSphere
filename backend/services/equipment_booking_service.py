@@ -165,7 +165,7 @@ def create_equipment_booking(
         outcome.get("booking"), dict
     ):
         raise AuthError("Equipment booking was not saved.", status_code=502)
-    
+    return outcome["booking"]
 
 
 def delete_equipment_booking(access_token: str, booking_id: str) -> None:
