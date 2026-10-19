@@ -4,6 +4,7 @@
 // Statuses arrive as 'change_requested'; people read
 // "Change requested".
 export function readableStatus(status) {
+  if (status === 'AFFECTED_BY_UNAVAILABILITY') return 'Affected by venue unavailability'
   const words = status.replace(/_/g, ' ')
   return words.charAt(0).toUpperCase() + words.slice(1)
 }

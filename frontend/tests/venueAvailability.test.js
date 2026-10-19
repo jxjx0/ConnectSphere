@@ -58,6 +58,36 @@ test('malformed or mismatched responses cannot become empty calendar results', (
   }
 })
 
+test('operating-hour shading respects Singapore time in each browser timezone', () => {
+  const helper = new URL('../src/venueAvailability.js', import.meta.url).href
+  for (const [tz, open, close, expected] of [
+    ['Asia/Singapore', '08:30', '22:15', [[0, 8.5], [22.25, 1.75]]],
+    ['UTC', '08:00', '22:00', [[14, 10]]],
+    ['America/New_York', '08:00', '22:00', [[9, 10]]],
+  ]) {
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      import assert from 'node:assert/strict';
+      import { calendarWeek, calendarOperatingHours } from ${JSON.stringify(helper)};
+      const day = calendarWeek('2026-11-20').days[4];
+      const result = calendarOperatingHours({open:${JSON.stringify(open)},close:${JSON.stringify(close)}}, day);
+      const expected = ${JSON.stringify(expected)};
+      assert.equal(result.closed.length, expected.length);
+      result.closed.forEach((segment,index) => {
+        assert.ok(Math.abs(segment.top - expected[index][0] / 24 * 100) < 0.00001);
+        assert.ok(Math.abs(segment.height - expected[index][1] / 24 * 100) < 0.00001);
+      });
+    `], { env: { ...process.env, TZ: tz }, encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+  }
+})
+
+test('missing or invalid operating hours do not invent closed periods', () => {
+  for (const value of [undefined, null, {}, { open: 'bad', close: '22:00' },
+    { open: '08:00', close: '08:00' }, { open: '22:00', close: '08:00' }]) {
+    assert.equal(helpers.calendarOperatingHours(value, week.days[0]), null)
+  }
+})
+
 const source = await readFile(new URL('../src/pages/VenueAvailabilityPage.jsx', import.meta.url), 'utf8')
 const { code } = await transformWithEsbuild(source, 'VenueAvailabilityPage.jsx', { jsx: 'automatic', format: 'cjs', tsconfigRaw: '{}' })
 
@@ -103,6 +133,29 @@ function find(node, predicate) {
   return predicate(node) ? node : find(node.props.children, predicate)
 }
 const settle = () => new Promise((resolve) => setImmediate(resolve))
+
+test('selected venue shows its hours and labelled closed shading without hiding blocks', () => {
+  const page = harness()
+  page.states[0] = { loading: false, error: '', venues: [
+    { ...venues[0], operating_hours: { open: '08:00', close: '22:00' } },
+    { ...venues[1], operating_hours: { open: '10:00', close: '18:00' } },
+  ] }
+  const outsideHours = { ...block, start_at: new Date('2026-11-20T00:00').toISOString(),
+    end_at: new Date('2026-11-21T00:00').toISOString(), reason: 'All-day maintenance' }
+  page.states[4].data = data('hall', week.range, [outsideHours])
+  const html = page.html()
+  assert.match(html, /Operating hours: 08:00–22:00 \(Singapore time\)/)
+  assert.match(html, /venue-calendar__closed/)
+  assert.match(html, /aria-label="Closed:/)
+  assert.match(html, /Local time/)
+  assert.match(html, /Operational block: All-day maintenance/)
+  assert.ok(find(page.tree(), node => node.type === 'button' && node.props.title?.includes('All-day maintenance')))
+  page.states[1] = 'room'
+  assert.match(page.html(), /Operating hours: 10:00–18:00/)
+  page.states[0].venues[1].operating_hours = null
+  assert.match(page.html(), /Operating hours unavailable/)
+  assert.doesNotMatch(page.html(), /venue-calendar__closed/)
+})
 
 test('calendar deep links select the requested venue/week and return to the source page', async () => {
   const page = harness({ fresh: true, role: 'venue_staff', query: 'venueId=room&date=2026-11-27&from=catalogue' })
@@ -237,11 +290,12 @@ test('catalogue loading leaves selection empty and refresh preserves an existing
   assert.equal(page.states[1], '')
 })
 
-test('page shows seven days, incomplete notice, empty wording and dashboard navigation', () => {
+test('page shows seven days, a compact legend, empty wording and dashboard navigation', () => {
   const html = harness().html()
   assert.match(html, /Venue Availability/)
-  assert.match(html, /Availability not fully verified/)
-  assert.match(html, /Additional reservations may not be shown/)
+  assert.match(html, /aria-label="Calendar legend"/)
+  assert.match(html, /Recorded block/)
+  assert.doesNotMatch(html, /partially verified|not fully verified|Additional reservations|Empty grid space/i)
   assert.equal((html.match(/No recorded occupancy/g) || []).length, 7)
   assert.match(html, /href="\/dashboard"/)
   assert.doesNotMatch(html, />Available</)
@@ -299,7 +353,8 @@ test('weekly time grid has day headers, hour labels and keyboard-accessible bloc
   for (const dayLines of gridLines) assert.equal((dayLines.match(/<span><\/span>/g) || []).length, 24)
   assert.match(html, /aria-label="Operational block: Maintenance/)
   assert.match(html, /<summary>View daily block details<\/summary>/)
-  assert.match(html, /Empty grid space is not verified availability/)
+  assert.match(html, /Recorded block/)
+  assert.doesNotMatch(html, /Empty grid space is not verified availability/)
 })
 
 test('short grid blocks preserve their timing without clipped labels and still open full details', () => {

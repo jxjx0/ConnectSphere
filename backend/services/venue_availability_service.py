@@ -4,7 +4,7 @@ from datetime import datetime, time, timedelta, timezone
 
 from models.venue import OperatingHours
 from models.venue_search import OccupiedPeriod
-from models.venue_availability import VenueAvailabilityRequest, VenueAvailabilityResponse
+from models.venue_availability import ApprovedVenueBooking, VenueAvailabilityRequest, VenueAvailabilityResponse
 from postgrest import APIError as PostgrestAPIError
 from pydantic import ValidationError
 
@@ -40,6 +40,23 @@ def get_venue_availability(access_token: str, request: VenueAvailabilityRequest)
 
 class BookingOccupancyUnavailable(Exception):
     """Booking/hold occupancy cannot yet be verified."""
+
+
+def read_approved_venue_bookings(client, venue_id: str) -> list[ApprovedVenueBooking]:
+    """Read through the staff-only projection, not incomplete event RLS joins.
+
+    The RPC returns one JSON value so the API row limit cannot silently truncate
+    affected-booking checks. It is separate from the still-missing hold adapter.
+    """
+    records = client.rpc("get_venue_block_bookings", {"p_venue_id": venue_id}).execute().data
+    if not isinstance(records, list):
+        raise ValueError("approved booking data must be a complete list")
+    bookings = [ApprovedVenueBooking.model_validate(record) for record in records]
+    if any(booking.venue_id != venue_id for booking in bookings):
+        raise ValueError("approved booking data must belong to the requested venue")
+    if len({booking.booking_id for booking in bookings}) != len(bookings):
+        raise ValueError("approved booking identities must be unique")
+    return bookings
 
 
 def load_booking_occupancy(client, venue_ids: list[str]) -> dict[str, list[OccupiedPeriod]]:
