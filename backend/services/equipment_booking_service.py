@@ -166,15 +166,6 @@ def create_equipment_booking(
     ):
         raise AuthError("Equipment booking was not saved.", status_code=502)
     
-    # ➕ TRIGGER SAFETY CHECK AUTO-TRANSITION HERE:
-    event_id = outcome.get("event_id") or outcome["booking"].get("event_id")
-    if event_id:
-        check_and_update_safety_status(
-            event_id=str(event_id),
-            access_token=access_token
-        )
-        
-    return outcome["booking"]
 
 
 def delete_equipment_booking(access_token: str, booking_id: str) -> None:

@@ -198,13 +198,13 @@ def _safety_check_blockers(client, event: dict) -> list[str]:
 
 
 def request_safety_check(event_id: str, access_token: str) -> dict:
-    """Send an event to the Safety Officer once its venue and equipment are approved."""
+    """Send an event to the Safety Officer queue once venue and equipment prerequisites are met."""
     try:
         client = _get_client(access_token)
 
         event_res = (
             client.table("events")
-            .select("id, status, safety_status")
+            .select("id, status")
             .eq("id", event_id)
             .execute()
         )
@@ -212,7 +212,7 @@ def request_safety_check(event_id: str, access_token: str) -> dict:
             raise AuthError("Event not found", status_code=404)
         event = event_res.data[0]
 
-        if event.get("safety_status") in ("pending", "approved"):
+        if event.get("status") == "awaiting_safety_check":
             raise AuthError(
                 "A safety check has already been requested for this event.",
                 status_code=409,
@@ -227,7 +227,7 @@ def request_safety_check(event_id: str, access_token: str) -> dict:
 
         response = (
             client.table("events")
-            .update({"safety_status": "pending"})
+            .update({"status": "awaiting_safety_check"})
             .eq("id", event_id)
             .execute()
         )
@@ -241,22 +241,19 @@ def request_safety_check(event_id: str, access_token: str) -> dict:
         )
 
 
-# services/safety_review_service.py
 
 def check_and_update_safety_status(event_id: str, access_token: str = None) -> bool:
     """
     Evaluates if an event has an approved venue and approved (or no) equipment.
-    If conditions pass, updates event status to 'awaiting_safety_check'.
-    Uses get_admin_client() to bypass user RLS restrictions.
+    Returns True if conditions pass for the coordinator to manually request a safety check.
     """
     try:
-        # 1. Force using the Admin Client for system-level status evaluations
         client = get_admin_client()
     except Exception as exc:
         logger.error(f"Could not initialize admin client for safety check: {exc}")
         return False
 
-    # 2. Check venue approval (Admin rights allow reading venue_bookings)
+    # 1. Check venue approval
     venue_res = (
         client.table("venue_bookings")
         .select("status")
@@ -267,7 +264,7 @@ def check_and_update_safety_status(event_id: str, access_token: str = None) -> b
     if not venue_res.data:
         return False
 
-    # 3. Check equipment requests (Admin rights allow reading equipment_requests)
+    # 2. Check equipment approval
     equip_res = (
         client.table("equipment_requests")
         .select("status")
@@ -276,15 +273,8 @@ def check_and_update_safety_status(event_id: str, access_token: str = None) -> b
     )
     equip_requests = equip_res.data or []
 
-    # Valid if no requests exist OR all existing requests are APPROVED
     all_equip_approved = not equip_requests or all(
         req.get("status") == "APPROVED" for req in equip_requests
     )
 
-    # 4. Transition status if both pass
-    if all_equip_approved:
-        client.table("events").update({"status": "awaiting_safety_check"}).eq("id", event_id).execute()
-        logger.info(f"Event {event_id} status automatically transitioned to 'awaiting_safety_check'")
-        return True
-
-    return False
+    return all_equip_approved

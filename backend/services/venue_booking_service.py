@@ -207,12 +207,6 @@ def review_venue_booking(
 
         approved_booking = update_res.data[0]
 
-        # ➕ TRIGGER SAFETY CHECK AUTO-TRANSITION HERE:
-        if approved_booking.get("event_id"):
-            check_and_update_safety_status(
-                event_id=approved_booking["event_id"], 
-                access_token=access_token
-            )
 
         # Dispatch notification with positional notification_type
         if booking.get("coordinator_id"):
