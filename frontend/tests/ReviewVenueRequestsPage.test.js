@@ -1,16 +1,17 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { isOverlapping, validateBookingRequest } from '../src/venueRequestValidation.js'
+import { isOverlapping } from '../src/venueRequestValidation.js'
 
 // --- Mock Data ---
 const mockVenue = {
   id: 'v-1',
   name: 'Grand Ballroom',
-  layouts: {
-    Banquet: 100,
-    Classroom: 50,
-  },
+  layouts: [
+    { name: 'Banquet', capacity: 100 },
+    { name: 'Classroom', capacity: 50 },
+  ],
+  operating_hours: { open: '08:00', close: '22:00' },
 }
 
 const mockValidBooking = {
@@ -32,10 +33,10 @@ const mockValidBooking = {
 
 test('isOverlapping identifies direct time overlaps including setup/teardown buffers', () => {
   const overlapping = isOverlapping(
-    '2026-11-01T09:30:00Z', // Request start (with setup buffer)
-    '2026-11-01T12:30:00Z', // Request end (with teardown buffer)
-    '2026-11-01T11:00:00Z', // Existing block start
-    '2026-11-01T14:00:00Z'  // Existing block end
+    '2026-11-01T09:30:00Z',
+    '2026-11-01T12:30:00Z',
+    '2026-11-01T11:00:00Z',
+    '2026-11-01T14:00:00Z'
   )
   assert.equal(overlapping, true)
 })
@@ -60,53 +61,7 @@ test('isOverlapping returns false for non-overlapping separate time slots', () =
   assert.equal(separate, false)
 })
 
-// --- 2. Venue Profile & Capacity Validation (`validateBookingRequest`) ---
-
-test('validateBookingRequest returns null when booking meets layout and capacity requirements', () => {
-  const result = validateBookingRequest(mockValidBooking)
-  assert.equal(result, null)
-})
-
-test('validateBookingRequest returns error when venue lacks requested layout', () => {
-  const invalidLayoutBooking = {
-    ...mockValidBooking,
-    room_layout: 'Theater',
-  }
-  const result = validateBookingRequest(invalidLayoutBooking)
-  assert.equal(result, "The venue does not support the requested layout 'Theater'.")
-})
-
-test('validateBookingRequest returns error when expected attendance exceeds max capacity for layout', () => {
-  const overCapacityBooking = {
-    ...mockValidBooking,
-    events: { name: 'Mega Gala', expected_attendance: 150 },
-  }
-  const result = validateBookingRequest(overCapacityBooking)
-  assert.equal(
-    result,
-    'Expected attendance (150) exceeds maximum venue capacity (100) for layout \'Banquet\'.'
-  )
-})
-
-test('validateBookingRequest falls back to direct expected_attendance when events object is missing', () => {
-  const bookingWithDirectAttendance = {
-    room_layout: 'Classroom',
-    expected_attendance: 60,
-    venues: mockVenue,
-  }
-  const result = validateBookingRequest(bookingWithDirectAttendance)
-  assert.equal(
-    result,
-    'Expected attendance (60) exceeds maximum venue capacity (50) for layout \'Classroom\'.'
-  )
-})
-
-test('validateBookingRequest handles missing venue profile safely', () => {
-  const result = validateBookingRequest({ room_layout: 'Banquet' })
-  assert.equal(result, null)
-})
-
-// --- 3. Filtering and List Manipulation Helpers ---
+// --- 2. Filtering and List Manipulation Helpers ---
 
 test('correctly selects active booking and filters processed booking from pending state list', () => {
   const bookings = [

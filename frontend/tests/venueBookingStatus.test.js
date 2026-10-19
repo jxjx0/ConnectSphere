@@ -44,7 +44,7 @@ test('existing booking card explains original approval and alternative arrangeme
 
 test('dashboard flags an affected venue even when another venue remains approved', async () => {
   const Tabs = await compile('../src/components/AssignedRequestTabs.jsx', {
-    'react-router-dom': { Link: link, useSearchParams: () => [new URLSearchParams('tab=ongoing'), () => {}] },
+    'react-router-dom': { Link: link, useSearchParams: () => [new URLSearchParams('tab=planning'), () => {}] },
   })
   const value = { ...event, venue_bookings: [affected, { status: 'APPROVED' }] }
   const markup = renderToStaticMarkup(React.createElement(Tabs, { events: [value] }))
@@ -86,4 +86,73 @@ test('Coordinator event page shows stored affected status and retains other appr
   assert.match(markup, /Other Hall/)
   assert.match(markup, />APPROVED<\/span>/)
   assert.equal(JSON.stringify({ event, bookings }), snapshot)
+})
+
+async function renderCoordinatorPage(pageEvent, safetyDecision, bookings = []) {
+  const states = [], effects = []
+  let index = 0
+  const Page = await compile('../src/pages/EventReviewDetailPage.jsx', {
+    react: { ...React, useEffect: fn => effects.push(fn), useState(initial) {
+      const position = index++
+      if (!(position in states)) states[position] = initial
+      return [states[position], value => { states[position] = typeof value === 'function' ? value(states[position]) : value }]
+    } },
+    'react-router-dom': { Link: link, useParams: () => ({ eventId: pageEvent.id }) },
+    '../eventCategories': categories,
+    '../context/AuthContext': { useAuth: () => ({ token: 'token' }) },
+    '../components/AppShell': { default: ({ children }) => React.createElement('main', null, children), __esModule: true },
+    '../api/events': {
+      getAssignedEventRequest: async () => ({ event: pageEvent, organiser: null, safety_decision: safetyDecision }),
+      getEventActivityLogs: async () => ({ logs: [] }),
+      getAssignedEventClarifications: async () => ({ clarifications: [] }),
+    },
+    '../api/venues': { getVenueBookingsForEvent: async () => ({ bookings }) },
+  })
+  Page()
+  effects.forEach(fn => fn())
+  await new Promise(resolve => setImmediate(resolve))
+  index = 0
+  return renderToStaticMarkup(Page())
+}
+
+const rejection = { decision: 'REJECTED', reason: 'Crowd flow blocks the only fire exit', created_at: '2026-10-19T11:00:00Z' }
+
+test('Coordinator sees why the Safety Officer sent the event back to Planning', async () => {
+  const markup = await renderCoordinatorPage(event, rejection)
+  assert.match(markup, /class="notice" role="status"/)
+  assert.match(markup, /Safety check rejected/)
+  assert.match(markup, /Venue and equipment reservations were released/)
+  assert.match(markup, /Reason: Crowd flow blocks the only fire exit/)
+
+  const changes = await renderCoordinatorPage(event, { ...rejection, decision: 'CHANGES_REQUESTED', reason: 'Add a second exit' })
+  assert.match(changes, /Safety Officer requested changes/)
+  assert.match(changes, /Reason: Add a second exit/)
+  assert.doesNotMatch(changes, /reservations were released/)
+})
+
+test('safety decision banner stays hidden once it no longer needs action', async () => {
+  for (const [pageEvent, decision] of [
+    [event, null],
+    [event, { ...rejection, decision: 'APPROVED', reason: null }],
+    [{ ...event, status: 'awaiting_safety_check' }, rejection],
+    [{ ...event, status: 'confirmed' }, rejection],
+  ]) {
+    const markup = await renderCoordinatorPage(pageEvent, decision)
+    assert.doesNotMatch(markup, /Safety check rejected|Safety Officer requested changes/)
+  }
+})
+
+test('rejected or cancelled bookings do not keep the safety check button disabled', async () => {
+  const button = markup => markup.match(/<button[^>]*>Request Safety Check<\/button>/)[0]
+  const booking = status => ({ ...affected, booking_id: status, status })
+  for (const [bookings, enabled] of [
+    [[booking('REJECTED_BY_SAFETY'), booking('APPROVED')], true],
+    [[booking('REJECTED'), booking('CANCELLED'), booking('APPROVED')], true],
+    [[booking('REJECTED_BY_SAFETY')], false],
+    [[booking('PENDING_VENUE_APPROVAL'), booking('APPROVED')], false],
+    [[booking('AFFECTED_BY_UNAVAILABILITY'), booking('APPROVED')], false],
+  ]) {
+    const markup = await renderCoordinatorPage(event, null, bookings)
+    assert.equal(!button(markup).includes('disabled'), enabled, bookings.map(b => b.status).join(', '))
+  }
 })

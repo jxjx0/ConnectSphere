@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { getSafetyEventDetails } from '../api/events'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { getSafetyEventDetails, submitSafetyDecision } from '../api/events'
 import AppShell from '../components/AppShell'
 import { useAuth } from '../context/AuthContext'
 import { categoryLabel } from '../eventCategories'
@@ -52,9 +52,18 @@ function formatOperatingHours(val) {
 export default function SafetyReviewDetailPage() {
   const { eventId } = useParams()
   const { token } = useAuth()
+  const navigate = useNavigate()
+
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  // Safety Officer Action States
+  const [activeAction, setActiveAction] = useState(null) // null | 'APPROVED' | 'CHANGES' | 'REJECTED'
+  const [notes, setNotes] = useState('')
+  const [reason, setReason] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     if (!eventId || !token) return
@@ -64,6 +73,34 @@ export default function SafetyReviewDetailPage() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
   }, [eventId, token])
+
+  const handleDecisionSubmit = async (e, decisionType) => {
+    e.preventDefault()
+    setActionError('')
+
+    if ((decisionType === 'rejected' || decisionType === 'changes_requested') && !reason.trim()) {
+      setActionError(`Please provide a detailed reason when taking this action.`)
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      await submitSafetyDecision(
+        eventId,
+        {
+          decision: decisionType,
+          notes: notes.trim(),
+          reason: reason.trim() || undefined,
+        },
+        token
+      )
+      navigate('/safetyreview')
+    } catch (err) {
+      setActionError(err.message || 'Failed to record decision.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -217,6 +254,138 @@ export default function SafetyReviewDetailPage() {
                 </li>
               ))}
             </ul>
+          )}
+        </section>
+
+        {/* Safety Assessment & Decision Form Section */}
+        <section className="stack stack--tight" style={{ marginTop: 'var(--space-6)' }}>
+          <h2 className="section-title">Safety Officer Decision</h2>
+
+          {actionError && <p className="form-error" role="alert">{actionError}</p>}
+
+          {!activeAction ? (
+            <div className="form-actions">
+              <button
+                type="button"
+                className="button"
+                onClick={() => {
+                  setActiveAction('APPROVED')
+                  setActionError('')
+                }}
+              >
+                Approve Event
+              </button>
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => {
+                  setActiveAction('CHANGES')
+                  setActionError('')
+                }}
+              >
+                Request Changes
+              </button>
+              <button
+                type="button"
+                className="button button--secondary"
+                style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
+                onClick={() => {
+                  setActiveAction('REJECTED')
+                  setActionError('')
+                }}
+              >
+                Reject Event
+              </button>
+            </div>
+          ) : (
+            <form
+              onSubmit={(e) => {
+                const decisionType =
+                  activeAction === 'APPROVED'
+                    ? 'approved'
+                    : activeAction === 'CHANGES'
+                    ? 'changes_requested'
+                    : 'rejected'
+                handleDecisionSubmit(e, decisionType)
+              }}
+              className="stack stack--tight"
+              style={{
+                border: '1px solid var(--rule)',
+                borderRadius: 'var(--radius)',
+                padding: 'var(--space-4)',
+                backgroundColor: 'var(--surface)',
+              }}
+            >
+              <h3 style={{ fontSize: '1rem', margin: 0 }}>
+                {activeAction === 'APPROVED' && 'Approve Operational Safety Check'}
+                {activeAction === 'CHANGES' && 'Request Safety Changes'}
+                {activeAction === 'REJECTED' && 'Reject Operational Safety Check'}
+              </h3>
+
+              {(activeAction === 'CHANGES' || activeAction === 'REJECTED') && (
+                <label className="field">
+                  <span className="field__label">
+                    {activeAction === 'CHANGES' ? 'Required Safety Changes / Reason' : 'Reason for Rejection'}
+                  </span>
+                  <textarea
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    placeholder={
+                      activeAction === 'CHANGES'
+                        ? 'Specify necessary adjustments or risk mitigation steps required...'
+                        : 'Explain why safety arrangements are unacceptable...'
+                    }
+                    rows={3}
+                    required
+                    autoFocus
+                  />
+                </label>
+              )}
+
+              <label className="field">
+                <span className="field__label">Internal Safety Notes (Optional)</span>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Notes for records and compliance log..."
+                  rows={2}
+                />
+              </label>
+
+              <div className="form-actions">
+                <button
+                  type="submit"
+                  className="button"
+                  style={
+                    activeAction === 'REJECTED'
+                      ? { backgroundColor: 'var(--danger)', borderColor: 'var(--danger)', color: '#fff' }
+                      : undefined
+                  }
+                  disabled={submitting}
+                >
+                  {submitting
+                    ? 'Submitting…'
+                    : activeAction === 'APPROVED'
+                    ? 'Confirm Approval'
+                    : activeAction === 'CHANGES'
+                    ? 'Send Change Request'
+                    : 'Confirm Rejection'}
+                </button>
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  disabled={submitting}
+                  onClick={() => {
+                    setActiveAction(null)
+                    setReason('')
+                    setNotes('')
+                    setActionError('')
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           )}
         </section>
       </div>

@@ -1,12 +1,22 @@
 """Venue booking persistence, review workflow, and block synchronization."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from postgrest import APIError as PostgrestAPIError
 
 import config
 from models.venue_booking import VenueBookingCreateRequest, VenueBookingReviewRequest
+from services import venue_availability_service as availability
 from services.auth_service import AuthError
 from services.notification_service import notify
+
+# Requests that still hold, or may soon hold, the venue for their event.
+LIVE_BOOKING_STATUSES = ("PENDING_VENUE_APPROVAL", "APPROVED")
+
+
+def _hours_label(operating_hours) -> str:
+    if isinstance(operating_hours, dict) and operating_hours.get("open") and operating_hours.get("close"):
+        return f"{operating_hours['open']} - {operating_hours['close']}"
+    return "unknown"
 
 
 def get_pending_venue_bookings(access_token: str, venue_id: str | None = None) -> list[dict]:
@@ -41,7 +51,7 @@ def check_schedule_conflict_details(client, venue_id: str, effective_start: str,
 
 
 def check_duplicate_event_booking(client, venue_id: str, event_id: str) -> None:
-    """Prevent submitting multiple active booking requests for the same venue and event."""
+    """Prevent a second live request for one venue and event; settled requests may be retried."""
     if not event_id:
         return
 
@@ -50,8 +60,7 @@ def check_duplicate_event_booking(client, venue_id: str, event_id: str) -> None:
         .select("booking_id, status")
         .eq("venue_id", venue_id)
         .eq("event_id", event_id)
-        .neq("status", "REJECTED")
-        .neq("status", "CANCELLED")
+        .in_("status", list(LIVE_BOOKING_STATUSES))
         .execute()
         .data
     )
@@ -63,65 +72,13 @@ def check_duplicate_event_booking(client, venue_id: str, event_id: str) -> None:
         )
 
 
-def create_venue_booking(
-    access_token: str,
-    venue_id: str,
-    request: VenueBookingCreateRequest,
-    coordinator_id: str,
-) -> dict:
-    """Submit a venue booking request with status set to PENDING_VENUE_APPROVAL."""
-    client = config.get_user_client(access_token)
-
-    if request.event_id:
-        check_duplicate_event_booking(client, venue_id, request.event_id)
-
-    effective_start = request.start_at - timedelta(minutes=request.setup_buffer_minutes)
-    effective_end = request.end_at + timedelta(minutes=request.teardown_buffer_minutes)
-
-    effective_start_iso = effective_start.isoformat()
-    effective_end_iso = effective_end.isoformat()
-
-    try:
-        if check_schedule_conflict_details(client, venue_id, effective_start_iso, effective_end_iso):
-            raise AuthError(
-                "The requested venue is unavailable during the selected time slot (including buffers).",
-                status_code=409,
-            )
-    except PostgrestAPIError as error:
-        raise AuthError("Unable to verify venue schedule availability.", status_code=502) from error
-
-    data = {
-        "venue_id": venue_id,
-        "coordinator_id": coordinator_id,
-        "event_id": request.event_id,
-        "room_layout": request.room_layout,
-        "start_at": request.start_at.isoformat(),
-        "end_at": request.end_at.isoformat(),
-        "setup_buffer_minutes": request.setup_buffer_minutes,
-        "teardown_buffer_minutes": request.teardown_buffer_minutes,
-        "effective_start_at": effective_start_iso,
-        "effective_end_at": effective_end_iso,
-        "status": "PENDING_VENUE_APPROVAL",
-    }
-
-    try:
-        result = client.table("venue_bookings").insert(data).execute()
-    except PostgrestAPIError as error:
-        raise AuthError("Unable to submit venue booking request.", status_code=502) from error
-
-    if not result.data:
-        raise AuthError("Venue booking request was not created.", status_code=502)
-
-    return result.data[0]
-
-
 def review_venue_booking(
     access_token: str,
     booking_id: str,
     reviewer_id: str,
     review: VenueBookingReviewRequest,
 ) -> dict:
-    """Approve or reject a request. On approval/rejection, dispatches a notification to the event coordinator."""
+    """Approve or reject a request. On approval, verifies operating hours and attaches booking_id to venue_blocks."""
     client = config.get_user_client(access_token)
 
     booking_res = (
@@ -170,6 +127,18 @@ def review_venue_booking(
                 status_code=400,
             )
 
+        operating_hours = venue.get("operating_hours")
+        if not availability.booking_within_operating_hours(
+            datetime.fromisoformat(booking["effective_start_at"]),
+            datetime.fromisoformat(booking["effective_end_at"]),
+            operating_hours,
+        ):
+            raise AuthError(
+                "Cannot approve: the booking, including setup and turnaround, falls outside "
+                f"venue operating hours ({_hours_label(operating_hours)}).",
+                status_code=400,
+            )
+
         conflicts = check_schedule_conflict_details(
             client, booking["venue_id"], booking["effective_start_at"], booking["effective_end_at"]
         )
@@ -183,6 +152,7 @@ def review_venue_booking(
 
         block_data = {
             "venue_id": booking["venue_id"],
+            "booking_id": booking["booking_id"],
             "start_at": booking["effective_start_at"],
             "end_at": booking["effective_end_at"],
             "block_reason": f"Approved Booking: {event.get('name', 'Event')} ({requested_layout})",
@@ -204,7 +174,6 @@ def review_venue_booking(
         )
 
         approved_booking = update_res.data[0]
-
 
         # Dispatch notification with positional notification_type
         if booking.get("coordinator_id"):
@@ -230,7 +199,6 @@ def review_venue_booking(
 
     rejected_booking = update_res.data[0]
 
-    # Dispatch notification with positional notification_type
     if booking.get("coordinator_id"):
         reason_text = f" Reason: {review.rejection_reason}" if review.rejection_reason else ""
         notify(
@@ -241,3 +209,76 @@ def review_venue_booking(
         )
 
     return rejected_booking
+
+
+def create_venue_booking(
+    access_token: str,
+    venue_id: str,
+    request: VenueBookingCreateRequest,
+    coordinator_id: str,
+) -> dict:
+    """Submit a venue booking request with operating hours & buffer validation."""
+    client = config.get_user_client(access_token)
+
+    venue_res = (
+        client.table("venues")
+        .select("setup_time_minutes, turnaround_time_minutes, operating_hours")
+        .eq("id", venue_id)
+        .execute()
+    )
+    if not venue_res.data:
+        raise AuthError("Venue not found.", status_code=404)
+
+    venue_info = venue_res.data[0]
+    setup_mins = venue_info.get("setup_time_minutes") or 0
+    turnaround_mins = venue_info.get("turnaround_time_minutes") or 0
+    operating_hours = venue_info.get("operating_hours")
+
+    effective_start = request.start_at - timedelta(minutes=setup_mins)
+    effective_end = request.end_at + timedelta(minutes=turnaround_mins)
+
+    if not availability.booking_within_operating_hours(effective_start, effective_end, operating_hours):
+        raise AuthError(
+            "The requested time, including setup and turnaround, falls outside venue operating "
+            f"hours ({_hours_label(operating_hours)}).",
+            status_code=400,
+        )
+
+    if request.event_id:
+        check_duplicate_event_booking(client, venue_id, request.event_id)
+
+    effective_start_iso = effective_start.isoformat()
+    effective_end_iso = effective_end.isoformat()
+
+    try:
+        if check_schedule_conflict_details(client, venue_id, effective_start_iso, effective_end_iso):
+            raise AuthError(
+                "The requested venue is unavailable during the selected time slot (including buffers).",
+                status_code=409,
+            )
+    except PostgrestAPIError as error:
+        raise AuthError("Unable to verify venue schedule availability.", status_code=502) from error
+
+    data = {
+        "venue_id": venue_id,
+        "coordinator_id": coordinator_id,
+        "event_id": request.event_id,
+        "room_layout": request.room_layout,
+        "start_at": request.start_at.isoformat(),
+        "end_at": request.end_at.isoformat(),
+        "setup_buffer_minutes": setup_mins,
+        "teardown_buffer_minutes": turnaround_mins,
+        "effective_start_at": effective_start_iso,
+        "effective_end_at": effective_end_iso,
+        "status": "PENDING_VENUE_APPROVAL",
+    }
+
+    try:
+        result = client.table("venue_bookings").insert(data).execute()
+    except PostgrestAPIError as error:
+        raise AuthError("Unable to submit venue booking request.", status_code=502) from error
+
+    if not result.data:
+        raise AuthError("Venue booking request was not created.", status_code=502)
+
+    return result.data[0]
