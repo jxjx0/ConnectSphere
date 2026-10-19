@@ -63,7 +63,7 @@ def check_booking_impact(access_token: str, venue_id: str, request: VenueBlockCr
         # failed creation response that encourages duplicate block submissions.
         return {"status": "unavailable", "affected_bookings": None}
 
-    updates = _mark_affected_bookings(client, venue_id, affected)
+    updates = mark_affected_bookings(client, venue_id, affected)
     for booking in affected:
         booking["status_update"] = updates[booking["booking_id"]]
         booking["notification_status"] = (
@@ -75,7 +75,7 @@ def check_booking_impact(access_token: str, venue_id: str, request: VenueBlockCr
     return {"status": "verified" if complete else "partial", "affected_bookings": affected}
 
 
-def _mark_affected_bookings(client, venue_id: str, affected: list[dict]) -> dict[str, str]:
+def mark_affected_bookings(client, venue_id: str, affected: list[dict]) -> dict[str, str]:
     """One conditional UPDATE is atomic; never overwrite a concurrently changed status."""
     identities = {booking["booking_id"] for booking in affected}
     if not identities:
