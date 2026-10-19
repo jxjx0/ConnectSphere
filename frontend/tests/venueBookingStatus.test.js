@@ -54,9 +54,12 @@ test('dashboard flags an affected venue even when another venue remains approved
 })
 
 test('Coordinator dashboard shows equipment request status without changing event status', async () => {
-  const Tabs = await compile('../src/components/AssignedRequestTabs.jsx', {
-    'react-router-dom': { Link: link, useSearchParams: () => [new URLSearchParams('tab=ongoing'), () => {}] },
-  })
+  const renderTab = async (tab, events) => {
+    const Tabs = await compile('../src/components/AssignedRequestTabs.jsx', {
+      'react-router-dom': { Link: link, useSearchParams: () => [new URLSearchParams(`tab=${tab}`), () => {}] },
+    })
+    return renderToStaticMarkup(React.createElement(Tabs, { events }))
+  }
   const pendingEvent = {
     ...event,
     equipment_requests: [{ status: 'Pending Technical Approval' }],
@@ -68,14 +71,13 @@ test('Coordinator dashboard shows equipment request status without changing even
     status: 'confirmed',
     equipment_requests: [{ status: 'Approved' }],
   }
-  const markup = renderToStaticMarkup(
-    React.createElement(Tabs, { events: [pendingEvent, approvedEvent] }),
-  )
+  const planning = await renderTab('planning', [pendingEvent, approvedEvent])
+  const confirmed = await renderTab('confirmed', [pendingEvent, approvedEvent])
 
-  assert.match(markup, /Equipment Pending/)
-  assert.match(markup, /Equipment Approved/)
-  assert.match(markup, />Planning<\/span>/)
-  assert.match(markup, />Confirmed<\/span>/)
+  assert.match(planning, /Equipment Pending/)
+  assert.match(planning, />Planning<\/span>/)
+  assert.match(confirmed, /Equipment Approved/)
+  assert.match(confirmed, />Confirmed<\/span>/)
   assert.equal(pendingEvent.status, 'planning')
   assert.equal(approvedEvent.status, 'confirmed')
 })
@@ -158,6 +160,7 @@ async function renderCoordinatorPage(pageEvent, safetyDecision, bookings = []) {
       getAssignedEventClarifications: async () => ({ clarifications: [] }),
     },
     '../api/venues': { getVenueBookingsForEvent: async () => ({ bookings }) },
+    '../api/equipmentRequests': { getEventEquipmentRequests: async () => ({ requests: [] }) },
   })
   Page()
   effects.forEach(fn => fn())
