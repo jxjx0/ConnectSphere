@@ -197,12 +197,12 @@ def test_booking_missing_or_invalid_authoritative_buffers_fail_closed(venue):
         bookings._booking_occupancy({**PAYLOAD, "venues": venue})
 
 
-def test_zero_buffer_request_persists_current_venue_occupancy(database, monkeypatch):
+def test_request_without_editable_buffers_persists_current_venue_occupancy(database, monkeypatch):
     request = bookings.VenueBookingCreateRequest(event_id=EVENT, room_layout="Classroom",
-        start_at=PAYLOAD["start_at"], end_at=PAYLOAD["end_at"], setup_buffer_minutes=0, teardown_buffer_minutes=0)
+        start_at=PAYLOAD["start_at"], end_at=PAYLOAD["end_at"])
     tables = {"venues": Mock(), "venue_bookings": Mock(), "venue_blocks": Mock()}
     tables["venues"].select.return_value.eq.return_value.execute.return_value.data = [{"setup_time_minutes":30,"turnaround_time_minutes":45}]
-    tables["venue_bookings"].select.return_value.eq.return_value.eq.return_value.neq.return_value.neq.return_value.execute.return_value.data = []
+    tables["venue_bookings"].select.return_value.eq.return_value.eq.return_value.in_.return_value.execute.return_value.data = []
     tables["venue_bookings"].insert.return_value.execute.return_value.data = [{"booking_id": "booking"}]
     tables["venue_blocks"].select.return_value.eq.return_value.lt.return_value.gt.return_value.execute.return_value.data = []
     database.table.side_effect = tables.__getitem__

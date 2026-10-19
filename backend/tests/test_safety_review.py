@@ -1,5 +1,6 @@
 """Tests for the Safety Officer review queue, safety flags and safety check requests."""
 
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -58,9 +59,14 @@ class FakeQuery:
 def fake_database(monkeypatch, tables):
     filters, updates = [], []
     client = SimpleNamespace(
-        table=lambda name: FakeQuery(name, list(tables.get(name, [])), filters, updates)
+        table=lambda name: FakeQuery(name, list(tables.get(name, [])), filters, updates),
+        from_=lambda name: FakeQuery(name, list(tables.get(name, [])), filters, updates),
     )
     monkeypatch.setattr(config, "get_admin_client", lambda: client)
+    monkeypatch.setattr(config, "get_user_client", lambda token: client)
+    monkeypatch.setattr(safety_review_service, "get_admin_client", lambda: client)
+    monkeypatch.setattr(safety_review_service, "get_user_client", lambda token: client)
+    monkeypatch.setattr(safety_review_service, "_get_client", lambda access_token=None: client)
     return filters, updates
 
 
@@ -177,6 +183,74 @@ def test_request_is_refused_while_equipment_is_pending(monkeypatch):
     assert updates == []
 
 
+@pytest.mark.parametrize("other_status", ["PENDING_VENUE_APPROVAL", "AFFECTED_BY_UNAVAILABILITY"])
+def test_request_is_refused_while_any_venue_booking_is_not_approved(monkeypatch, other_status):
+    _, updates = fake_database(monkeypatch, {
+        "events": [PLANNING_EVENT],
+        "venue_bookings": [{"status": "APPROVED"}, {"status": other_status}],
+    })
+
+    with pytest.raises(AuthError) as caught:
+        safety_review_service.request_safety_check(EVENT_ID, "token")
+
+    assert caught.value.status_code == 409
+    assert "every venue booking must be approved" in caught.value.message
+    assert updates == []
+
+
+def test_every_approved_venue_booking_is_sent(monkeypatch):
+    _, updates = fake_database(monkeypatch, {
+        "events": [PLANNING_EVENT],
+        "venue_bookings": [{"status": "APPROVED"}, {"status": "approved"}],
+    })
+
+    safety_review_service.request_safety_check(EVENT_ID, "token")
+
+    assert [table for table, _ in updates] == ["events"]
+
+
+@pytest.mark.parametrize("settled_status", ["CANCELLED", "REJECTED", "REJECTED_BY_SAFETY"])
+def test_settled_venue_bookings_do_not_block_a_replanned_event(monkeypatch, settled_status):
+    _, updates = fake_database(monkeypatch, {
+        "events": [PLANNING_EVENT],
+        "venue_bookings": [{"status": settled_status}, {"status": "APPROVED"}],
+    })
+
+    safety_review_service.request_safety_check(EVENT_ID, "token")
+
+    assert [table for table, _ in updates] == ["events"]
+
+
+@pytest.mark.parametrize("settled_status", ["CANCELLED", "REJECTED", "REJECTED_BY_SAFETY"])
+def test_settled_bookings_alone_do_not_count_as_an_approved_venue(monkeypatch, settled_status):
+    _, updates = fake_database(monkeypatch, {
+        "events": [PLANNING_EVENT],
+        "venue_bookings": [{"status": settled_status}],
+    })
+
+    with pytest.raises(AuthError) as caught:
+        safety_review_service.request_safety_check(EVENT_ID, "token")
+
+    assert "approved venue booking" in caught.value.message
+    assert updates == []
+
+
+def test_request_stamps_updated_at_so_the_queue_shows_the_request_time(monkeypatch):
+    _, updates = fake_database(monkeypatch, {
+        "events": [PLANNING_EVENT],
+        "venue_bookings": [{"status": "APPROVED"}],
+    })
+
+    before = datetime.now(timezone.utc)
+    safety_review_service.request_safety_check(EVENT_ID, "token")
+
+    _, values = updates[0]
+    assert values["status"] == "awaiting_safety_check"
+    stamped = datetime.fromisoformat(values["updated_at"])
+    assert stamped.utcoffset() == timedelta(0)
+    assert before <= stamped <= datetime.now(timezone.utc)
+
+
 def test_rejected_equipment_requests_do_not_block_the_request(monkeypatch):
     _, updates = fake_database(monkeypatch, {
         "events": [PLANNING_EVENT],
@@ -186,7 +260,8 @@ def test_rejected_equipment_requests_do_not_block_the_request(monkeypatch):
 
     safety_review_service.request_safety_check(EVENT_ID, "token")
 
-    assert updates == [("events", {"safety_status": "pending"})]
+    assert [table for table, _ in updates] == ["events"]
+    assert updates[0][1]["status"] == "awaiting_safety_check"
 
 
 def test_request_is_refused_outside_planning(monkeypatch):
@@ -201,10 +276,9 @@ def test_request_is_refused_outside_planning(monkeypatch):
     assert "Planning" in caught.value.message
 
 
-@pytest.mark.parametrize("safety_status", ["pending", "approved"])
-def test_request_is_refused_when_already_requested(monkeypatch, safety_status):
+def test_request_is_refused_when_already_requested(monkeypatch):
     _, updates = fake_database(monkeypatch, {
-        "events": [{**PLANNING_EVENT, "safety_status": safety_status}],
+        "events": [{**PLANNING_EVENT, "status": "awaiting_safety_check"}],
         "venue_bookings": [{"status": "APPROVED"}],
     })
 
@@ -224,7 +298,8 @@ def test_ready_event_is_sent_for_safety_check(monkeypatch):
 
     safety_review_service.request_safety_check(EVENT_ID, "token")
 
-    assert updates == [("events", {"safety_status": "pending"})]
+    assert [table for table, _ in updates] == ["events"]
+    assert updates[0][1]["status"] == "awaiting_safety_check"
 
 
 def test_event_without_equipment_can_be_sent(monkeypatch):
@@ -235,7 +310,8 @@ def test_event_without_equipment_can_be_sent(monkeypatch):
 
     safety_review_service.request_safety_check(EVENT_ID, "token")
 
-    assert updates == [("events", {"safety_status": "pending"})]
+    assert [table for table, _ in updates] == ["events"]
+    assert updates[0][1]["status"] == "awaiting_safety_check"
 
 
 def test_missing_event_returns_not_found(monkeypatch):

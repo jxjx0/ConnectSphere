@@ -6,9 +6,15 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { formatDateRange, readableStatus } from '../eventDisplay'
 
 const TABS = [
+  // {
+  //   id: 'incoming',
+  //   label: 'Incoming',
+  //   statuses: ['under_review'],
+  //   empty: 'No requests are waiting for your decision.',
+  // },
   {
-    id: 'incoming',
-    label: 'Incoming',
+    id: 'under_review',
+    label: 'Under Review',
     statuses: ['under_review'],
     empty: 'No requests are waiting for your decision.',
   },
@@ -18,11 +24,29 @@ const TABS = [
     statuses: ['awaiting_clarification'],
     empty: 'No events are awaiting clarification.',
   },
+  // {
+  //   id: 'ongoing',
+  //   label: 'Ongoing',
+  //   statuses: ['planning', 'confirmed'],
+  //   empty: 'You have no ongoing events.',
+  // },
   {
-    id: 'ongoing',
-    label: 'Ongoing',
-    statuses: ['planning', 'confirmed'],
+    id: 'planning',
+    label: 'Planning',
+    statuses: ['planning'],
     empty: 'You have no ongoing events.',
+  },
+  {
+    id: 'awaiting_safety_check',
+    label: 'Awaiting Safety Check',
+    statuses: ['awaiting_safety_check'],
+    empty: 'No events are awaiting safety checks.',
+  },
+  {
+    id: 'confirmed',
+    label: 'Confirmed',
+    statuses: ['confirmed'],
+    empty: 'You have no confirmed events.',
   },
   {
     id: 'change-requested',
@@ -104,22 +128,28 @@ function getVenueBadge(venueBookings) {
 
 // Helper function for Safety Review Badge
 function getSafetyBadge(event) {
-  if (!event) return null
+  if (!event || !event.status) return null
 
-  // If the event is safety approved / completed safety check
-  if (event.safety_status === 'approved' || event.status === 'safety_approved') {
-    return {
-      label: 'Safety Approved',
-      style: {
-        backgroundColor: 'var(--accent-faint)',
-        color: 'var(--accent)',
-        borderColor: 'var(--accent)',
-      },
-    }
+  const { status } = event
+
+  // 1. Only allow the badge to appear for specific target statuses
+  const allowedStatuses = [
+    'planning',
+    'awaiting_safety_check',
+    'completed',
+    'safety_rejected', // Included in case rejection sets status directly
+  ]
+
+  if (!allowedStatuses.includes(status)) {
+    return null
   }
 
-  // If the safety check was rejected / flagged with issues
-  if (event.safety_status === 'rejected' || event.status === 'safety_rejected') {
+  // 2. Safety Check Rejected / Concerns Flagged
+  // Triggered if explicitly safety_rejected OR if rejected back into planning with a flagged indicator
+  if (
+    status === 'safety_rejected' ||
+    (status === 'planning' && event.safety_rejected_at) // Or event.has_safety_flags / event.was_rejected
+  ) {
     return {
       label: 'Safety Concerns Flagged',
       style: {
@@ -130,20 +160,36 @@ function getSafetyBadge(event) {
     }
   }
 
-  // Default for all other events that haven't completed safety review yet
-  return {
-    label: 'Safety check not done',
-    style: {
-      backgroundColor: 'var(--surface)',
-      color: 'var(--ink)',
-      borderColor: 'var(--rule-strong)',
-    },
+  // 3. Completed Events
+  if (status === 'completed') {
+    return {
+      label: 'Safety Check Done',
+      style: {
+        backgroundColor: 'var(--accent-faint)',
+        color: 'var(--accent)',
+        borderColor: 'var(--accent)',
+      },
+    }
   }
+
+  // 4. Planning & Awaiting Safety Check (Check not done yet)
+  if (status === 'planning' || status === 'awaiting_safety_check') {
+    return {
+      label: 'Safety check not done',
+      style: {
+        backgroundColor: 'var(--surface)',
+        color: 'var(--ink)',
+        borderColor: 'var(--rule-strong)',
+      },
+    }
+  }
+
+  return null
 }
 
 export default function AssignedRequestTabs({ events }) {
-  // The open tab lives in the URL (?tab=ongoing), so the back button
-  // returns to the same tab. Incoming is the default.
+  // The open tab lives in the URL (?tab=planning), so the back button
+  // returns to the same tab. Under Review is the default.
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = TABS.find((t) => t.id === searchParams.get('tab')) ?? TABS[0]
   const tabEvents = events.filter((event) => tab.statuses.includes(event.status))

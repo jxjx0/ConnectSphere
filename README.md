@@ -254,7 +254,7 @@ From `backend`, activate the virtual environment with
 test and reporting command used by CI:
 
 ```bash
-python -m pytest --cov --cov-config=.coveragerc --cov-report=term-missing --cov-report=xml:coverage.xml --cov-report=html:htmlcov --junitxml=test-results.xml
+python -m pytest --cov --cov-config=.coveragerc --cov-report=term-missing --cov-report=xml:coverage.xml --cov-report=html:htmlcov --junitxml=test-results.x
 ```
 
 Coverage is configured in `backend/.coveragerc`. It measures backend
@@ -275,7 +275,7 @@ These generated files and the `htmlcov/` directory are ignored by git.
 **No coverage threshold is currently enforced.** Coverage is used to identify
 untested code; a future 100% backend line-coverage gate is planned but is not
 active.
-
+ml
 ### Automatic CI runs
 
 The [Backend Test CI workflow](.github/workflows/tests.yml) runs automatically

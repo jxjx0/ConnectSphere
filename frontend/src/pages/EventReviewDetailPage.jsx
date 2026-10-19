@@ -111,6 +111,7 @@ export default function EventReviewDetailPage() {
   const [safetyError, setSafetyError] = useState('')
   const [hasActiveHold, setHasActiveHold] = useState(false)
   const [venueError, setVenueError] = useState('')
+  const [safetyDecision, setSafetyDecision] = useState(null)
 
   useEffect(() => {
     let active = true
@@ -123,6 +124,7 @@ export default function EventReviewDetailPage() {
         if (!active) return
         setEvent(data.event)
         setOrganiser(data.organiser)
+        setSafetyDecision(data.safety_decision ?? null)
         setVenueBookings(bookingData.bookings || [])
         setHasActiveHold(bookingData.has_active_venue_hold === true)
         setVenueError(bookingData.error || '')
@@ -242,9 +244,11 @@ export default function EventReviewDetailPage() {
   }
 
 
-  const hasApprovedVenue = venueBookings.some(
-    (booking) => (booking.status || '').toUpperCase() === 'APPROVED',
-  )
+  const liveVenueStatuses = venueBookings
+    .map((booking) => (booking.status || '').toUpperCase())
+    .filter((status) => !['CANCELLED', 'REJECTED', 'REJECTED_BY_SAFETY'].includes(status))
+  const hasApprovedVenue =
+    liveVenueStatuses.length > 0 && liveVenueStatuses.every((status) => status === 'APPROVED')
 
   return (
     <AppShell>
@@ -265,18 +269,6 @@ export default function EventReviewDetailPage() {
             <span className="tag">{readableStatus(event.status)}</span>
           </p>
 
-          {/* --- ADD THIS BUTTON & MODAL RIGHT HERE --- */}
-          {/* {event.status === 'planning' && (
-            <div className="form-actions">
-              <Link to={`/venues/search?eventId=${encodeURIComponent(eventId)}`} className="button">
-                {venueBookings.length > 0 ? 'Find / Request Additional Venue' : 'Find Venue'}
-              </Link>
-              <Link to={`/safetyreview/${eventId}`} className="button button--secondary">
-                Request Safety Check
-              </Link>
-            </div>
-          )} */}
-
           {venueError && <p role="alert">Unable to load venue arrangements. Please refresh and try again.</p>}
           {hasActiveHold && ['under_review', 'change_requested', 'confirmed'].includes(event.status) && (
             <div className="form-actions">
@@ -287,47 +279,64 @@ export default function EventReviewDetailPage() {
           )}
           {event.status === 'planning' && (
             <div className="stack stack--tight">
+              {['CHANGES_REQUESTED', 'REJECTED'].includes(safetyDecision?.decision) && (
+                <div className="notice" role="status">
+                  <p>
+                    <strong>
+                      {safetyDecision.decision === 'REJECTED'
+                        ? 'Safety check rejected'
+                        : 'Safety Officer requested changes'}
+                    </strong>
+                    {safetyDecision.created_at && <> on {formatDateTime(safetyDecision.created_at)}</>}.
+                    {safetyDecision.decision === 'REJECTED'
+                      && ' Venue and equipment reservations were released.'}
+                  </p>
+                  {safetyDecision.reason && <p>Reason: {safetyDecision.reason}</p>}
+                  <p>Update the arrangements, then request the safety check again.</p>
+                </div>
+              )}
               <div className="form-actions">
                 <Link to={`/venues/search?eventId=${encodeURIComponent(eventId)}`} className="button">
                   {venueBookings.length > 0 ? 'Find / Request Additional Venue' : 'Find Venue'}
                 </Link>
 
-                {event.safety_status === 'pending' ? (
-                  <span className="tag tag--orange">Safety Review Pending</span>
-                ) : event.safety_status === 'approved' ? (
-                  <span className="tag tag--green">Safety Approved</span>
-                ) : (
-                  <button
-                    type="button"
-                    className="button button--secondary"
-                    disabled={submittingSafety || !hasApprovedVenue}
-                    onClick={async () => {
-                      setSubmittingSafety(true)
-                      setSafetyError('')
-                      try {
-                        await requestSafetyCheck(eventId, token)
-                        setEvent((prev) => ({ ...prev, safety_status: 'pending' }))
-                      } catch (err) {
-                        setSafetyError(err.message || 'Failed to request safety check')
-                      } finally {
-                        setSubmittingSafety(false)
-                      }
-                    }}
-                  >
-                    {submittingSafety ? 'Requesting...' : 'Request Safety Check'}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  disabled={submittingSafety || !hasApprovedVenue}
+                  onClick={async () => {
+                    setSubmittingSafety(true)
+                    setSafetyError('')
+                    try {
+                      await requestSafetyCheck(eventId, token)
+                      setEvent((prev) => ({
+                        ...prev,
+                        status: 'awaiting_safety_check',
+                      }))
+                    } catch (err) {
+                      setSafetyError(err.message || 'Failed to request safety check')
+                    } finally {
+                      setSubmittingSafety(false)
+                    }
+                  }}
+                >
+                  {submittingSafety ? 'Requesting...' : 'Request Safety Check'}
+                </button>
               </div>
 
-              {event.safety_status === 'pending' && (
-                <p className="note">Waiting for the Safety Officer's review.</p>
-              )}
-              {!hasApprovedVenue && !['pending', 'approved'].includes(event.safety_status) && (
+              {!hasApprovedVenue && (
                 <p className="note">
-                  A safety check can be requested once a venue booking is approved and no equipment request is still pending.
+                  A safety check can be requested once every venue booking is approved (rejected or cancelled ones don't count) and no equipment request is still pending.
                 </p>
               )}
               {safetyError && <p className="form-error" role="alert">{safetyError}</p>}
+            </div>
+          )}
+
+          {event.status === 'awaiting_safety_check' && (
+            <div className="stack stack--tight">
+              <span className="tag tag--orange">Safety Review Pending</span>
+              <p className="note">Waiting for the Safety Officer's review.</p>
             </div>
           )}
         </header>

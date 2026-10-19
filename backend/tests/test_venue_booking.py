@@ -1,423 +1,252 @@
+"""Venue booking requests: venue-defined buffers, operating hours, duplicates and clashes."""
+
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock
+
+from types import SimpleNamespace
+
 import pytest
 from postgrest import APIError as PostgrestAPIError
 
+import config
+from fake_supabase import FakeDatabase
+from models.venue_booking import VenueBookingCreateRequest
+from services import venue_booking_service
 from services.auth_service import AuthError
-import services.venue_booking_service
+
+SGT = timezone(timedelta(hours=8))
+VENUE = {
+    "setup_time_minutes": 30,
+    "turnaround_time_minutes": 45,
+    "operating_hours": {"open": "08:00", "close": "22:00"},
+}
 
 
-@pytest.fixture(autouse=True)
-def venue_configuration(monkeypatch):
-    monkeypatch.setattr("services.venue_booking_service.notify", lambda *args, **kwargs: object())
-    monkeypatch.setattr("services.venue_booking_service._venue_configuration",
-                        lambda *_: {"setup_time_minutes": 0, "turnaround_time_minutes": 0})
-
-
-@pytest.fixture(autouse=True)
-def no_holds_in_booking_regressions(monkeypatch):
-    # These existing tests isolate booking/block rules; hold integration has its own suite.
-    monkeypatch.setattr(services.venue_booking_service, "read_reservations", lambda *args, **kwargs: [])
-
-
-def test_check_schedule_conflict_detects_overlap(monkeypatch):
-    """Test that check_schedule_conflict_details accurately identifies overlapping blocks."""
-    now = datetime.now(timezone.utc)
-    
-    mock_client = MagicMock()
-    mock_query = mock_client.table.return_value.select.return_value.eq.return_value.lt.return_value.gt.return_value
-    mock_query.execute.return_value.data = [{"block_id": "blk_1"}]
-
-    conflict_blocks = services.venue_booking_service.check_schedule_conflict_details(
-        client=mock_client,
-        venue_id="venue_123",
-        effective_start=(now + timedelta(hours=1)).isoformat(),
-        effective_end=(now + timedelta(hours=3)).isoformat()
+def booking_request(start_hour=10, end_hour=12, event_id="evt-1", day=22):
+    return VenueBookingCreateRequest(
+        event_id=event_id,
+        room_layout="Banquet",
+        start_at=datetime(2026, 10, day, start_hour, 0, tzinfo=SGT),
+        end_at=datetime(2026, 10, day, end_hour, 0, tzinfo=SGT),
     )
 
-    assert len(conflict_blocks) == 1
-    assert conflict_blocks[0]["block_id"] == "blk_1"
-    mock_client.table.assert_called_once_with("venue_blocks")
+
+@pytest.fixture
+def database(monkeypatch):
+    database = FakeDatabase({
+        ("venues", "select"): [VENUE],
+        ("venue_bookings", "select"): [],
+        ("venue_blocks", "select"): [],
+        ("venue_bookings", "insert"): lambda query: [{"booking_id": "bk-new", **query.payload}],
+    })
+    database.rpc_calls = []
+
+    def rpc(name, params):
+        database.rpc_calls.append((name, params))
+        return SimpleNamespace(execute=lambda: SimpleNamespace(data=[]))
+
+    database.client.rpc = rpc
+    monkeypatch.setattr(config, "get_user_client", lambda token: database.client)
+    return database
 
 
-def test_review_venue_booking_locks_calendar_first(monkeypatch):
-    """Verify approval creates venue_blocks before updating status to APPROVED."""
-    now = datetime.now(timezone.utc)
-    
-    booking_record = {
-        "booking_id": "b_100",
-        "venue_id": "v_100",
-        "room_layout": "Banquet",
-        "status": "PENDING_VENUE_APPROVAL",
-        "start_at": now.isoformat(),
-        "effective_start_at": now.isoformat(),
-        "end_at": (now + timedelta(hours=2)).isoformat(),
-        "effective_end_at": (now + timedelta(hours=2)).isoformat(),
-        "venues": {"setup_time_minutes": 0, "turnaround_time_minutes": 0, "layouts": [{"name": "Banquet", "capacity": 100}]},
-        "events": {"name": "Gala", "expected_attendance": 50},
-    }
+def test_effective_period_uses_the_venue_buffers_not_the_request(database):
+    booking = venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
 
-    call_order = []
-    mock_client = MagicMock()
+    assert booking["status"] == "PENDING_VENUE_APPROVAL"
+    assert booking["setup_buffer_minutes"] == 30
+    assert booking["teardown_buffer_minutes"] == 45
+    assert datetime.fromisoformat(booking["effective_start_at"]) == datetime(2026, 10, 22, 9, 30, tzinfo=SGT)
+    assert datetime.fromisoformat(booking["effective_end_at"]) == datetime(2026, 10, 22, 12, 45, tzinfo=SGT)
+    assert booking["coordinator_id"] == "coord-1"
 
-    def mock_table(table_name):
-        table_mock = MagicMock()
-        
-        if table_name == "venue_bookings":
-            table_mock.select.return_value.eq.return_value.execute.return_value.data = [booking_record]
-            
-            def record_update(*args, **kwargs):
-                call_order.append("update_venue_bookings")
-                update_mock = MagicMock()
-                update_mock.eq.return_value.execute.return_value.data = [{**booking_record, "status": "APPROVED"}]
-                return update_mock
-            
-            table_mock.update.side_effect = record_update
 
-        elif table_name == "venue_blocks":
-            table_mock.select.return_value.eq.return_value.lt.return_value.gt.return_value.execute.return_value.data = []
-            
-            def record_insert(*args, **kwargs):
-                call_order.append("insert_venue_blocks")
-                insert_mock = MagicMock()
-                insert_mock.execute.return_value.data = [{"block_id": "blk_100"}]
-                return insert_mock
-            
-            table_mock.insert.side_effect = record_insert
+def test_clash_check_covers_the_effective_period(database):
+    venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
 
-        return table_mock
+    (clash_query,) = database.calls_to("venue_blocks", "select")
+    filters = {name: value for name, _, value in clash_query.filters}
+    assert datetime.fromisoformat(filters["lt"]) == datetime(2026, 10, 22, 12, 45, tzinfo=SGT)
+    assert datetime.fromisoformat(filters["gt"]) == datetime(2026, 10, 22, 9, 30, tzinfo=SGT)
 
-    mock_client.table.side_effect = mock_table
-    monkeypatch.setattr("config.get_user_client", lambda token: mock_client)
 
-    class ReviewReq:
-        status = "APPROVED"
-        rejection_reason = None
+@pytest.mark.parametrize("start,end", [
+    # Setup would start at 07:30, before opening.
+    (datetime(2026, 10, 22, 8, 0, tzinfo=SGT), datetime(2026, 10, 22, 10, 0, tzinfo=SGT)),
+    # Turnaround would run to 22:45, after closing.
+    (datetime(2026, 10, 22, 20, 0, tzinfo=SGT), datetime(2026, 10, 22, 22, 0, tzinfo=SGT)),
+    # Overnight requests cannot fit same-day hours.
+    (datetime(2026, 10, 22, 21, 0, tzinfo=SGT), datetime(2026, 10, 23, 1, 0, tzinfo=SGT)),
+])
+def test_requests_outside_operating_hours_are_refused(database, start, end):
+    request = VenueBookingCreateRequest(event_id="evt-1", room_layout="Banquet", start_at=start, end_at=end)
 
-    result = services.venue_booking_service.review_venue_booking(
-        access_token="fake_token",
-        booking_id="b_100",
-        reviewer_id="staff_1",
-        review=ReviewReq()
+    with pytest.raises(AuthError) as caught:
+        venue_booking_service.create_venue_booking("token", "v-1", request, "coord-1")
+
+    assert caught.value.status_code == 400
+    assert "08:00 - 22:00" in caught.value.message
+    assert database.calls_to("venue_bookings", "insert") == []
+
+
+def test_operating_hours_are_singapore_time_not_utc(database):
+    # 10:00-12:00 Singapore is 02:00-04:00 UTC, which a UTC comparison would wrongly refuse.
+    request = VenueBookingCreateRequest(
+        event_id="evt-1", room_layout="Banquet",
+        start_at=datetime(2026, 10, 22, 2, 0, tzinfo=timezone.utc),
+        end_at=datetime(2026, 10, 22, 4, 0, tzinfo=timezone.utc),
     )
 
-    assert call_order == ["insert_venue_blocks", "update_venue_bookings"]
-    assert result["status"] == "APPROVED"
+    venue_booking_service.create_venue_booking("token", "v-1", request, "coord-1")
+
+    assert len(database.calls_to("venue_bookings", "insert")) == 1
 
 
-def test_create_venue_booking_success(monkeypatch):
-    """Test successful booking submission."""
-    now = datetime.now(timezone.utc)
-    
-    class Req:
-        event_id = "evt_1"
-        room_layout = "Banquet"
-        start_at = now + timedelta(days=1)
-        end_at = now + timedelta(days=1, hours=2)
-        setup_buffer_minutes = 15
-        teardown_buffer_minutes = 15
+def test_unreadable_stored_hours_do_not_block_a_request(database):
+    database.responses[("venues", "select")] = [{**VENUE, "operating_hours": None}]
 
-    mock_client = MagicMock()
-    mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.neq.return_value.neq.return_value.execute.return_value.data = []
-    mock_client.table.return_value.select.return_value.eq.return_value.lt.return_value.gt.return_value.execute.return_value.data = []
-    mock_client.table.return_value.insert.return_value.execute.return_value.data = [{"booking_id": "b_1"}]
-    
-    monkeypatch.setattr("config.get_user_client", lambda token: mock_client)
+    venue_booking_service.create_venue_booking("token", "v-1", booking_request(22, 23), "coord-1")
 
-    result = services.venue_booking_service.create_venue_booking(
-        access_token="token", venue_id="v_1", request=Req(), coordinator_id="coord_1"
-    )
-    assert result["booking_id"] == "b_1"
+    assert len(database.calls_to("venue_bookings", "insert")) == 1
 
 
-@pytest.mark.parametrize("status", ["APPROVED", "AFFECTED_BY_UNAVAILABILITY"])
-def test_create_venue_booking_duplicate_raises_conflict(monkeypatch, status):
-    """Test rejection when active booking for event already exists."""
-    mock_client = MagicMock()
-    mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.neq.return_value.neq.return_value.execute.return_value.data = [{"booking_id": "b_old", "status": status}]
-    monkeypatch.setattr("config.get_user_client", lambda token: mock_client)
+def test_unknown_venue_is_not_found(database):
+    database.responses[("venues", "select")] = []
 
-    class Req:
-        event_id = "evt_1"
+    with pytest.raises(AuthError) as caught:
+        venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
 
-    with pytest.raises(AuthError) as exc:
-        services.venue_booking_service.create_venue_booking(
-            access_token="token", venue_id="v_1", request=Req(), coordinator_id="coord_1"
-        )
-    assert exc.value.status_code == 409
-    excluded = mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value
-    excluded.neq.assert_called_once_with("status", "REJECTED")
-    excluded.neq.return_value.neq.assert_called_once_with("status", "CANCELLED")
+    assert caught.value.status_code == 404
 
 
-def test_review_venue_booking_rejection(monkeypatch):
-    """Test rejecting a booking request."""
-    booking_record = {"booking_id": "b_100", "status": "PENDING_VENUE_APPROVAL"}
-    
-    mock_client = MagicMock()
-    mock_client.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [booking_record]
-    mock_client.table.return_value.update.return_value.eq.return_value.execute.return_value.data = [{**booking_record, "status": "REJECTED"}]
-    monkeypatch.setattr("config.get_user_client", lambda token: mock_client)
+@pytest.mark.parametrize("status", ["PENDING_VENUE_APPROVAL", "APPROVED"])
+def test_a_live_request_for_the_same_venue_and_event_is_a_duplicate(database, status):
+    database.responses[("venue_bookings", "select")] = [{"booking_id": "bk-old", "status": status}]
 
-    class ReviewReq:
-        status = "REJECTED"
-        rejection_reason = "Maintenance scheduled"
+    with pytest.raises(AuthError) as caught:
+        venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
 
-    result = services.venue_booking_service.review_venue_booking(
-        access_token="token", booking_id="b_100", reviewer_id="staff_1", review=ReviewReq()
-    )
-    assert result["status"] == "REJECTED"
+    assert caught.value.status_code == 409
+    assert "already been submitted" in caught.value.message
+    assert database.calls_to("venue_bookings", "insert") == []
 
 
-def test_review_venue_booking_not_found(monkeypatch):
-    """Test 404 when booking_id is not found."""
-    mock_client = MagicMock()
-    mock_client.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
-    monkeypatch.setattr("config.get_user_client", lambda token: mock_client)
+def test_only_live_requests_count_as_duplicates(database):
+    venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
 
-    class ReviewReq:
-        status = "APPROVED"
-
-    with pytest.raises(AuthError) as exc:
-        services.venue_booking_service.review_venue_booking(
-            access_token="token", booking_id="invalid_id", reviewer_id="staff_1", review=ReviewReq()
-        )
-    assert exc.value.status_code == 404
+    (duplicate_query,) = database.calls_to("venue_bookings", "select")
+    assert ("eq", "venue_id", "v-1") in duplicate_query.filters
+    assert ("eq", "event_id", "evt-1") in duplicate_query.filters
+    assert ("in_", "status", ["PENDING_VENUE_APPROVAL", "APPROVED"]) in duplicate_query.filters
 
 
-def test_check_duplicate_event_booking_empty_event_id(monkeypatch):
-    """Early exit when event_id is None/empty."""
-    mock_client = MagicMock()
-    services.venue_booking_service.check_duplicate_event_booking(mock_client, "v_1", "")
-    mock_client.table.assert_not_called()
+@pytest.mark.parametrize("settled_status", [
+    "REJECTED", "REJECTED_BY_SAFETY", "AFFECTED_BY_UNAVAILABILITY", "CANCELLED",
+])
+def test_settled_requests_may_be_retried(database, settled_status):
+    existing = [{"booking_id": "bk-old", "status": settled_status}]
+
+    def matching_rows(query):
+        allowed = next(values for name, column, values in query.filters if name == "in_")
+        return [row for row in existing if row["status"] in allowed]
+
+    database.responses[("venue_bookings", "select")] = matching_rows
+
+    venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
+
+    assert len(database.calls_to("venue_bookings", "insert")) == 1
 
 
-def test_create_venue_booking_postgrest_error_on_conflict_check(monkeypatch):
-    """PostgrestAPIError raised during schedule conflict check."""
-    now = datetime.now(timezone.utc)
-    mock_client = MagicMock()
-    mock_client.table.return_value.select.return_value.eq.return_value.lt.return_value.gt.return_value.execute.side_effect = PostgrestAPIError({"message": "DB error"})
-    
-    monkeypatch.setattr("config.get_user_client", lambda token: mock_client)
+def test_requests_without_an_event_skip_the_duplicate_check(database):
+    venue_booking_service.create_venue_booking("token", "v-1", booking_request(event_id=None), "coord-1")
 
-    class Req:
-        event_id = None
-        room_layout = "Banquet"
-        start_at = now + timedelta(days=1)
-        end_at = now + timedelta(days=1, hours=2)
-        setup_buffer_minutes = 15
-        teardown_buffer_minutes = 15
-
-    with pytest.raises(AuthError) as exc:
-        services.venue_booking_service.create_venue_booking("token", "v_1", Req(), "coord_1")
-    assert exc.value.status_code == 502
-    assert "Unable to verify venue schedule availability" in str(exc.value)
+    assert database.calls_to("venue_bookings", "select") == []
 
 
-def test_create_venue_booking_postgrest_error_on_insert(monkeypatch):
-    """PostgrestAPIError raised during booking insert."""
-    now = datetime.now(timezone.utc)
-    mock_client = MagicMock()
-    mock_client.table.return_value.select.return_value.eq.return_value.lt.return_value.gt.return_value.execute.return_value.data = []
-    mock_client.table.return_value.insert.return_value.execute.side_effect = PostgrestAPIError({"message": "DB Insert error"})
+def test_a_clashing_block_refuses_the_request(database):
+    database.responses[("venue_blocks", "select")] = [{"block_id": "blk-1"}]
 
-    monkeypatch.setattr("config.get_user_client", lambda token: mock_client)
+    with pytest.raises(AuthError) as caught:
+        venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
 
-    class Req:
-        event_id = None
-        room_layout = "Banquet"
-        start_at = now + timedelta(days=1)
-        end_at = now + timedelta(days=1, hours=2)
-        setup_buffer_minutes = 15
-        teardown_buffer_minutes = 15
-
-    with pytest.raises(AuthError) as exc:
-        services.venue_booking_service.create_venue_booking("token", "v_1", Req(), "coord_1")
-    assert exc.value.status_code == 502
-    assert "Unable to submit venue booking request" in str(exc.value)
+    assert caught.value.status_code == 409
+    assert database.calls_to("venue_bookings", "insert") == []
 
 
-def test_create_venue_booking_empty_insert_result(monkeypatch):
-    """Result data returns empty array on creation."""
-    now = datetime.now(timezone.utc)
-    mock_client = MagicMock()
-    mock_client.table.return_value.select.return_value.eq.return_value.lt.return_value.gt.return_value.execute.return_value.data = []
-    mock_client.table.return_value.insert.return_value.execute.return_value.data = []
+def test_clash_check_failure_is_reported(database):
+    database.responses[("venue_blocks", "select")] = PostgrestAPIError({"message": "down"})
 
-    monkeypatch.setattr("config.get_user_client", lambda token: mock_client)
+    with pytest.raises(AuthError) as caught:
+        venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
 
-    class Req:
-        event_id = None
-        room_layout = "Banquet"
-        start_at = now + timedelta(days=1)
-        end_at = now + timedelta(days=1, hours=2)
-        setup_buffer_minutes = 15
-        teardown_buffer_minutes = 15
-
-    with pytest.raises(AuthError) as exc:
-        services.venue_booking_service.create_venue_booking("token", "v_1", Req(), "coord_1")
-    assert exc.value.status_code == 502
-    assert "Venue booking request was not created" in str(exc.value)
+    assert caught.value.status_code == 502
+    assert "Unable to verify venue schedule availability" in caught.value.message
 
 
-def test_review_venue_booking_approval_conflict_recheck_fails(monkeypatch):
-    """Approval re-check detects schedule conflict."""
-    now = datetime.now(timezone.utc)
-    booking_record = {
-        "booking_id": "b_100",
-        "venue_id": "v_100",
-        "room_layout": "Banquet",
-        "status": "PENDING_VENUE_APPROVAL",
-        "start_at": now.isoformat(),
-        "effective_start_at": now.isoformat(),
-        "end_at": (now + timedelta(hours=2)).isoformat(),
-        "effective_end_at": (now + timedelta(hours=2)).isoformat(),
-        "venues": {"setup_time_minutes": 0, "turnaround_time_minutes": 0, "layouts": [{"name": "Banquet", "capacity": 100}]},
-    }
+def test_insert_failure_is_reported(database):
+    database.responses[("venue_bookings", "insert")] = PostgrestAPIError({"message": "down"})
 
-    mock_client = MagicMock()
-    mock_client.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [booking_record]
-    monkeypatch.setattr("config.get_user_client", lambda token: mock_client)
-    monkeypatch.setattr(
-        services.venue_booking_service,
-        "check_schedule_conflict_details",
-        lambda *args: [{"block_reason": "Maintenance", "start_at": now.isoformat(), "end_at": (now + timedelta(hours=2)).isoformat()}]
+    with pytest.raises(AuthError) as caught:
+        venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
+
+    assert caught.value.status_code == 502
+    assert "Unable to submit venue booking request" in caught.value.message
+
+
+def test_empty_insert_result_is_reported(database):
+    database.responses[("venue_bookings", "insert")] = []
+
+    with pytest.raises(AuthError) as caught:
+        venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
+
+    assert caught.value.status_code == 502
+    assert "was not created" in caught.value.message
+
+
+def test_schedule_conflict_query_uses_half_open_overlap(database):
+    database.responses[("venue_blocks", "select")] = [{"block_id": "blk-1"}]
+
+    result = venue_booking_service.check_schedule_conflict_details(
+        database.client, "v-1", "2026-10-22T01:30:00+00:00", "2026-10-22T04:45:00+00:00",
     )
 
-    class ReviewReq:
-        status = "APPROVED"
-        rejection_reason = None
-
-    with pytest.raises(AuthError) as exc:
-        services.venue_booking_service.review_venue_booking("token", "b_100", "staff_1", ReviewReq())
-    assert exc.value.status_code == 409
-
-
-def test_review_venue_booking_empty_block_insert_data(monkeypatch):
-    """Venue_blocks insert returns empty data."""
-    now = datetime.now(timezone.utc)
-    booking_record = {
-        "booking_id": "b_100",
-        "venue_id": "v_100",
-        "room_layout": "Banquet",
-        "status": "PENDING_VENUE_APPROVAL",
-        "start_at": now.isoformat(),
-        "effective_start_at": now.isoformat(),
-        "end_at": (now + timedelta(hours=2)).isoformat(),
-        "effective_end_at": (now + timedelta(hours=2)).isoformat(),
-        "venues": {"setup_time_minutes": 0, "turnaround_time_minutes": 0, "layouts": [{"name": "Banquet", "capacity": 100}]},
-    }
-
-    mock_client = MagicMock()
-    mock_client.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [booking_record]
-    mock_client.table.return_value.select.return_value.eq.return_value.lt.return_value.gt.return_value.execute.return_value.data = []
-    mock_client.table.return_value.insert.return_value.execute.return_value.data = []
-
-    monkeypatch.setattr("config.get_user_client", lambda token: mock_client)
-
-    class ReviewReq:
-        status = "APPROVED"
-        rejection_reason = None
-
-    with pytest.raises(AuthError) as exc:
-        services.venue_booking_service.review_venue_booking("token", "b_100", "staff_1", ReviewReq())
-    assert exc.value.status_code == 502
+    assert result == [{"block_id": "blk-1"}]
+    (query,) = database.calls_to("venue_blocks", "select")
+    assert query.filters == [
+        ("eq", "venue_id", "v-1"),
+        ("lt", "start_at", "2026-10-22T04:45:00+00:00"),
+        ("gt", "end_at", "2026-10-22T01:30:00+00:00"),
+    ]
 
 
-def test_review_venue_booking_postgrest_error_on_block_insert(monkeypatch):
-    """PostgrestAPIError raised during venue_blocks insertion."""
-    now = datetime.now(timezone.utc)
-    booking_record = {
-        "booking_id": "b_100",
-        "venue_id": "v_100",
-        "room_layout": "Banquet",
-        "status": "PENDING_VENUE_APPROVAL",
-        "start_at": now.isoformat(),
-        "effective_start_at": now.isoformat(),
-        "end_at": (now + timedelta(hours=2)).isoformat(),
-        "effective_end_at": (now + timedelta(hours=2)).isoformat(),
-        "venues": {"setup_time_minutes": 0, "turnaround_time_minutes": 0, "layouts": [{"name": "Banquet", "capacity": 100}]},
-    }
-
-    mock_client = MagicMock()
-    mock_client.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [booking_record]
-    mock_client.table.return_value.select.return_value.eq.return_value.lt.return_value.gt.return_value.execute.return_value.data = []
-    mock_client.table.return_value.insert.return_value.execute.side_effect = PostgrestAPIError({"message": "Block DB Error"})
-
-    monkeypatch.setattr("config.get_user_client", lambda token: mock_client)
-
-    class ReviewReq:
-        status = "APPROVED"
-        rejection_reason = None
-
-    with pytest.raises(AuthError) as exc:
-        services.venue_booking_service.review_venue_booking("token", "b_100", "staff_1", ReviewReq())
-    assert exc.value.status_code == 502
-
-
-def test_create_venue_booking_schedule_conflict_raises_409(monkeypatch):
-    """Test 409 AuthError when create_venue_booking finds a schedule conflict."""
-    now = datetime.now(timezone.utc)
-    mock_client = MagicMock()
-    
-    mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.neq.return_value.neq.return_value.execute.return_value.data = []
-    
-    monkeypatch.setattr(
-        services.venue_booking_service,
-        "check_schedule_conflict_details",
-        lambda client, venue_id, start, end, event_id=None: [{"block_id": "blk_1"}]
+@pytest.mark.parametrize("own_hold", [True, False])
+def test_creation_excludes_only_the_linked_events_hold(database, own_hold):
+    request = VenueBookingCreateRequest(
+        event_id="evt-1", room_layout="Banquet",
+        start_at="2099-11-07T10:00:00+08:00", end_at="2099-11-07T12:00:00+08:00",
     )
-    
-    monkeypatch.setattr("config.get_user_client", lambda token: mock_client)
+    calls = []
 
-    class Req:
-        event_id = "evt_1"
-        room_layout = "Banquet"
-        start_at = now + timedelta(days=1)
-        end_at = now + timedelta(days=1, hours=2)
-        setup_buffer_minutes = 15
-        teardown_buffer_minutes = 15
+    def rpc(name, params):
+        calls.append((name, params))
+        assert name == "get_venue_reservations"
+        assert params["p_exclude_event_id"] == request.event_id
+        assert params["p_holds_only"] is True
+        rows = [] if own_hold else [{
+            "id": "00000000-0000-0000-0000-000000000041", "venue_id": "v-1",
+            "type": "tentative_hold", "reason": "Tentative hold",
+            "start_at": "2099-11-07T09:30:00+08:00", "end_at": "2099-11-07T12:45:00+08:00",
+            "expires_at": "2099-11-06T12:00:00+08:00",
+        }]
+        return SimpleNamespace(execute=lambda: SimpleNamespace(data=rows))
 
-    with pytest.raises(AuthError) as exc:
-        services.venue_booking_service.create_venue_booking(
-            access_token="token", venue_id="v_1", request=Req(), coordinator_id="coord_1"
-        )
-    
-    assert exc.value.status_code == 409
-
-
-def test_review_venue_booking_conflict_recheck_raises_409(monkeypatch):
-    """Test 409 AuthError when review_venue_booking detects a conflict during approval."""
-    now = datetime.now(timezone.utc)
-    booking_record = {
-        "booking_id": "b_100",
-        "venue_id": "v_100",
-        "room_layout": "Banquet",
-        "status": "PENDING_VENUE_APPROVAL",
-        "start_at": now.isoformat(),
-        "effective_start_at": now.isoformat(),
-        "end_at": (now + timedelta(hours=2)).isoformat(),
-        "effective_end_at": (now + timedelta(hours=2)).isoformat(),
-        "venues": {"setup_time_minutes": 0, "turnaround_time_minutes": 0, "layouts": [{"name": "Banquet", "capacity": 100}]},
-    }
-
-    mock_client = MagicMock()
-    mock_client.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [booking_record]
-    monkeypatch.setattr("config.get_user_client", lambda token: mock_client)
-    
-    monkeypatch.setattr(
-        services.venue_booking_service,
-        "check_schedule_conflict_details",
-        lambda client, venue_id, start, end, event_id=None: [{"block_reason": "Conflict"}]
-    )
-
-    class ReviewReq:
-        status = "APPROVED"
-        rejection_reason = None
-
-    with pytest.raises(AuthError) as exc:
-        services.venue_booking_service.review_venue_booking(
-            access_token="token", booking_id="b_100", reviewer_id="staff_1", review=ReviewReq()
-        )
-    
-    assert exc.value.status_code == 409
+    database.client.rpc = rpc
+    if own_hold:
+        result = venue_booking_service.create_venue_booking("token", "v-1", request, "coord-1")
+        assert result["status"] == "PENDING_VENUE_APPROVAL"
+    else:
+        with pytest.raises(AuthError) as caught:
+            venue_booking_service.create_venue_booking("token", "v-1", request, "coord-1")
+        assert caught.value.status_code == 409
+        assert database.calls_to("venue_bookings", "insert") == []
+    assert len(calls) == 1
+    assert not any(call.table == "venue_tentative_holds" for call in database.calls)

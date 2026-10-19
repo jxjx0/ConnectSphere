@@ -123,6 +123,15 @@ def within_operating_hours(start: datetime, end: datetime, hours: OperatingHours
     )
 
 
+def booking_within_operating_hours(start: datetime, end: datetime, hours) -> bool:
+    """Unreadable stored hours must not block bookings; profile validation owns that data."""
+    try:
+        parsed = OperatingHours.model_validate(hours)
+    except ValidationError:
+        return True
+    return within_operating_hours(start, end, parsed)
+
+
 def overlaps(start: datetime, end: datetime, occupied: OccupiedPeriod) -> bool:
     """Half-open intervals: exactly touching occupied boundaries are allowed."""
     return start < occupied.end_at and occupied.start_at < end

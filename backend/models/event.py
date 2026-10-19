@@ -22,6 +22,7 @@ class EventStatus(str, Enum):
     COMPLETED = "completed"
     CHANGE_REQUESTED = "change_requested"
     AWAITING_CLARIFICATION = "awaiting_clarification"
+    AWAITING_SAFETY_CHECK = "awaiting_safety_check"
 
 
 class EventClarificationRequest(BaseModel):
