@@ -1,4 +1,10 @@
 """Unit tests for services/safety_review_service.py."""
+import os
+
+# Set dummy environment variables BEFORE config or service imports execute
+os.environ.setdefault("SUPABASE_URL", "https://fake-project.supabase.co")
+os.environ.setdefault("SUPABASE_ANON_KEY", "fake-anon-key")
+os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "fake-service-key")
 
 from types import SimpleNamespace
 import pytest
