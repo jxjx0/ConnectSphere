@@ -8,8 +8,6 @@ from models.venue_booking import VenueBookingCreateRequest, VenueBookingReviewRe
 from services.auth_service import AuthError
 from services.notification_service import notify
 
-from services.safety_review_service import check_and_update_safety_status
-
 
 def get_pending_venue_bookings(access_token: str, venue_id: str | None = None) -> list[dict]:
     """Retrieve all venue bookings with status 'PENDING_VENUE_APPROVAL'."""

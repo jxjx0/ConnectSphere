@@ -237,9 +237,11 @@ export default function EventReviewDetailPage() {
   }
 
 
-  const hasApprovedVenue = venueBookings.some(
-    (booking) => (booking.status || '').toUpperCase() === 'APPROVED',
-  )
+  const liveVenueStatuses = venueBookings
+    .map((booking) => (booking.status || '').toUpperCase())
+    .filter((status) => status !== 'CANCELLED')
+  const hasApprovedVenue =
+    liveVenueStatuses.length > 0 && liveVenueStatuses.every((status) => status === 'APPROVED')
 
   return (
     <AppShell>
@@ -294,7 +296,7 @@ export default function EventReviewDetailPage() {
 
               {!hasApprovedVenue && (
                 <p className="note">
-                  A safety check can be requested once a venue booking is approved and no equipment request is still pending.
+                  A safety check can be requested once every venue booking is approved and no equipment request is still pending.
                 </p>
               )}
               {safetyError && <p className="form-error" role="alert">{safetyError}</p>}

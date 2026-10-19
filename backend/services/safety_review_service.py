@@ -1,6 +1,7 @@
 """Service module for Safety Officer review queues and event safety details."""
 
 import logging
+from datetime import datetime, timezone
 from postgrest import APIError as PostgrestAPIError
 from config import get_admin_client, get_user_client
 from services.auth_service import AuthError
@@ -182,8 +183,12 @@ def _safety_check_blockers(client, event: dict) -> list[str]:
         .eq("event_id", event["id"])
         .execute()
     ).data or []
-    if not any((booking.get("status") or "").upper() == "APPROVED" for booking in bookings):
+    booking_statuses = [(booking.get("status") or "").upper() for booking in bookings]
+    live_statuses = [status for status in booking_statuses if status != "CANCELLED"]
+    if "APPROVED" not in live_statuses:
         blockers.append("it needs an approved venue booking")
+    elif any(status != "APPROVED" for status in live_statuses):
+        blockers.append("every venue booking must be approved first")
 
     equipment_requests = (
         client.table("equipment_requests")
@@ -227,7 +232,10 @@ def request_safety_check(event_id: str, access_token: str) -> dict:
 
         response = (
             client.table("events")
-            .update({"status": "awaiting_safety_check"})
+            .update({
+                "status": "awaiting_safety_check",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
             .eq("id", event_id)
             .execute()
         )
@@ -244,42 +252,3 @@ def request_safety_check(event_id: str, access_token: str) -> dict:
             f"Internal error requesting safety check: {str(exc)}",
             status_code=500,
         )
-
-
-
-def check_and_update_safety_status(event_id: str, access_token: str = None) -> bool:
-    """
-    Evaluates if an event has an approved venue and approved (or no) equipment.
-    Returns True if conditions pass for the coordinator to manually request a safety check.
-    """
-    try:
-        client = get_admin_client()
-    except Exception as exc:
-        logger.error(f"Could not initialize admin client for safety check: {exc}")
-        return False
-
-    # 1. Check venue approval
-    venue_res = (
-        client.table("venue_bookings")
-        .select("status")
-        .eq("event_id", event_id)
-        .eq("status", "APPROVED")
-        .execute()
-    )
-    if not venue_res.data:
-        return False
-
-    # 2. Check equipment approval
-    equip_res = (
-        client.table("equipment_requests")
-        .select("status")
-        .eq("event_id", event_id)
-        .execute()
-    )
-    equip_requests = equip_res.data or []
-
-    all_equip_approved = not equip_requests or all(
-        req.get("status") == "APPROVED" for req in equip_requests
-    )
-
-    return all_equip_approved

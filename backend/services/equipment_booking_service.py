@@ -10,7 +10,6 @@ from models.equipment_booking import (
 )
 from services import notification_service
 from services.auth_service import AuthError
-from services.safety_review_service import check_and_update_safety_status
 
 
 def _database_error(error: PostgrestAPIError) -> AuthError:
