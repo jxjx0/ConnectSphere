@@ -344,7 +344,7 @@ test('Coordinator dashboard prioritizes assigned events and keeps standalone bro
   }
   const AssignedRequestTabs = await compilePage('../src/components/AssignedRequestTabs.jsx', {
     'react/jsx-runtime': jsxRuntime,
-    'react-router-dom': { Link: link, useSearchParams: () => [new URLSearchParams('tab=ongoing'), () => {}] },
+    'react-router-dom': { Link: link, useSearchParams: () => [new URLSearchParams('tab=planning'), () => {}] },
     '../eventDisplay': eventDisplay,
   })
   let stateIndex = 0

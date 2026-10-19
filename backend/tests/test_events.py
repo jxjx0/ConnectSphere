@@ -830,11 +830,17 @@ def test_coordinator_detail_route_returns_requested_data(
         )
 
     monkeypatch.setattr(event_service, "get_event_organiser", get_organiser)
+    decision = {"decision": "CHANGES_REQUESTED", "reason": "Add an exit", "created_at": "2026-10-19T11:00:00+00:00"}
+    monkeypatch.setattr(
+        "services.safety_review_service.get_latest_safety_decision",
+        lambda access_token, event_id: decision if event_id == EVENT_RESPONSE.id else None,
+    )
 
     headers = {"Authorization": "Bearer coordinator-token"}
     detail = client.get(f"/events/review/{EVENT_RESPONSE.id}", headers=headers)
 
     assert detail.status_code == 200
+    assert detail.get_json()["safety_decision"] == decision
     assert detail.get_json()["event"]["layout_preference"] == "Theatre"
     assert detail.get_json()["event"]["accessibility_requirements"]
     assert captured["organiser_id"] == ORGANISER_PROFILE.id

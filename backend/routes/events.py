@@ -195,6 +195,9 @@ def get_assigned_event(event_id):
                 event.change_request.model_dump(mode="json")
                 if event.change_request else None
             ),
+            "safety_decision": safety_review_service.get_latest_safety_decision(
+                g.access_token, event_id
+            ),
         }
     ), 200
 
@@ -561,6 +564,8 @@ def get_unassigned_queue():
         return jsonify({"error": str(e)}), 400
 
 
+# --- Safety Review Routes -----------------------------------------------------
+
 @events_bp.get("/safety/queue")
 @require_auth
 def get_safety_queue():
@@ -579,7 +584,7 @@ def get_safety_queue():
 @events_bp.get("/safety/review/<event_id>")
 @require_auth
 def get_safety_review_details(event_id):
-    """Endpoint for inspecting event, layout, equipment, and safety flags."""
+    """Endpoint for inspecting event, layout, equipment, and automated safety flags."""
     try:
         _require_safety_officer()
         details = safety_review_service.get_safety_event_details(event_id, g.access_token)
@@ -591,11 +596,40 @@ def get_safety_review_details(event_id):
         return jsonify({"error": "Unable to load this safety review."}), 500
 
 
+@events_bp.post("/safety/review/<event_id>/decision")
+@require_auth
+def submit_safety_decision(event_id):
+    """Endpoint for Safety Officers to record 'approved', 'rejected', or 'changes_requested' decisions."""
+    try:
+        _require_safety_officer()
+        payload = request.get_json(silent=True) or {}
+        
+        decision = payload.get("decision")
+        notes = payload.get("notes", "")
+        rejection_or_change_reason = payload.get("reason")
+
+        result = safety_review_service.submit_safety_decision(
+            event_id=event_id,
+            safety_officer_id=g.user_id,
+            decision=decision,
+            notes=notes,
+            rejection_or_change_reason=rejection_or_change_reason,
+            access_token=g.access_token,
+        )
+        return jsonify({"event": result}), 200
+    except AuthError as exc:
+        return jsonify({"error": exc.message}), exc.status_code
+    except Exception as exc:
+        logger.error(f"Error submitting safety decision for {event_id}: {traceback.format_exc()}")
+        return jsonify({"error": "Unable to submit safety review decision."}), 500
+
+
 @events_bp.post("/<event_id>/request-safety-check")
 @require_auth
 def request_safety_check(event_id):
-    """Endpoint for coordinators to submit an event to the safety queue."""
+    """Endpoint for Event Coordinators to submit an event for safety review."""
     try:
+        _require_coordinator()
         res = safety_review_service.request_safety_check(event_id, g.access_token)
         return jsonify(res), 200
     except AuthError as exc:

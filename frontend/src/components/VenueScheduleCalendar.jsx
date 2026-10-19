@@ -10,7 +10,7 @@ import {
 } from '../venueAvailability'
 import styles from './VenueScheduleCalendar.module.css'
 
-export default function VenueScheduleCalendar({ venueId, initialDate, token }) {
+export default function VenueScheduleCalendar({ venueId, operatingHours, initialDate, token }) {
   const [date, setDate] = useState(() => initialDate || localDateValue())
   const [result, setResult] = useState({ loading: false, error: '', data: null })
   const [selectedBlock, setSelectedBlock] = useState(null)
@@ -64,8 +64,39 @@ export default function VenueScheduleCalendar({ venueId, initialDate, token }) {
     ? result.data.items.find((item) => item.id === selectedBlock)
     : null
 
+  // Compute non-operational shading regions as percentages of the 24-hour day
+  const calculateNonOperatingRegions = () => {
+    const hours = operatingHours || venue?.operating_hours
+    if (!hours || typeof hours !== 'object') return null
+    const open = hours.open
+    const close = hours.close
+    if (!open || !close) return null
+
+    const parseTimeToPercent = (timeStr) => {
+      const [h, m] = timeStr.split(':').map(Number)
+      return ((h * 60 + m) / (24 * 60)) * 100
+    }
+
+    const openPct = parseTimeToPercent(open)
+    const closePct = parseTimeToPercent(close)
+
+    return {
+      beforeOpen: { top: 0, height: openPct },
+      afterClose: { top: closePct, height: 100 - closePct },
+    }
+  }
+
+  const nonOpRegions = calculateNonOperatingRegions()
+
   return (
     <div className={styles.container}>
+      {/* Visual Operating Hours Summary Banner */}
+      {operatingHours?.open && operatingHours?.close && (
+        <div className="notice notice--info" style={{ marginBottom: '1rem' }} role="status">
+          <p><strong>Operating Hours:</strong> {operatingHours.open} – {operatingHours.close}</p>
+        </div>
+      )}
+
       <div className={styles.controls}>
         <div className="field">
           <label htmlFor="calendar-week">Week containing</label>
@@ -141,6 +172,32 @@ export default function VenueScheduleCalendar({ venueId, initialDate, token }) {
 
               {week.days.map((day) => (
                 <div key={day.date} className={styles.timeline} aria-label={day.date}>
+                  {/* Non-Operational Hours Shading Overlays */}
+                  {nonOpRegions && (
+                    <>
+                      {nonOpRegions.beforeOpen.height > 0 && (
+                        <div
+                          className={styles.nonOperatingOverlay}
+                          style={{
+                            top: `${nonOpRegions.beforeOpen.top}%`,
+                            height: `${nonOpRegions.beforeOpen.height}%`,
+                          }}
+                          title={`Closed until ${operatingHours.open}`}
+                        />
+                      )}
+                      {nonOpRegions.afterClose.height > 0 && (
+                        <div
+                          className={styles.nonOperatingOverlay}
+                          style={{
+                            top: `${nonOpRegions.afterClose.top}%`,
+                            height: `${nonOpRegions.afterClose.height}%`,
+                          }}
+                          title={`Closed after ${operatingHours.close}`}
+                        />
+                      )}
+                    </>
+                  )}
+
                   <div className={styles.hourLines} aria-hidden="true">
                     {Array.from({ length: 24 }, (_, hour) => (
                       <span key={hour} />
