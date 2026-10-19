@@ -56,9 +56,8 @@ export default function EquipmentBookingsPage() {
   const pendingRequests = useMemo(
     () => requests.filter((request) => (
       request.status === PENDING
-      && request.items?.some((requestItem) => requestItem.equipment_id === equipmentId)
     )),
-    [equipmentId, requests],
+    [requests],
   )
   const alreadyAllocated = availabilityBookings.some(
     (booking) => booking.request_id === requestId,
@@ -95,7 +94,6 @@ export default function EquipmentBookingsPage() {
           (request) => (
             request.id === preselected
             && request.status === PENDING
-            && request.items?.some((requestItem) => requestItem.equipment_id === equipmentId)
           ),
         )) {
           chooseRequest(preselected, requestData.requests)

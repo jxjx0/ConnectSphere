@@ -543,8 +543,12 @@ def test_coordinator_list_includes_assigned_events_of_every_status(monkeypatch):
     under_review = EVENT_RESPONSE.model_dump(mode="json")
     under_review["coordinator_id"] = COORDINATOR_PROFILE.id
     under_review["status"] = EventStatus.UNDER_REVIEW.value
+    under_review["equipment_requests"] = [
+        {"status": "Pending Technical Approval"}
+    ]
     approved = dict(under_review, id="55555555-5555-5555-5555-555555555555")
     approved["status"] = EventStatus.PLANNING.value
+    approved["equipment_requests"] = [{"status": "Approved"}]
     fake_client(monkeypatch, {"events": [under_review, approved]}, calls)
 
     events = event_service.list_assigned_events(
@@ -559,6 +563,10 @@ def test_coordinator_list_includes_assigned_events_of_every_status(monkeypatch):
         EventStatus.UNDER_REVIEW,
         EventStatus.PLANNING,
     ]
+    assert events[0].equipment_requests == [
+        {"status": "Pending Technical Approval"}
+    ]
+    assert events[1].equipment_requests == [{"status": "Approved"}]
 
 
 def test_coordinator_detail_filters_by_id_and_assignment(monkeypatch):

@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import {
-  getEquipmentCatalog,
   getEquipmentRequests,
   reviewEquipmentRequest,
   submitEquipmentRequest,
@@ -21,12 +20,13 @@ function equipmentLines(request) {
 
 export default function EquipmentRequestsPage() {
   const { token, user } = useAuth()
+  const [searchParams] = useSearchParams()
+  const requestedEventId = searchParams.get('eventId') || ''
   const isCoordinator = user.role === 'coordinator'
   const [events, setEvents] = useState([])
-  const [equipment, setEquipment] = useState([])
   const [requests, setRequests] = useState([])
-  const [eventId, setEventId] = useState('')
-  const [quantities, setQuantities] = useState({})
+  const [eventId, setEventId] = useState(requestedEventId)
+  const [requestDetails, setRequestDetails] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -38,13 +38,11 @@ export default function EquipmentRequestsPage() {
   useEffect(() => {
     const loads = [
       getEquipmentRequests(token),
-      ...(isCoordinator
-        ? [getAssignedEventRequests(token), getEquipmentCatalog(token)]
-        : []),
+      ...(isCoordinator ? [getAssignedEventRequests(token)] : []),
     ]
 
     Promise.all(loads)
-      .then(([requestData, eventData, equipmentData]) => {
+      .then(([requestData, eventData]) => {
         setRequests(requestData.requests)
         if (isCoordinator) {
           const eventsWithRequests = new Set(
@@ -54,67 +52,54 @@ export default function EquipmentRequestsPage() {
             equipmentRequestEligibleEvents(eventData.events)
               .filter((eventItem) => !eventsWithRequests.has(eventItem.id)),
           )
-          setEquipment(
-            equipmentData.filter((item) => item.maintenance_status === 'Functional'),
+          const requestedEvent = eventData.events.find(
+            (eventItem) => eventItem.id === requestedEventId,
           )
+          if (requestedEvent) {
+            setRequestDetails(requestedEvent.equipment_requirements || '')
+          }
         }
       })
       .catch((caught) => setError(caught.message))
       .finally(() => setLoading(false))
-  }, [isCoordinator, token])
+  }, [isCoordinator, requestedEventId, token])
 
   const selectedEvent = useMemo(
     () => events.find((event) => event.id === eventId),
     [eventId, events],
   )
-
-  function toggleEquipment(item, checked) {
-    setQuantities((current) => {
-      const updated = { ...current }
-      if (checked) updated[item.id] = '1'
-      else delete updated[item.id]
-      return updated
-    })
-  }
-
-  function updateQuantity(itemId, value) {
-    setQuantities((current) => ({ ...current, [itemId]: value }))
-  }
+  const existingEventRequest = requestedEventId
+    ? requests.find((request) => request.event_id === requestedEventId)
+    : null
 
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
     setSubmittedMessage('')
 
-    const items = Object.entries(quantities).map(([equipment_id, quantity]) => ({
-      equipment_id,
-      quantity: Number(quantity),
-    }))
     if (!eventId) {
       setError('Select an assigned event.')
       return
     }
-    if (
-      items.length === 0
-      || items.some((item) => !Number.isInteger(item.quantity) || item.quantity < 1)
-    ) {
-      setError('Select at least one equipment item and enter a quantity of 1 or more.')
+    if (!requestDetails.trim()) {
+      setError('Describe the equipment needed for this event.')
       return
     }
 
     setSubmitting(true)
     try {
-      const data = await submitEquipmentRequest({ event_id: eventId, items }, token)
+      const data = await submitEquipmentRequest({
+        event_id: eventId,
+        request_details: requestDetails.trim(),
+        items: [],
+      }, token)
       const submittedRequest = {
         ...data.request,
         event: selectedEvent,
-        items: data.request.items.map((item) => ({
-          ...item,
-          equipment: equipment.find((entry) => entry.id === item.equipment_id),
-        })),
+        items: [],
       }
       setRequests((current) => [submittedRequest, ...current])
-      setQuantities({})
+      setEvents((current) => current.filter((eventItem) => eventItem.id !== eventId))
       setSubmittedMessage('Equipment request submitted for technical approval.')
     } catch (caught) {
       setError(caught.message)
@@ -165,9 +150,11 @@ export default function EquipmentRequestsPage() {
     const items = request.items || []
     const bookedEquipment = request.equipment_bookings || []
     const pending = request.status === 'Pending Technical Approval'
-    const allItemsBooked = items.length > 0 && items.every((item) => (
-      bookedEquipment.some((booking) => booking.equipment_id === item.equipment_id)
-    ))
+    const allItemsBooked = items.length > 0
+      ? items.every((item) => bookedEquipment.some(
+        (booking) => booking.equipment_id === item.equipment_id,
+      ))
+      : bookedEquipment.length > 0
 
     return (
       <article className="choice equipment-request-card" key={request.id}>
@@ -204,9 +191,14 @@ export default function EquipmentRequestsPage() {
           </div>
 
           <div className="stack stack--tight">
-            <strong>Requested equipment</strong>
+            <strong>Equipment requested</strong>
+            <span className="choice__description">
+              {request.request_details || 'No request description provided.'}
+            </span>
             {items.length === 0 ? (
-              <span className="choice__description">No equipment items were included.</span>
+              <span className="choice__description">
+                Specific equipment will be selected by Technical Support.
+              </span>
             ) : items.map((item) => (
               <span className="choice__description" key={item.id}>
                 {item.equipment?.name || 'Equipment'} × {item.quantity}
@@ -253,6 +245,9 @@ export default function EquipmentRequestsPage() {
 
           {pending && (
             <div className="form-actions">
+              <Link to="/equipment" className="button button--secondary">
+                Choose equipment to allocate
+              </Link>
               <button
                 className="button"
                 type="button"
@@ -304,88 +299,101 @@ export default function EquipmentRequestsPage() {
         {error && <p className="form-error" role="alert">{error}</p>}
         {submittedMessage && <p className="form-success" role="status">{submittedMessage}</p>}
 
-        {isCoordinator && (
+        {isCoordinator && (!requestedEventId || (selectedEvent && !existingEventRequest)) && (
           <form className="form" onSubmit={handleSubmit}>
             <section className="stack stack--tight">
-              <h2 className="section-title">Submit a request</h2>
-              <div className="field">
-                <label htmlFor="event">Assigned event</label>
-                <select
-                  id="event"
-                  value={eventId}
-                  onChange={(change) => setEventId(change.target.value)}
-                  required
-                >
-                  <option value="">Choose an event…</option>
-                  {events.map((eventItem) => (
-                    <option key={eventItem.id} value={eventItem.id}>
-                      {eventItem.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <h2 className="section-title">Request equipment</h2>
+              {requestedEventId && selectedEvent ? (
+                <p className="note">
+                  Event: {selectedEvent.name}
+                </p>
+              ) : !requestedEventId && (
+                <div className="field">
+                  <label htmlFor="event">Assigned event</label>
+                  <select
+                    id="event"
+                    value={eventId}
+                    onChange={(change) => {
+                      const nextEventId = change.target.value
+                      setEventId(nextEventId)
+                      const nextEvent = events.find(
+                        (eventItem) => eventItem.id === nextEventId,
+                      )
+                      setRequestDetails(nextEvent?.equipment_requirements || '')
+                    }}
+                    required
+                  >
+                    <option value="">Choose an event…</option>
+                    {events.map((eventItem) => (
+                      <option key={eventItem.id} value={eventItem.id}>
+                        {eventItem.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               {selectedEvent && (
                 <p className="note" role="status">
                   Event schedule: {formatDateRange(selectedEvent.start_time, selectedEvent.end_time)}
-                </p>
-              )}
-
-              {events.length === 0 && (
-                <p className="note">
-                  There are no eligible assigned events without an equipment request.
-                  Each event can have one equipment request, submitted by its Coordinator.
                 </p>
               )}
             </section>
 
             <section className="stack stack--tight">
               <h2 className="section-title">Required equipment</h2>
-              {equipment.length === 0 ? (
-                <p className="note">No functional equipment is currently available in the catalogue.</p>
-              ) : (
-                <div className="stack stack--tight">
-                  {equipment.map((item) => {
-                    const selected = Object.hasOwn(quantities, item.id)
-                    return (
-                      <div className="equipment-request-item" key={item.id}>
-                        <label className="equipment-request-item__name">
-                          <input
-                            type="checkbox"
-                            checked={selected}
-                            onChange={(change) => toggleEquipment(item, change.target.checked)}
-                          />
-                          <span>{item.name} <span className="note">({item.type})</span></span>
-                        </label>
-                        <label className="equipment-request-item__quantity">
-                          Quantity
-                          <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            inputMode="numeric"
-                            value={quantities[item.id] ?? ''}
-                            disabled={!selected}
-                            onChange={(change) => updateQuantity(item.id, change.target.value)}
-                            aria-label={`Quantity of ${item.name}`}
-                          />
-                        </label>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+              <label className="field" htmlFor="request-details">
+                Describe the equipment needed
+              </label>
+              <textarea
+                id="request-details"
+                rows={4}
+                maxLength={2000}
+                value={requestDetails}
+                onChange={(change) => setRequestDetails(change.target.value)}
+                placeholder="Describe the equipment and quantities needed."
+                required
+              />
+              <p className="field__hint">
+                Technical Support will choose suitable catalogue equipment and
+                check its availability for the event time, including venue
+                setup and teardown.
+              </p>
             </section>
 
             <div className="form-actions">
               <button
                 type="submit"
                 className="button"
-                disabled={submitting || events.length === 0 || equipment.length === 0}
+                disabled={
+                  submitting
+                  || !selectedEvent
+                  || (Boolean(requestedEventId) && selectedEvent.id !== requestedEventId)
+                }
               >
-                {submitting ? 'Submitting…' : 'Submit equipment request'}
+                {submitting ? 'Submitting…' : 'Request equipment'}
               </button>
             </div>
           </form>
+        )}
+
+        {isCoordinator && requestedEventId && existingEventRequest && (
+          <p className="note">
+            This event already has an equipment request. Each event can have
+            one request.
+          </p>
+        )}
+
+        {isCoordinator && requestedEventId && !selectedEvent && !existingEventRequest && !loading && (
+          <p className="note">
+            This event is not available for a new equipment request.
+          </p>
+        )}
+
+        {isCoordinator && events.length === 0 && !requestedEventId && (
+          <p className="note">
+            There are no eligible assigned events without an equipment request.
+            Each event can have one equipment request.
+          </p>
         )}
 
         <section className="stack stack--tight">
@@ -414,13 +422,9 @@ export default function EquipmentRequestsPage() {
                           {' · '}
                           <span className="tag">{request.status}</span>
                         </span>
-                        <span className="choice__description">{equipmentLines(request)}</span>
-                        {request.status === 'Pending Technical Approval' && (
-                          <span className="choice__description">
-                            Equipment allocation: {request.equipment_bookings?.length || 0}
-                            {' / '}{request.items?.length || 0} requested items booked.
-                          </span>
-                        )}
+                        <span className="choice__description">
+                          {request.request_details || equipmentLines(request)}
+                        </span>
                         <span className="choice__description">
                           {request.equipment_bookings?.length
                             ? `Booked equipment: ${request.equipment_bookings.map(

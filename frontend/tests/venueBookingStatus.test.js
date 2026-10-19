@@ -53,12 +53,45 @@ test('dashboard flags an affected venue even when another venue remains approved
   assert.equal(value.venue_bookings[1].status, 'APPROVED')
 })
 
+test('Coordinator dashboard shows equipment request status without changing event status', async () => {
+  const Tabs = await compile('../src/components/AssignedRequestTabs.jsx', {
+    'react-router-dom': { Link: link, useSearchParams: () => [new URLSearchParams('tab=ongoing'), () => {}] },
+  })
+  const pendingEvent = {
+    ...event,
+    equipment_requests: [{ status: 'Pending Technical Approval' }],
+  }
+  const approvedEvent = {
+    ...event,
+    id: 'event-2',
+    name: 'Confirmed event',
+    status: 'confirmed',
+    equipment_requests: [{ status: 'Approved' }],
+  }
+  const markup = renderToStaticMarkup(
+    React.createElement(Tabs, { events: [pendingEvent, approvedEvent] }),
+  )
+
+  assert.match(markup, /Equipment Pending/)
+  assert.match(markup, /Equipment Approved/)
+  assert.match(markup, />Planning<\/span>/)
+  assert.match(markup, />Confirmed<\/span>/)
+  assert.equal(pendingEvent.status, 'planning')
+  assert.equal(approvedEvent.status, 'confirmed')
+})
+
 test('Coordinator event page shows stored affected status and retains other approved venues', async () => {
   const states = [], effects = []
   let index = 0
   const other = { ...affected, booking_id: 'booking-2', status: 'APPROVED', venues: { name: 'Other Hall' } }
   const bookings = [affected, other]
   const snapshot = JSON.stringify({ event, bookings })
+  const equipmentRequest = {
+    event_id: event.id,
+    status: 'Pending Technical Approval',
+    request_details: 'Two projectors and a wireless microphone',
+  }
+  let requests = [equipmentRequest]
   const Page = await compile('../src/pages/EventReviewDetailPage.jsx', {
     react: { ...React, useEffect: fn => effects.push(fn), useState(initial) {
       const position = index++
@@ -75,6 +108,7 @@ test('Coordinator event page shows stored affected status and retains other appr
       getAssignedEventClarifications: async () => ({ clarifications: [] }),
     },
     '../api/venues': { getVenueBookingsForEvent: async () => ({ bookings }) },
+    '../api/equipmentRequests': { getEquipmentRequests: async () => ({ requests }) },
   })
   Page()
   effects.forEach(fn => fn())
@@ -85,5 +119,23 @@ test('Coordinator event page shows stored affected status and retains other appr
   assert.match(markup, /Originally approved/)
   assert.match(markup, /Other Hall/)
   assert.match(markup, />APPROVED<\/span>/)
+  assert.match(markup, /href="\/equipment-requests\?eventId=event-1"/)
+  assert.match(markup, /Request Equipment/)
+  assert.match(markup, /Two projectors and a wireless microphone/)
+  assert.match(markup, /Needed for:/)
+  assert.ok(markup.indexOf('Venue Booking Requests') < markup.indexOf('Equipment request'))
+  assert.ok(markup.indexOf('Equipment request') < markup.indexOf('Organiser'))
   assert.equal(JSON.stringify({ event, bookings }), snapshot)
+
+  requests = []
+  states.length = 0
+  effects.length = 0
+  index = 0
+  Page()
+  effects.forEach(fn => fn())
+  await new Promise(resolve => setImmediate(resolve))
+  index = 0
+  const requestMarkup = renderToStaticMarkup(Page())
+  assert.match(requestMarkup, /href="\/equipment-requests\?eventId=event-1"/)
+  assert.match(requestMarkup, /Request Equipment/)
 })

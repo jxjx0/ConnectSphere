@@ -21,6 +21,7 @@ import {
   readableStatus,
 } from '../eventDisplay'
 import { getVenueBookingsForEvent } from '../api/venues'
+import { getEquipmentRequests } from '../api/equipmentRequests'
 
 import { requestSafetyCheck } from '../api/events'
 
@@ -106,6 +107,8 @@ export default function EventReviewDetailPage() {
   const [showClarificationForm, setShowClarificationForm] = useState(false)
   const [loading, setLoading] = useState(true)
   const [venueBookings, setVenueBookings] = useState([])
+  const [equipmentRequest, setEquipmentRequest] = useState(null)
+  const [equipmentRequestError, setEquipmentRequestError] = useState('')
 
   const [submittingSafety, setSubmittingSafety] = useState(false)
   const [safetyError, setSafetyError] = useState('')
@@ -116,12 +119,19 @@ export default function EventReviewDetailPage() {
     Promise.all([
       getAssignedEventRequest(eventId, token),
       getVenueBookingsForEvent(eventId, token).catch(() => ({ bookings: [] })),
+      getEquipmentRequests(token).catch((caught) => {
+        if (active) setEquipmentRequestError(caught.message)
+        return { requests: [] }
+      }),
     ])
-      .then(([data, bookingData]) => {
+      .then(([data, bookingData, requestData]) => {
         if (!active) return
         setEvent(data.event)
         setOrganiser(data.organiser)
         setVenueBookings(bookingData.bookings || [])
+        setEquipmentRequest(
+          requestData.requests.find((request) => request.event_id === eventId) || null,
+        )
       })
       .catch((caught) => {
         if (active) setError(caught.message)
@@ -280,6 +290,13 @@ export default function EventReviewDetailPage() {
                   {venueBookings.length > 0 ? 'Find / Request Additional Venue' : 'Find Venue'}
                 </Link>
 
+                <Link
+                  to={`/equipment-requests?eventId=${encodeURIComponent(eventId)}`}
+                  className="button button--secondary"
+                >
+                  Request Equipment
+                </Link>
+
                 {event.safety_status === 'pending' ? (
                   <span className="tag tag--orange">Safety Review Pending</span>
                 ) : event.safety_status === 'approved' ? (
@@ -320,6 +337,16 @@ export default function EventReviewDetailPage() {
           )}
         </header>
 
+        {event.status === 'confirmed' && (
+          <div className="form-actions">
+            <Link
+              to={`/equipment-requests?eventId=${encodeURIComponent(eventId)}`}
+              className="button button--secondary"
+            >
+              Request Equipment
+            </Link>
+          </div>
+        )}
 
         <section className="stack stack--tight">
           <h2 className="section-title">
@@ -401,6 +428,46 @@ export default function EventReviewDetailPage() {
             </ul>
           )}
         </section>
+
+        {(event.status === 'planning' || equipmentRequest) && (
+          <section className="stack stack--tight">
+            <h2 className="section-title">Equipment request</h2>
+            {equipmentRequestError && (
+              <p className="form-error" role="alert">{equipmentRequestError}</p>
+            )}
+            {equipmentRequest ? (
+              <>
+                <p>
+                  Status: <span className="tag">{equipmentRequest.status}</span>
+                </p>
+                <p>
+                  Requested equipment: {equipmentRequest.request_details}
+                </p>
+                <p className="note">
+                  Needed for: {formatDateRange(event.start_time, event.end_time)}
+                  {' '}including venue setup and teardown.
+                </p>
+                {equipmentRequest.status === 'Pending Technical Approval' && (
+                  <p className="note">
+                    Technical Support is checking availability and allocating
+                    suitable equipment.
+                  </p>
+                )}
+                {equipmentRequest.equipment_bookings?.length > 0 && (
+                  <p className="note">
+                    Allocated: {equipmentRequest.equipment_bookings.map(
+                      (booking) => booking.equipment?.name || 'Equipment',
+                    ).join(', ')}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="note">
+                No equipment request has been submitted for this event.
+              </p>
+            )}
+          </section>
+        )}
 
         <section className="stack stack--tight">
           <h2 className="section-title">Organiser</h2>

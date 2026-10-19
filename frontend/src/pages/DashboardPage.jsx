@@ -63,9 +63,6 @@ export default function DashboardPage() {
             <AssignedRequestTabs events={assignedEvents} />
           )}
           <div className="form-actions">
-            <Link to="/equipment-requests" className="button">
-              Request event equipment
-            </Link>
             <Link to="/venues/search" className="backlink">Browse Venues</Link>
           </div>
         </section>

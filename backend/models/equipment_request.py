@@ -13,7 +13,15 @@ class EquipmentRequestItemSubmit(BaseModel):
 
 class EquipmentRequestSubmit(BaseModel):
     event_id: UUID
-    items: list[EquipmentRequestItemSubmit] = Field(min_length=1)
+    request_details: str = Field(min_length=1, max_length=2000)
+    items: list[EquipmentRequestItemSubmit] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_request_details(self) -> "EquipmentRequestSubmit":
+        self.request_details = self.request_details.strip()
+        if not self.request_details:
+            raise ValueError("Describe the equipment needed for this event.")
+        return self
 
     @model_validator(mode="after")
     def validate_unique_equipment(self) -> "EquipmentRequestSubmit":

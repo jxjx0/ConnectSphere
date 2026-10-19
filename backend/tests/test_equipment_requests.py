@@ -34,6 +34,7 @@ ATTENDEE = Profile(
 
 VALID_REQUEST = {
     "event_id": "33333333-3333-3333-3333-333333333333",
+    "request_details": "Two projectors and a wireless microphone",
     "items": [
         {
             "equipment_id": "44444444-4444-4444-4444-444444444444",
@@ -47,6 +48,7 @@ SAVED_REQUEST = {
     "event_id": VALID_REQUEST["event_id"],
     "coordinator_id": COORDINATOR.id,
     "status": "Pending Technical Approval",
+    "request_details": VALID_REQUEST["request_details"],
     "event": {
         "id": VALID_REQUEST["event_id"],
         "name": "Community Conference",
@@ -115,12 +117,12 @@ def test_coordinator_can_submit_equipment_request(client, monkeypatch):
     assert response.get_json()["request"] == SAVED_REQUEST
     submit.assert_called_once()
     assert submit.call_args.args[1] == COORDINATOR.id
-    assert submit.call_args.args[2].items[0].quantity == 2
+    assert submit.call_args.args[2].request_details == VALID_REQUEST["request_details"]
 
 
-def test_submission_requires_an_equipment_item(client, monkeypatch):
+def test_submission_allows_free_text_request_without_catalog_items(client, monkeypatch):
     authenticate_as(monkeypatch, COORDINATOR)
-    submit = Mock(side_effect=AssertionError("invalid request must not be saved"))
+    submit = Mock(return_value=SAVED_REQUEST)
     monkeypatch.setattr(
         equipment_request_service, "submit_equipment_request", submit
     )
@@ -131,8 +133,28 @@ def test_submission_requires_an_equipment_item(client, monkeypatch):
         headers={"Authorization": "Bearer coordinator-token"},
     )
 
-    assert response.status_code == 400
-    assert response.get_json()["errors"]
+    assert response.status_code == 201
+    submit.assert_called_once()
+    assert submit.call_args.args[2].items == []
+
+
+@pytest.mark.parametrize("request_details", ["", "   ", None])
+def test_submission_requires_nonblank_request_details(
+    client, monkeypatch, request_details
+):
+    authenticate_as(monkeypatch, COORDINATOR)
+    submit = Mock(side_effect=AssertionError("invalid request must not be saved"))
+    monkeypatch.setattr(
+        equipment_request_service, "submit_equipment_request", submit
+    )
+
+    response = client.post(
+        "/equipment-requests",
+        json={**VALID_REQUEST, "request_details": request_details},
+        headers={"Authorization": "Bearer coordinator-token"},
+    )
+
+    assert response.status_code == 400, response.get_json()
     submit.assert_not_called()
 
 
@@ -352,6 +374,7 @@ def test_service_returns_submit_result_without_a_post_save_read(
         "submit_equipment_request",
         {
             "p_event_id": VALID_REQUEST["event_id"],
+            "p_request_details": VALID_REQUEST["request_details"],
             "p_items": VALID_REQUEST["items"],
         },
     )
@@ -360,6 +383,7 @@ def test_service_returns_submit_result_without_a_post_save_read(
         "id": SAVED_REQUEST["id"],
         "event_id": VALID_REQUEST["event_id"],
         "coordinator_id": COORDINATOR.id,
+        "request_details": VALID_REQUEST["request_details"],
         "status": "Pending Technical Approval",
         "items": VALID_REQUEST["items"],
     }

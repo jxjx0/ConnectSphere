@@ -161,17 +161,22 @@ The last migration resets previously Approved requests to Pending when their
 requested equipment is not fully allocated; it does not delete request or
 booking records.
 
-The equipment workflow lets the assigned Coordinator submit one request per
-event. Technical Support allocates each requested catalogue item for the full
-event window, including venue setup and teardown buffers, then approves or
-rejects the request. Approval is rejected unless every requested item has a
-booking covering that window. A shared calendar shows reservations across the
-equipment catalogue, and overlapping reservations are blocked. The workflow
-migration adds or replaces database functions and policies but does not add
-tables or columns. The `equipment_bookings` table itself is introduced by
-`equipment_bookings.sql`. The current schema has no stock-count field, so
-availability is tracked by equipment row as an exclusive resource; it cannot
-verify that a requested quantity greater than one corresponds to enough
+The assigned Coordinator submits one free-text equipment request per event
+from that event's review page. The request records its event window and can be
+reviewed there by status and request details. Technical Support selects
+catalogue equipment and allocates it for the full event window, including
+venue setup and teardown buffers, before approving or rejecting the request.
+Approval is rejected unless each allocation has a booking covering that
+window. A shared calendar shows reservations across the equipment catalogue,
+and overlapping reservations are blocked.
+
+`equipment_bookings.sql` introduces the `equipment_bookings` table.
+`equipment_request_workflow.sql` adds and backfills `request_details` on
+`equipment_requests`, and replaces workflow functions and policies. Apply it
+after the earlier equipment-request and booking migrations above; it does not
+delete request or booking records. The current schema has no stock-count field,
+so availability is tracked by equipment row as an exclusive resource; it
+cannot verify that a requested quantity greater than one corresponds to enough
 physical units. Other SQL files in `database` document the existing schema.
 
 ---

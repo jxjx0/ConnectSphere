@@ -45,13 +45,14 @@ def submit_equipment_request(
     coordinator_id: str,
     equipment_request: EquipmentRequestSubmit,
 ) -> dict:
-    """Atomically save a request and all requested item quantities."""
+    """Atomically save the request description and any supplied item details."""
     client = config.get_user_client(access_token)
     try:
         result = client.rpc(
             "submit_equipment_request",
             {
                 "p_event_id": str(equipment_request.event_id),
+                "p_request_details": equipment_request.request_details,
                 "p_items": [
                     item.model_dump(mode="json")
                     for item in equipment_request.items
@@ -76,6 +77,7 @@ def submit_equipment_request(
         "id": str(request_id),
         "event_id": str(equipment_request.event_id),
         "coordinator_id": coordinator_id,
+        "request_details": equipment_request.request_details,
         "status": "Pending Technical Approval",
         "items": [
             {

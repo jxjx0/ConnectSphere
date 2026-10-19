@@ -1,6 +1,21 @@
 -- Apply after equipment_bookings.sql.
--- Keeps one equipment request per event and requires every requested
--- equipment item to be allocated before a request can be approved.
+-- Keeps one text-described equipment request per event and requires Technical
+-- Support to allocate at least one catalogue item before approving it.
+
+alter table public.equipment_requests
+    add column if not exists request_details text;
+
+update public.equipment_requests as equipment_request
+set request_details = coalesce(
+    nullif(btrim(event.equipment_requirements), ''),
+    'No description was provided for this existing request.'
+)
+from public.events as event
+where event.id = equipment_request.event_id
+  and equipment_request.request_details is null;
+
+alter table public.equipment_requests
+    alter column request_details set not null;
 
 -- Request status changes must go through the guarded review function.
 revoke update on public.equipment_requests from authenticated;
@@ -44,9 +59,12 @@ where equipment_request.status = 'Approved'
 -- A request is created by the assigned Coordinator after reviewing the
 -- Organiser's event request. The advisory lock serializes competing attempts
 -- for the same event without adding a schema object.
+drop function if exists public.submit_equipment_request(uuid, jsonb);
+
 create or replace function public.submit_equipment_request(
     p_event_id uuid,
-    p_items jsonb
+    p_items jsonb,
+    p_request_details text
 )
 returns uuid
 language plpgsql
@@ -62,10 +80,12 @@ begin
     end if;
 
     if p_event_id is null
+       or p_request_details is null
+       or length(btrim(p_request_details)) = 0
        or p_items is null
        or jsonb_typeof(p_items) is distinct from 'array'
-       or jsonb_array_length(p_items) = 0 then
-        raise exception 'Select an event and at least one equipment item.'
+       then
+        raise exception 'Select an event and describe the equipment needed.'
             using errcode = '22023';
     end if;
 
@@ -124,8 +144,12 @@ begin
             using errcode = '23503';
     end if;
 
-    insert into public.equipment_requests (event_id, coordinator_id)
-    values (p_event_id, auth.uid())
+    insert into public.equipment_requests (
+        event_id,
+        coordinator_id,
+        request_details
+    )
+    values (p_event_id, auth.uid(), btrim(p_request_details))
     returning id into new_request_id;
 
     insert into public.equipment_request_items (request_id, equipment_id, quantity)
@@ -136,8 +160,8 @@ begin
 end;
 $$;
 
-revoke all on function public.submit_equipment_request(uuid, jsonb) from public;
-grant execute on function public.submit_equipment_request(uuid, jsonb)
+revoke all on function public.submit_equipment_request(uuid, jsonb, text) from public;
+grant execute on function public.submit_equipment_request(uuid, jsonb, text)
     to authenticated;
 
 -- RLS remains the read boundary; all booking writes go through the guarded
@@ -262,16 +286,6 @@ begin
             using errcode = 'P0001';
     end if;
 
-    if not exists (
-        select 1
-        from public.equipment_request_items as request_item
-        where request_item.request_id = current_request.id
-          and request_item.equipment_id = p_equipment_id
-    ) then
-        raise exception 'Only equipment included in the request can be allocated.'
-            using errcode = '22023';
-    end if;
-
     select equipment.name, equipment.maintenance_status
     into equipment_name, equipment_maintenance_status
     from public.equipment as equipment
@@ -350,6 +364,14 @@ begin
             );
     end;
 
+    insert into public.equipment_request_items (
+        request_id,
+        equipment_id,
+        quantity
+    )
+    values (current_request.id, p_equipment_id, 1)
+    on conflict (request_id, equipment_id) do nothing;
+
     return jsonb_build_object(
         'outcome', 'booked',
         'booking', jsonb_build_object(
@@ -377,6 +399,7 @@ as $$
 declare
     booking_request_id uuid;
     request_status text;
+    removed_equipment_id uuid;
 begin
     if auth.uid() is null or not public.is_tech_support() then
         raise exception 'Only Technical Support can remove equipment bookings.'
@@ -401,7 +424,19 @@ begin
     end if;
 
     delete from public.equipment_bookings
-    where id = p_booking_id;
+    where id = p_booking_id
+    returning equipment_id into removed_equipment_id;
+
+    delete from public.equipment_request_items
+    where request_id = booking_request_id
+      and equipment_id = removed_equipment_id
+      and not exists (
+          select 1
+          from public.equipment_bookings
+          where request_id = booking_request_id
+            and equipment_id = removed_equipment_id
+      );
+
     return true;
 end;
 $$;
@@ -444,6 +479,7 @@ begin
                 'event_id', event.id,
                 'coordinator_id', equipment_request.coordinator_id,
                 'status', equipment_request.status,
+                'request_details', equipment_request.request_details,
                 'created_at', equipment_request.created_at,
                 'event', jsonb_build_object(
                     'id', event.id,
