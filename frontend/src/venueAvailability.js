@@ -86,15 +86,24 @@ export function calendarOperatingHours(hours, day) {
 
 export function validateCalendarResponse(data, venueId, range) {
   if (data?.venue?.id !== venueId || !Array.isArray(data.items)
-      || data.verification_status !== 'partial' || data.sources?.operational_blocks !== 'verified'
+      || !['partial', 'verified'].includes(data.verification_status) || data.sources?.operational_blocks !== 'verified'
+      || (data.verification_status === 'verified' && ['confirmed_bookings', 'tentative_holds', 'hold_expiry', 'venue_buffers'].some(source => data.sources[source] !== 'verified'))
       || new Date(data.start_at).getTime() !== new Date(range.start_at).getTime()
       || new Date(data.end_at).getTime() !== new Date(range.end_at).getTime()
-      || data.items.some((item) => item.type !== 'operational_block' || !item.id
+      || data.items.some((item) => !['operational_block', 'confirmed_booking', 'tentative_hold'].includes(item.type) || !item.id
+        || (item.type === 'tentative_hold' && data.sources.tentative_holds !== 'verified')
+        || (item.type === 'confirmed_booking' && data.sources.confirmed_bookings !== 'verified')
+        || (item.type === 'tentative_hold' && !Number.isFinite(new Date(item.expires_at).getTime()))
         || typeof item.reason !== 'string' || !item.reason.trim()
         || !Number.isFinite(new Date(item.start_at).getTime())
         || !Number.isFinite(new Date(item.end_at).getTime())
         || new Date(item.end_at) <= new Date(item.start_at))) {
     throw new Error('Unable to verify venue availability data. Please try again.')
   }
-  return data
+  return { ...data, items: data.items.filter(item => item.type !== 'tentative_hold' || new Date(item.expires_at) > new Date()) }
+}
+
+export function calendarItemLabel(item) {
+  if (item.type === 'operational_block' && item.reason?.startsWith('Approved Booking:')) return 'Recorded block'
+  return { operational_block: 'Operational block', confirmed_booking: 'Confirmed booking', tentative_hold: 'Tentative hold' }[item.type]
 }

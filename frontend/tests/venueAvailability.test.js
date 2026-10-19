@@ -134,6 +134,47 @@ function find(node, predicate) {
 }
 const settle = () => new Promise((resolve) => setImmediate(resolve))
 
+test('calendar separates holds, bookings and blocks and shows hold expiry', () => {
+  const page = harness({ role: 'venue_staff' })
+  const hold = { ...block, id: 'hold', type: 'tentative_hold', reason: 'Tentative hold', expires_at: '2099-11-06T04:00Z' }
+  const booking = { ...block, id: 'booking', type: 'confirmed_booking', reason: 'Confirmed booking' }
+  page.states[4].data = data('hall', week.range, [block, hold, booking])
+  assert.match(page.html(), /venue-calendar__time-block--tentative_hold/)
+  assert.match(page.html(), /venue-calendar__time-block--confirmed_booking/)
+  find(page.tree(), node => node.props['aria-label']?.startsWith('Tentative hold:')).props.onClick()
+  assert.match(page.html(), /Expires:/)
+  const button = find(page.tree(), node => node.type === 'button' && node.props.children === 'Block / Tentative Hold')
+  button.props.onClick()
+  const modal = find(page.tree(), node => node.type === page.BlockForm)
+  assert.equal(modal.props.venue.id, 'hall')
+  modal.props.onCreated()
+  assert.equal(page.states[3], 1)
+  const coordinator = harness()
+  assert.equal(find(coordinator.tree(), node => node.props.children === 'Block / Tentative Hold'), undefined)
+})
+
+test('calendar filters expired holds at the exact boundary and rejects unverified hold sources', () => {
+  const response = { ...data(), verification_status: 'verified',
+    sources: { operational_blocks: 'verified', confirmed_bookings: 'verified', tentative_holds: 'verified', hold_expiry: 'verified', venue_buffers: 'verified' },
+    items: [{ ...block, type: 'tentative_hold', expires_at: new Date().toISOString() }] }
+  assert.deepEqual(helpers.validateCalendarResponse(response, 'hall', week.range).items, [])
+  assert.throws(() => helpers.validateCalendarResponse({ ...response, sources: { ...response.sources, tentative_holds: 'unavailable' } }, 'hall', week.range))
+})
+
+test('calendar schedules a refresh when its next hold expires', t => {
+  const schedule = t.mock.method(globalThis, 'setTimeout', () => 'hold-timer')
+  const cancel = t.mock.method(globalThis, 'clearTimeout', () => {})
+  const page = harness()
+  page.states[4].data = data('hall', week.range, [{ ...block, type: 'tentative_hold', expires_at: new Date(Date.now() + 5000).toISOString() }])
+  const cleanup = page.runEffect(3)
+  const [refresh, delay] = schedule.mock.calls[0].arguments
+  assert.ok(delay > 0 && delay <= 5050)
+  refresh()
+  assert.equal(page.states[3], 1)
+  cleanup()
+  assert.equal(cancel.mock.calls[0].arguments[0], 'hold-timer')
+})
+
 test('selected venue shows its hours and labelled closed shading without hiding blocks', () => {
   const page = harness()
   page.states[0] = { loading: false, error: '', venues: [
@@ -191,7 +232,7 @@ test('coordinator calendar keeps authorised event context and the requested peri
 
 test('staff calendar reuses blocking and refreshes only after creation; coordinator has no block action', () => {
   const page = harness({ role: 'venue_staff' })
-  const action = find(page.tree(), (node) => node.type === 'button' && node.props.children === 'Block Venue')
+  const action = find(page.tree(), (node) => node.type === 'button' && node.props.children === 'Block / Tentative Hold')
   assert.equal(action.props.disabled, false)
   action.props.onClick()
   const popup = find(page.tree(), (node) => node.type === page.BlockForm)
@@ -204,8 +245,8 @@ test('staff calendar reuses blocking and refreshes only after creation; coordina
   assert.equal(page.states[3], 1)
   assert.doesNotMatch(page.html(), /No recorded occupancy/)
   page.states[1] = ''
-  assert.equal(find(page.tree(), (node) => node.type === 'button' && node.props.children === 'Block Venue').props.disabled, true)
-  assert.equal(find(harness().tree(), (node) => node.type === 'button' && node.props.children === 'Block Venue'), undefined)
+  assert.equal(find(page.tree(), (node) => node.type === 'button' && node.props.children === 'Block / Tentative Hold').props.disabled, true)
+  assert.equal(find(harness().tree(), (node) => node.type === 'button' && node.props.children === 'Block / Tentative Hold'), undefined)
 })
 
 test('venue options sort alphabetically and search name/location without mutating the catalogue', () => {
@@ -524,4 +565,20 @@ test('calendar route and dashboard expose venue tasks only to the established ro
     const html = renderToStaticMarkup(React.createElement(module.exports.default, { allowedRoles: ['venue_staff', 'coordinator'] }, 'Calendar content'))
     assert.equal(html.includes('Calendar content'), ['venue_staff', 'coordinator'].includes(role))
   }
+})
+
+
+test('calendar explains legacy grouping and distinguishes event from occupied time', () => {
+  const page = harness()
+  const booking = { ...block, id: 'booking', type: 'confirmed_booking', reason: 'Confirmed booking',
+    event_start_at: '2026-11-20T10:30:00+08:00', event_end_at: '2026-11-20T11:30:00+08:00',
+    legacy_blocks: [{ ...block, id: 'legacy', reason: 'Approved Booking: Workshop (Classroom)' }] }
+  page.states[4].data = { ...data('hall', week.range, [booking]), sources: { operational_blocks:'verified', confirmed_bookings:'verified', tentative_holds:'verified', hold_expiry:'verified', venue_buffers:'verified' } }
+  find(page.tree(), node => node.props['aria-label']?.startsWith('Confirmed booking:')).props.onClick()
+  const markup = page.html()
+  assert.match(markup, /Some older records need classification/)
+  assert.match(markup, /Event period:/)
+  assert.match(markup, /Occupied period above includes setup and turnaround/)
+  assert.match(markup, /Matching older calendar records:/)
+  assert.match(markup, /Approved Booking: Workshop/)
 })

@@ -109,19 +109,23 @@ export default function EventReviewDetailPage() {
 
   const [submittingSafety, setSubmittingSafety] = useState(false)
   const [safetyError, setSafetyError] = useState('')
+  const [hasActiveHold, setHasActiveHold] = useState(false)
+  const [venueError, setVenueError] = useState('')
 
   useEffect(() => {
     let active = true
 
     Promise.all([
       getAssignedEventRequest(eventId, token),
-      getVenueBookingsForEvent(eventId, token).catch(() => ({ bookings: [] })),
+      getVenueBookingsForEvent(eventId, token).catch(caught => ({ bookings: [], error: caught.message })),
     ])
       .then(([data, bookingData]) => {
         if (!active) return
         setEvent(data.event)
         setOrganiser(data.organiser)
         setVenueBookings(bookingData.bookings || [])
+        setHasActiveHold(bookingData.has_active_venue_hold === true)
+        setVenueError(bookingData.error || '')
       })
       .catch((caught) => {
         if (active) setError(caught.message)
@@ -273,6 +277,14 @@ export default function EventReviewDetailPage() {
             </div>
           )} */}
 
+          {venueError && <p role="alert">Unable to load venue arrangements. Please refresh and try again.</p>}
+          {hasActiveHold && ['under_review', 'change_requested', 'confirmed'].includes(event.status) && (
+            <div className="form-actions">
+              <Link to={`/venues/search?eventId=${encodeURIComponent(eventId)}`} className="button">
+                Find / Request Venue
+              </Link>
+            </div>
+          )}
           {event.status === 'planning' && (
             <div className="stack stack--tight">
               <div className="form-actions">

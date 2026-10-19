@@ -43,6 +43,8 @@ export default function VenueSearchPage() {
   } : null)
   const [quickBookingVenue, setQuickBookingVenue] = useState(null)
   const [successMessage, setSuccessMessage] = useState('')
+  const searchForEvent = (criteria, accessToken) => searchVenues(
+    { ...criteria, ...(eventId ? { event_id: eventId } : {}) }, accessToken)
 
   useEffect(() => {
     let active = true
@@ -58,7 +60,7 @@ export default function VenueSearchPage() {
         return
       }
       setResult({ ...INITIAL_VENUE_SEARCH, phase: 'loading' })
-      const next = await runVenueSearch(savedFilters, token, searchVenues)
+      const next = await runVenueSearch(savedFilters, token, searchForEvent)
       if (active && generation === searchGeneration.current) setResult(next)
     }
     setForm(savedFilters || { ...EMPTY_VENUE_FILTERS })
@@ -125,7 +127,7 @@ export default function VenueSearchPage() {
     rememberFilters(form, true)
     setResult({ ...INITIAL_VENUE_SEARCH, phase: 'loading' })
     const generation = ++searchGeneration.current
-    const next = await runVenueSearch(form, token, searchVenues)
+    const next = await runVenueSearch(form, token, searchForEvent)
     if (generation === searchGeneration.current) setResult(next)
   }
 
