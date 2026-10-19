@@ -18,6 +18,7 @@ DECISION_NEXT_STATUS = {
 }
 # Bookings that still hold the venue and must be released when safety is rejected.
 RELEASABLE_BOOKING_STATUSES = ("PENDING_VENUE_APPROVAL", "APPROVED", "AFFECTED_BY_UNAVAILABILITY")
+SETTLED_BOOKING_STATUSES = ("CANCELLED", "REJECTED", "REJECTED_BY_SAFETY")
 
 
 def _get_client(access_token: str = None):
@@ -228,7 +229,8 @@ def _safety_check_blockers(client, event: dict) -> list[str]:
         .execute()
     ).data or []
     booking_statuses = [(booking.get("status") or "").upper() for booking in bookings]
-    live_statuses = [status for status in booking_statuses if status != "CANCELLED"]
+    # Settled bookings hold no venue, so they must not block a re-planned event forever.
+    live_statuses = [status for status in booking_statuses if status not in SETTLED_BOOKING_STATUSES]
     if "APPROVED" not in live_statuses:
         blockers.append("it needs an approved venue booking")
     elif any(status != "APPROVED" for status in live_statuses):
@@ -290,6 +292,23 @@ def request_safety_check(event_id: str, access_token: str) -> dict:
             f"Internal error requesting safety check: {str(exc)}",
             status_code=500,
         )
+
+
+def get_latest_safety_decision(access_token: str, event_id: str) -> dict | None:
+    """The newest Safety Officer decision; the event page still loads if it cannot be read."""
+    try:
+        rows = (
+            get_user_client(access_token).table("event_safety_reviews")
+            .select("decision, reason, created_at")
+            .eq("event_id", event_id)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        ).data or []
+    except Exception as exc:
+        logger.warning(f"Could not load the latest safety decision for event {event_id}: {exc}")
+        return None
+    return rows[0] if rows else None
 
 
 def _release_event_arrangements(client, event_id: str, reason: str) -> None:

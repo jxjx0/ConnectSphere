@@ -195,6 +195,9 @@ def get_assigned_event(event_id):
                 event.change_request.model_dump(mode="json")
                 if event.change_request else None
             ),
+            "safety_decision": safety_review_service.get_latest_safety_decision(
+                g.access_token, event_id
+            ),
         }
     ), 200
 

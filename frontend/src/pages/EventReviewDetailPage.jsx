@@ -109,6 +109,7 @@ export default function EventReviewDetailPage() {
 
   const [submittingSafety, setSubmittingSafety] = useState(false)
   const [safetyError, setSafetyError] = useState('')
+  const [safetyDecision, setSafetyDecision] = useState(null)
 
   useEffect(() => {
     let active = true
@@ -121,6 +122,7 @@ export default function EventReviewDetailPage() {
         if (!active) return
         setEvent(data.event)
         setOrganiser(data.organiser)
+        setSafetyDecision(data.safety_decision ?? null)
         setVenueBookings(bookingData.bookings || [])
       })
       .catch((caught) => {
@@ -240,7 +242,7 @@ export default function EventReviewDetailPage() {
 
   const liveVenueStatuses = venueBookings
     .map((booking) => (booking.status || '').toUpperCase())
-    .filter((status) => status !== 'CANCELLED')
+    .filter((status) => !['CANCELLED', 'REJECTED', 'REJECTED_BY_SAFETY'].includes(status))
   const hasApprovedVenue =
     liveVenueStatuses.length > 0 && liveVenueStatuses.every((status) => status === 'APPROVED')
 
@@ -266,6 +268,22 @@ export default function EventReviewDetailPage() {
           
           {event.status === 'planning' && (
             <div className="stack stack--tight">
+              {['CHANGES_REQUESTED', 'REJECTED'].includes(safetyDecision?.decision) && (
+                <div className="notice" role="status">
+                  <p>
+                    <strong>
+                      {safetyDecision.decision === 'REJECTED'
+                        ? 'Safety check rejected'
+                        : 'Safety Officer requested changes'}
+                    </strong>
+                    {safetyDecision.created_at && <> on {formatDateTime(safetyDecision.created_at)}</>}.
+                    {safetyDecision.decision === 'REJECTED'
+                      && ' Venue and equipment reservations were released.'}
+                  </p>
+                  {safetyDecision.reason && <p>Reason: {safetyDecision.reason}</p>}
+                  <p>Update the arrangements, then request the safety check again.</p>
+                </div>
+              )}
               <div className="form-actions">
                 <Link to={`/venues/search?eventId=${encodeURIComponent(eventId)}`} className="button">
                   {venueBookings.length > 0 ? 'Find / Request Additional Venue' : 'Find Venue'}
@@ -297,7 +315,7 @@ export default function EventReviewDetailPage() {
 
               {!hasApprovedVenue && (
                 <p className="note">
-                  A safety check can be requested once every venue booking is approved and no equipment request is still pending.
+                  A safety check can be requested once every venue booking is approved (rejected or cancelled ones don't count) and no equipment request is still pending.
                 </p>
               )}
               {safetyError && <p className="form-error" role="alert">{safetyError}</p>}

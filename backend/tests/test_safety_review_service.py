@@ -221,6 +221,30 @@ def test_events_without_a_coordinator_are_still_decided(database, notifications)
     assert len(database.calls_to("events", "update")) == 1
 
 
+def test_latest_safety_decision_is_the_newest_review(monkeypatch):
+    latest = {"decision": "REJECTED", "reason": "Unsafe crowd flow", "created_at": "2026-10-19T11:00:00+00:00"}
+    reviews = FakeDatabase({("event_safety_reviews", "select"): [latest]})
+    monkeypatch.setattr(safety_review_service, "get_user_client", lambda token: reviews.client)
+
+    assert safety_review_service.get_latest_safety_decision("token", EVENT_ID) == latest
+    (query,) = reviews.calls_to("event_safety_reviews", "select")
+    assert query.filters == [("eq", "event_id", EVENT_ID), ("order", "created_at"), ("limit", 1)]
+
+
+def test_events_without_a_safety_decision_have_none(monkeypatch):
+    reviews = FakeDatabase({("event_safety_reviews", "select"): []})
+    monkeypatch.setattr(safety_review_service, "get_user_client", lambda token: reviews.client)
+
+    assert safety_review_service.get_latest_safety_decision("token", EVENT_ID) is None
+
+
+def test_unreadable_safety_history_does_not_break_the_event_page(monkeypatch):
+    reviews = FakeDatabase({("event_safety_reviews", "select"): PostgrestAPIError({"message": "down"})})
+    monkeypatch.setattr(safety_review_service, "get_user_client", lambda token: reviews.client)
+
+    assert safety_review_service.get_latest_safety_decision("token", EVENT_ID) is None
+
+
 def test_database_errors_are_reported(database):
     database.responses[("event_safety_reviews", "insert")] = PostgrestAPIError({"message": "down"})
 

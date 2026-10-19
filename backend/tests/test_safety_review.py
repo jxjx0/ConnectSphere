@@ -183,9 +183,7 @@ def test_request_is_refused_while_equipment_is_pending(monkeypatch):
     assert updates == []
 
 
-@pytest.mark.parametrize("other_status", [
-    "PENDING_VENUE_APPROVAL", "REJECTED", "REJECTED_BY_SAFETY", "AFFECTED_BY_UNAVAILABILITY",
-])
+@pytest.mark.parametrize("other_status", ["PENDING_VENUE_APPROVAL", "AFFECTED_BY_UNAVAILABILITY"])
 def test_request_is_refused_while_any_venue_booking_is_not_approved(monkeypatch, other_status):
     _, updates = fake_database(monkeypatch, {
         "events": [PLANNING_EVENT],
@@ -211,15 +209,30 @@ def test_every_approved_venue_booking_is_sent(monkeypatch):
     assert [table for table, _ in updates] == ["events"]
 
 
-def test_cancelled_venue_bookings_are_ignored(monkeypatch):
+@pytest.mark.parametrize("settled_status", ["CANCELLED", "REJECTED", "REJECTED_BY_SAFETY"])
+def test_settled_venue_bookings_do_not_block_a_replanned_event(monkeypatch, settled_status):
     _, updates = fake_database(monkeypatch, {
         "events": [PLANNING_EVENT],
-        "venue_bookings": [{"status": "APPROVED"}, {"status": "CANCELLED"}],
+        "venue_bookings": [{"status": settled_status}, {"status": "APPROVED"}],
     })
 
     safety_review_service.request_safety_check(EVENT_ID, "token")
 
     assert [table for table, _ in updates] == ["events"]
+
+
+@pytest.mark.parametrize("settled_status", ["CANCELLED", "REJECTED", "REJECTED_BY_SAFETY"])
+def test_settled_bookings_alone_do_not_count_as_an_approved_venue(monkeypatch, settled_status):
+    _, updates = fake_database(monkeypatch, {
+        "events": [PLANNING_EVENT],
+        "venue_bookings": [{"status": settled_status}],
+    })
+
+    with pytest.raises(AuthError) as caught:
+        safety_review_service.request_safety_check(EVENT_ID, "token")
+
+    assert "approved venue booking" in caught.value.message
+    assert updates == []
 
 
 def test_request_stamps_updated_at_so_the_queue_shows_the_request_time(monkeypatch):

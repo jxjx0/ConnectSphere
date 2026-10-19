@@ -41,6 +41,7 @@ class FakeQuery:
     is_ = _filter("is_")
     like = _filter("like")
     order = _filter("order")
+    limit = _filter("limit")
     del _filter
 
     def execute(self):
