@@ -121,7 +121,10 @@ def update_venue(venue_id):
         venue_id,
         venue_request,
     )
-    return jsonify({"venue": venue.model_dump(mode="json")}), 200
+    response = {"venue": venue.model_dump(mode="json")}
+    if getattr(venue, "buffer_impact", None) is not None:
+        response["buffer_impact"] = venue.buffer_impact
+    return jsonify(response), 200
 
 
 @venues_bp.get("/<venue_id>/history")

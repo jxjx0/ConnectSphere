@@ -121,3 +121,7 @@ class Venue(BaseModel):
     # Legacy rows without configuration remain unknown rather than implying zero.
     setup_time_minutes: int | None = Field(default=None, strict=True, ge=0, le=2147483647)
     turnaround_time_minutes: int | None = Field(default=None, strict=True, ge=0, le=2147483647)
+
+
+class VenueUpdateResult(Venue):
+    buffer_impact: dict | None = Field(default=None, exclude=True)

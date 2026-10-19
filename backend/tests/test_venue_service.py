@@ -1,7 +1,7 @@
 """Exercise real venue persistence logic with only the Supabase boundary replaced."""
 
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 from uuid import uuid4
 
 import pytest
@@ -31,7 +31,8 @@ def access_token():
 
 @pytest.fixture
 def database(monkeypatch):
-    client = Mock(spec=["table"])
+    client = Mock(spec=["table", "rpc"])
+    client.rpc.return_value.execute.return_value = SimpleNamespace(data=[])
     factory = Mock(return_value=client)
     monkeypatch.setattr(config, "get_user_client", factory)
     return client, factory
@@ -145,10 +146,11 @@ def test_update_only_targets_the_requested_venue(
     venue = venue_service.update_venue(access_token, venue_record["id"], update)
 
     factory.assert_called_once_with(access_token)
-    client.table.assert_called_once_with("venues")
+    assert client.table.call_args_list == [call("venues"), call("venues")]
+    query.select.assert_called_once_with("setup_time_minutes, turnaround_time_minutes")
     query.update.assert_called_once_with(update.model_dump(mode="json"))
-    query.eq.assert_called_once_with("id", venue_record["id"])
-    query.execute.assert_called_once_with()
+    assert query.eq.call_args_list == [call("id", venue_record["id"])] * 2
+    assert query.execute.call_count == 2
     assert venue.model_dump(mode="json") == updated_record
 
 
