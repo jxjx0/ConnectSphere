@@ -16,7 +16,6 @@ PLANNING_EVENT = {
     "organiser_id": "11111111-1111-1111-1111-111111111111",
     "name": "Safety Summit",
     "status": "planning",
-    "safety_status": "not_requested",
     "expected_attendance": 80,
     "accessibility_requirements": "Wheelchair access required",
 }
@@ -76,7 +75,7 @@ def mock_database_clients(monkeypatch, rows_by_table=None, raise_postgrest=False
 
 
 # ============================================================================
-# 1. CLIENT RESOLUTION (_get_client) - Lines 11-18
+# 1. CLIENT RESOLUTION (_get_client)
 # ============================================================================
 
 def test_get_client_admin_success(monkeypatch):
@@ -113,7 +112,7 @@ def test_get_client_fallback_raises_autherror(monkeypatch):
 
 
 # ============================================================================
-# 2. GET SAFETY REVIEW QUEUE - Lines 21-40
+# 2. GET SAFETY REVIEW QUEUE
 # ============================================================================
 
 def test_get_safety_review_queue_success(monkeypatch):
@@ -137,7 +136,7 @@ def test_get_safety_review_queue_generic_error(monkeypatch):
 
 
 # ============================================================================
-# 3. GET SAFETY EVENT DETAILS - Lines 43-146
+# 3. GET SAFETY EVENT DETAILS
 # ============================================================================
 
 def test_get_safety_event_details_all_flags_triggered(monkeypatch):
@@ -215,7 +214,7 @@ def test_get_safety_event_details_generic_error(monkeypatch):
 
 
 # ============================================================================
-# 4. REQUEST SAFETY CHECK - Lines 149-216
+# 4. REQUEST SAFETY CHECK
 # ============================================================================
 
 def test_request_safety_check_success(monkeypatch):
@@ -232,7 +231,7 @@ def test_request_safety_check_success(monkeypatch):
 
 
 def test_request_safety_check_already_requested(monkeypatch):
-    already_pending_event = {**PLANNING_EVENT, "safety_status": "pending"}
+    already_pending_event = {**PLANNING_EVENT, "status": "awaiting_safety_check"}
     mock_database_clients(monkeypatch, {"events": [already_pending_event]})
 
     with pytest.raises(AuthError) as exc:
@@ -271,8 +270,47 @@ def test_request_safety_check_postgrest_error(monkeypatch):
     assert exc.value.status_code == 400
 
 
+def test_request_safety_check_generic_error(monkeypatch):
+    """Triggers line 216 (except Exception) during DB update in request_safety_check."""
+    fake_client = mock_database_clients(
+        monkeypatch,
+        {
+            "events": [PLANNING_EVENT],
+            "venue_bookings": [APPROVED_VENUE_BOOKING],
+            "equipment_requests": [APPROVED_EQUIPMENT_REQUEST],
+        },
+    )
+
+    def exploding_table(name):
+        query = FakeQuery(
+            {
+                "events": [PLANNING_EVENT],
+                "venue_bookings": [APPROVED_VENUE_BOOKING],
+                "equipment_requests": [APPROVED_EQUIPMENT_REQUEST],
+            },
+            name,
+        )
+        original_update = query.update
+
+        def bad_update(*args, **kwargs):
+            q = original_update(*args, **kwargs)
+            q.raise_generic = True
+            return q
+
+        query.update = bad_update
+        return query
+
+    fake_client.table = exploding_table
+    fake_client.from_ = exploding_table
+
+    with pytest.raises(AuthError) as exc:
+        safety_review_service.request_safety_check(EVENT_ID, "token")
+    assert exc.value.status_code == 500
+    assert "Internal error requesting safety check" in exc.value.message
+
+
 # ============================================================================
-# 5. CHECK AND UPDATE SAFETY STATUS - Lines 219-257
+# 5. CHECK AND UPDATE SAFETY STATUS
 # ============================================================================
 
 def test_check_and_update_safety_status_success(monkeypatch):
@@ -309,7 +347,7 @@ def test_check_and_update_safety_status_unapproved_equipment(monkeypatch):
 
 
 def test_check_and_update_safety_status_admin_init_failure(monkeypatch):
-    """Covers lines 228-231 where get_admin_client fails during check_and_update_safety_status."""
+    """Covers get_admin_client failure during check_and_update_safety_status."""
     def raise_err():
         raise RuntimeError("DB connection failed")
 

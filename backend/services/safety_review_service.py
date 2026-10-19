@@ -239,6 +239,11 @@ def request_safety_check(event_id: str, access_token: str) -> dict:
             f"Failed to request safety check: {exc.message}",
             status_code=400,
         )
+    except Exception as exc:
+        raise AuthError(
+            f"Internal error requesting safety check: {str(exc)}",
+            status_code=500,
+        )
 
 
 
