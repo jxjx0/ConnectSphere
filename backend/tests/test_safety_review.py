@@ -58,9 +58,14 @@ class FakeQuery:
 def fake_database(monkeypatch, tables):
     filters, updates = [], []
     client = SimpleNamespace(
-        table=lambda name: FakeQuery(name, list(tables.get(name, [])), filters, updates)
+        table=lambda name: FakeQuery(name, list(tables.get(name, [])), filters, updates),
+        from_=lambda name: FakeQuery(name, list(tables.get(name, [])), filters, updates),
     )
     monkeypatch.setattr(config, "get_admin_client", lambda: client)
+    monkeypatch.setattr(config, "get_user_client", lambda token: client)
+    monkeypatch.setattr(safety_review_service, "get_admin_client", lambda: client)
+    monkeypatch.setattr(safety_review_service, "get_user_client", lambda token: client)
+    monkeypatch.setattr(safety_review_service, "_get_client", lambda access_token=None: client)
     return filters, updates
 
 
