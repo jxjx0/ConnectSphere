@@ -20,9 +20,9 @@ const venue = {
   setup_time_minutes: 30, turnaround_time_minutes: 45,
 }
 
-function harness({ edit = false, history = [] } = {}) {
+function harness({ edit = false, history = [], updateResult } = {}) {
   const states = [], writes = [], navigations = []
-  let index = 0, effects = []
+  let index = 0, effects = [], routeVenueId = edit ? 'hall' : undefined
   const props = { createMode: !edit }
   const module = { exports: {} }
   const imports = {
@@ -33,11 +33,14 @@ function harness({ edit = false, history = [] } = {}) {
     }, useEffect: fn => effects.push(fn) },
     'react/jsx-runtime': jsxRuntime,
     'react-router-dom': { Link: ({ to, children }) => React.createElement('a', { href: to }, children),
-      useNavigate: () => path => navigations.push(path), useParams: () => edit ? { venueId: 'hall' } : {} },
+      useNavigate: () => path => navigations.push(path), useParams: () => routeVenueId ? { venueId: routeVenueId } : {} },
     '../api/venues': {
       getVenues: async () => ({ venues: [venue] }), getVenueHistory: async () => ({ history }),
       createVenue: async (payload, token) => writes.push({ payload, token }),
-      updateVenue: async (id, payload, token) => writes.push({ id, payload, token }),
+      updateVenue: async (id, payload, token) => {
+        writes.push({ id, payload, token })
+        return updateResult
+      },
     },
     '../validation': validation,
     '../components/AppShell': { __esModule: true, default: ({ children }) => React.createElement('main', null, children) },
@@ -56,6 +59,7 @@ function harness({ edit = false, history = [] } = {}) {
   }
   return {
     states, writes, navigations, tree,
+    changeRoute: (id, createMode = false) => { routeVenueId = id; props.createMode = createMode },
     html: () => renderToStaticMarkup(tree()),
     field: id => find(tree(), node => node.props.id === id),
     button: label => find(tree(), node => node.type === 'button' && node.props.children === label),
@@ -145,4 +149,55 @@ test('buffer audit history displays labels and minute values', async () => {
   assert.match(page.html(), /Turnaround time/)
   assert.match(page.html(), /30 minutes/)
   assert.match(page.html(), /45 minutes/)
+})
+
+for (const status of ['verified', 'partial', 'unavailable']) {
+  test(`buffer impact ${status} shows the saved outcome without encouraging another submission`, async () => {
+    const affected = status === 'unavailable' ? null : [{ booking_id: 'booking', event_name: 'Workshop',
+      effective_start: '2099-11-07T09:30:00+08:00', effective_end: '2099-11-07T12:45:00+08:00',
+      status_update: status === 'verified' ? 'updated' : 'failed',
+      notification_status: status === 'verified' ? 'saved' : 'failed' }]
+    const page = harness({ edit: true, updateResult: { buffer_impact: { status, affected_bookings: affected } } })
+    await page.load()
+    page.field('setupTime').props.onChange({ target: { value: '60' } })
+    await page.submit()
+    const html = page.html()
+    assert.match(html, /Venue updated/)
+    assert.match(html, /Back to Venue Catalogue/)
+    assert.doesNotMatch(html, /<form/)
+    assert.deepEqual(page.navigations, [])
+    assert.equal(page.writes.length, 1)
+    if (status === 'verified') {
+      assert.match(html, /Workshop/)
+      assert.match(html, /Coordinators notified/)
+    } else {
+      assert.match(html, /Your venue changes are saved/)
+      assert.doesNotMatch(html, /Coordinators notified/)
+    }
+    if (status === 'partial') {
+      assert.match(html, /Booking status could not be verified/)
+      assert.match(html, /Coordinator could not be notified/)
+    }
+  })
+}
+
+test('returning to catalogue and reopening an editor clears the previous impact result', async () => {
+  const page = harness({ edit: true, updateResult: {
+    buffer_impact: { status: 'verified', affected_bookings: [] },
+  } })
+  await page.load()
+  page.field('setupTime').props.onChange({ target: { value: '60' } })
+  await page.submit()
+  assert.match(page.html(), /Venue updated/)
+  assert.equal(page.field('setupTime'), undefined)
+  page.changeRoute(undefined)
+  await page.load()
+  assert.doesNotMatch(page.html(), /Venue updated/)
+  page.changeRoute('hall')
+  await page.load()
+  assert.ok(page.field('setupTime'))
+  assert.doesNotMatch(page.html(), /No newly affected bookings/)
+  page.changeRoute(undefined, true)
+  await page.load()
+  assert.ok(page.field('setupTime'))
 })
