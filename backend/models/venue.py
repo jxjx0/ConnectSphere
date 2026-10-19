@@ -58,6 +58,8 @@ class VenueCreateRequest(BaseModel):
     accessibility: list[str] | None = None
     layouts: list[VenueLayout] = Field(min_length=1)
     operating_hours: OperatingHours
+    setup_time_minutes: int = Field(default=0, strict=True, ge=0, le=2147483647)
+    turnaround_time_minutes: int = Field(default=0, strict=True, ge=0, le=2147483647)
 
     @field_validator("name")
     @classmethod
@@ -116,3 +118,6 @@ class Venue(BaseModel):
     accessibility: list[str] | None = None
     layouts: list[VenueLayout]
     operating_hours: OperatingHours
+    # Legacy rows without configuration remain unknown rather than implying zero.
+    setup_time_minutes: int | None = Field(default=None, strict=True, ge=0, le=2147483647)
+    turnaround_time_minutes: int | None = Field(default=None, strict=True, ge=0, le=2147483647)

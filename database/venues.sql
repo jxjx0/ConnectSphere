@@ -11,11 +11,17 @@ create table public.venues (
     accessibility jsonb,
     layouts jsonb not null,
     operating_hours jsonb not null,
+    setup_time_minutes integer not null default 0,
+    turnaround_time_minutes integer not null default 0,
 
     constraint venues_name_not_blank
         check (length(btrim(name)) > 0),
     constraint venues_capacity_positive
-        check (capacity > 0)
+        check (capacity > 0),
+    constraint venues_setup_time_nonnegative
+        check (setup_time_minutes >= 0),
+    constraint venues_turnaround_time_nonnegative
+        check (turnaround_time_minutes >= 0)
 );
 
 create or replace function public.validate_venue_layouts(value jsonb)

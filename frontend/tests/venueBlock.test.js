@@ -104,7 +104,7 @@ test('creation callback runs after confirmed persistence, never for errors or ca
   assert.equal(created, 1)
 })
 
-test('saved block stays visible without unavailable impact information and can be closed', async () => {
+test('saved block stays visible with an honest unavailable-impact notice and can be closed', async () => {
   let payload
   const page = harness(async (venueId, data, token) => {
     assert.equal(venueId, 'hall')
@@ -122,21 +122,23 @@ test('saved block stays visible without unavailable impact information and can b
   assert.match(page.html(), /class="venue-block-dialog__reason">Maintenance/)
   assert.ok(!page.html().includes('hall'))
   assert.ok(!page.html().includes('Could not be fully verified yet'))
-  assert.ok(!page.html().includes('Booking impact'))
+  assert.doesNotMatch(page.html(), /<h3[^>]*>Booking impact<\/h3>/)
   assert.ok(!page.html().includes('No existing bookings are affected'))
+  assert.match(page.html(), /Impact check unavailable/)
   assert.ok(!page.html().includes('Submit'))
   find(page.tree(), (node) => node.type === 'button').props.onClick()
   assert.equal(page.closed(), 1)
 })
 
 test('verified-zero response differs from missing or incomplete impact data', async () => {
-  for (const impact of [undefined, { status: 'unavailable', affected_bookings: [] }, { status: 'verified', affected_bookings: null }, { status: 'verified', affected_bookings: [] }]) {
+  for (const impact of [undefined, { status: 'unavailable', affected_bookings: [] }, { status: 'partial', affected_bookings: [] }, { status: 'verified', affected_bookings: null }, { status: 'verified', affected_bookings: [] }]) {
     const page = harness(async () => ({ block: { block_id: 'block-1' }, booking_impact: impact }))
     await submit(page)
     const verified = impact?.status === 'verified' && Array.isArray(impact.affected_bookings)
     assert.equal(page.html().includes('No existing bookings are affected.'), verified)
     assert.ok(!page.html().includes('Could not be fully verified yet'))
-    assert.equal(page.html().includes('Booking impact'), verified)
+    assert.equal(/<h3[^>]*>Booking impact<\/h3>/.test(page.html()), verified)
+    assert.equal(page.html().includes('Impact check unavailable'), !verified)
   }
 })
 
@@ -167,6 +169,58 @@ test('view supports supplied affected-booking summaries without claiming notific
   assert.match(page.html(), /Workshop/)
   assert.match(page.html(), /Seminar/)
   assert.ok(!page.html().includes('notified'))
+  assert.match(page.html(), /Please follow up on the items above/)
+})
+
+test('saved Coordinator notifications are shown without claiming email delivery', async () => {
+  const page = harness(async () => ({ block: { block_id: 'block-1' }, booking_impact: {
+    status: 'verified', affected_bookings: [{ booking_id: 'a', event_name: 'Workshop', status_update: 'updated', notification_status: 'saved' }],
+  } }))
+  await submit(page)
+  assert.match(page.html(), /1 existing booking affected/)
+  assert.match(page.html(), /Coordinator notified/)
+  assert.doesNotMatch(page.html(), /saved|Bookings updated|Booking marked affected/)
+  assert.doesNotMatch(page.html(), /email.*(delivered|sent)/i)
+})
+
+test('partial notification results keep affected bookings visible for staff follow-up', async () => {
+  for (const notification_status of ['failed', 'missing_coordinator']) {
+    const page = harness(async () => ({ block: { block_id: 'block-1' }, booking_impact: {
+      status: 'partial', affected_bookings: [{ booking_id: 'a', event_name: 'Workshop', notification_status }],
+    } }))
+    await submit(page)
+    assert.match(page.html(), /Block created successfully/)
+    assert.match(page.html(), /1 existing booking affected/)
+    assert.match(page.html(), /Workshop/)
+    assert.match(page.html(), /Please follow up on the items above/)
+    assert.doesNotMatch(page.html(), /Coordinators? notified|No existing bookings are affected/)
+    assert.match(page.html(), notification_status === 'failed'
+      ? /Coordinator could not be notified/
+      : /No Coordinator assigned/)
+    assert.equal(find(page.tree(), node => node.type === 'form'), undefined)
+  }
+})
+
+test('staff sees status-update outcome separately from notification success', async () => {
+  for (const [status_update, expected] of [
+    ['updated', /Coordinator notified/],
+    ['failed', /Booking status unchanged/],
+    ['unverified', /Booking status unconfirmed/],
+    ['not_updated', /Booking may have changed/],
+  ]) {
+    const page = harness(async () => ({ block: { block_id: 'saved' }, booking_impact: {
+      status: status_update === 'updated' ? 'verified' : 'partial',
+      affected_bookings: [{ booking_id: 'a', event_name: 'Workshop', status_update,
+        notification_status: status_update === 'not_updated' ? 'not_required' : 'saved' }],
+    } }))
+    await submit(page)
+    assert.match(page.html(), /Block created successfully/)
+    assert.match(page.html(), expected)
+    if (status_update !== 'updated') {
+      assert.doesNotMatch(page.html(), /Booking marked affected/)
+      assert.match(page.html(), /Please follow up on the items above/)
+    }
+  }
 })
 
 test('backend errors and unconfirmed responses retain the form without false success', async () => {

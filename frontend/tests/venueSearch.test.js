@@ -192,8 +192,19 @@ test('accessibility aliases and case variants produce one option without changin
 
 test('availability summary appears only for timed partial responses', () => {
   const partial = { venues: [], warnings: ['Bookings missing', 'Buffers missing'], requested_period: { start: '2026-11-07T10:00', end: '2026-11-07T12:00' } }
-  assert.match(venueAvailabilitySummary(partial), /Operational venue blocks have been checked/)
+  assert.match(venueAvailabilitySummary(partial), /Some reservation conflicts may not be shown/)
   assert.equal(venueAvailabilitySummary({ venues: [], warnings: [] }), '')
   assert.equal(venueAvailabilitySummary({ ...partial, warnings: [], venues: [{ availability_status: 'available' }] }), '')
   assert.equal(venueAvailabilitySummary({ venues: [{ availability_status: 'not_checked' }], warnings: ['irrelevant'] }), '')
+})
+
+test('partial search with configured buffers does not describe setup and turnaround as unfinished', () => {
+  const summary = venueAvailabilitySummary({
+    requested_period: { start: '2026-11-07T10:00', end: '2026-11-07T12:00' },
+    warnings: ['Booking and tentative hold availability cannot yet be verified.'],
+    venues: [{ availability_status: 'unverified',
+      effective_start: '2026-11-07T09:30', effective_end: '2026-11-07T12:45' }],
+  })
+  assert.match(summary, /Availability is partially verified/)
+  assert.doesNotMatch(summary, /setup|turnaround|operational/i)
 })

@@ -136,6 +136,76 @@ def test_create_venue_booking_outside_operating_hours(mock_get_client, mock_clie
     mock_get_client.return_value = mock_client
     table_mock = MagicMock()
     mock_client.table.return_value = table_mock
+    table_mock.select.return_value.eq.return_value.eq.return_value.neq.return_value.neq.return_value.execute.return_value.data = []
+    table_mock.select.return_value.eq.return_value.lt.return_value.gt.return_value.execute.return_value.data = []
+    table_mock.insert.return_value.execute.return_value.data = []
+
+    with pytest.raises(AuthError) as exc:
+        create_venue_booking("token", "v-1", valid_create_request, "c-1")
+    assert exc.value.status_code == 502
+
+
+# --- review_venue_booking ---
+
+@patch("config.get_user_client")
+def test_review_venue_booking_not_found(mock_get_client, mock_client):
+    mock_get_client.return_value = mock_client
+    mock_client.table().select().eq().execute().data = []
+
+    review = VenueBookingReviewRequest(status="APPROVED")
+    with pytest.raises(AuthError) as exc:
+        review_venue_booking("token", "bk-404", "staff-1", review)
+    assert exc.value.status_code == 404
+
+
+@patch("config.get_user_client")
+@pytest.mark.parametrize("status", ["APPROVED", "AFFECTED_BY_UNAVAILABILITY"])
+def test_review_venue_booking_already_processed(mock_get_client, mock_client, status):
+    mock_get_client.return_value = mock_client
+    mock_client.table().select().eq().execute().data = [{"status": status}]
+
+    review = VenueBookingReviewRequest(status="APPROVED")
+    with pytest.raises(AuthError) as exc:
+        review_venue_booking("token", "bk-1", "staff-1", review)
+    assert exc.value.status_code == 400
+
+
+@patch("config.get_user_client")
+def test_review_venue_booking_unsupported_layout(mock_get_client, mock_client):
+    mock_get_client.return_value = mock_client
+    booking = {
+        "booking_id": "bk-1",
+        "venue_id": "v-1",
+        "status": "PENDING_VENUE_APPROVAL",
+        "room_layout": "Theater",
+        "venues": {"layouts": [{"name": "Banquet", "capacity": 100}]},
+        "events": {"expected_attendance": 50},
+    }
+    mock_client.table().select().eq().execute().data = [booking]
+
+    review = VenueBookingReviewRequest(status="APPROVED")
+    with pytest.raises(AuthError) as exc:
+        review_venue_booking("token", "bk-1", "staff-1", review)
+    assert exc.value.status_code == 400
+
+
+@patch("config.get_user_client")
+def test_review_venue_booking_exceeds_capacity(mock_get_client, mock_client):
+    mock_get_client.return_value = mock_client
+    booking = {
+        "booking_id": "bk-1",
+        "venue_id": "v-1",
+        "status": "PENDING_VENUE_APPROVAL",
+        "room_layout": "Banquet",
+        "venues": {"layouts": [{"name": "Banquet", "capacity": 100}]},
+        "events": {"expected_attendance": 150},
+    }
+    mock_client.table().select().eq().execute().data = [booking]
+
+    review = VenueBookingReviewRequest(status="APPROVED")
+    with pytest.raises(AuthError) as exc:
+        review_venue_booking("token", "bk-1", "staff-1", review)
+    assert exc.value.status_code == 400
 
     # Return operating hours 08:00 to 22:00
     table_mock.select.return_value.eq.return_value.execute.return_value.data = [
@@ -187,3 +257,27 @@ def test_review_venue_booking_approved_success_full(mock_get_client, mock_client
     res = review_venue_booking("token", "bk-1", "staff-1", review)
 
     assert res["status"] == "APPROVED"
+    assert res["status"] == "APPROVED"
+
+
+@patch("config.get_user_client")
+def test_review_venue_booking_rejected_success(mock_get_client, mock_client):
+    mock_get_client.return_value = mock_client
+    booking = {
+        "booking_id": "bk-1",
+        "venue_id": "v-1",
+        "coordinator_id": "c-1",
+        "status": "PENDING_VENUE_APPROVAL",
+        "venues": {"name": "Hall"},
+    }
+
+    table_mock = MagicMock()
+    mock_client.table.return_value = table_mock
+    table_mock.select.return_value.eq.return_value.execute.return_value.data = [booking]
+    rejected_res = {**booking, "status": "REJECTED", "rejection_reason": "Not available"}
+    table_mock.update.return_value.eq.return_value.execute.return_value.data = [rejected_res]
+
+    review = VenueBookingReviewRequest(status="REJECTED", rejection_reason="Not available")
+    res = review_venue_booking("token", "bk-1", "staff-1", review)
+
+    assert res["status"] == "REJECTED"

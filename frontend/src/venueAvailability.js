@@ -60,6 +60,30 @@ export function calendarBlockPositions(items, day) {
   return segments.map((segment) => ({ ...segment, left: segment.lane / lanes.length * 100, width: 100 / lanes.length }))
 }
 
+export function calendarOperatingHours(hours, day) {
+  const validTime = value => typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value)
+  if (!validTime(hours?.open) || !validTime(hours?.close) || hours.close <= hours.open) return null
+  const result = { label: `${hours.open}–${hours.close} (Singapore time)`, closed: [] }
+  if (!day) return result
+
+  // The grid uses browser-local dates; venue hours always use Singapore time.
+  const singaporeDate = new Date(day.start.getTime() + 8 * 3600000).toISOString().slice(0, 10)
+  const firstMidnight = new Date(`${singaporeDate}T00:00:00+08:00`).getTime()
+  const minutes = value => Number(value.slice(0, 2)) * 60 + Number(value.slice(3))
+  const closed = []
+  let cursor = day.start.getTime()
+  for (let midnight = firstMidnight; midnight < day.end.getTime(); midnight += 86400000) {
+    const open = Math.max(day.start.getTime(), midnight + minutes(hours.open) * 60000)
+    const close = Math.min(day.end.getTime(), midnight + minutes(hours.close) * 60000)
+    if (close <= open) continue
+    if (cursor < open) closed.push({ start_at: new Date(cursor).toISOString(), end_at: new Date(open).toISOString() })
+    cursor = Math.max(cursor, close)
+  }
+  if (cursor < day.end.getTime()) closed.push({ start_at: new Date(cursor).toISOString(), end_at: day.end.toISOString() })
+  result.closed = calendarBlockPositions(closed, day)
+  return result
+}
+
 export function validateCalendarResponse(data, venueId, range) {
   if (data?.venue?.id !== venueId || !Array.isArray(data.items)
       || data.verification_status !== 'partial' || data.sources?.operational_blocks !== 'verified'

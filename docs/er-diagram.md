@@ -68,6 +68,8 @@ erDiagram
         jsonb accessibility
         jsonb layouts
         jsonb operating_hours
+        int setup_time_minutes "not null, default 0, nonnegative"
+        int turnaround_time_minutes "not null, default 0, nonnegative"
     }
 
     VENUE_EDIT_HISTORY {

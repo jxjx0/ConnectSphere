@@ -267,9 +267,11 @@ def test_blank_and_null_filters_are_optional():
 
 
 def test_untimed_search_never_reads_occupancy_or_durations(database, catalogue, monkeypatch):
-    catalogue[0].update(setup_time_minutes=-1, turnaround_time_minutes=-1)
+    catalogue[0].update(setup_time_minutes=30, turnaround_time_minutes=45)
     reader = Mock(side_effect=AssertionError("untimed search must not check occupancy"))
     monkeypatch.setattr(availability, "load_booking_occupancy", reader)
+    monkeypatch.setattr(availability, "venue_buffers", reader)
+    monkeypatch.setattr(availability, "effective_period", reader)
     result = venue_search_service.search_venues("token", VenueSearchRequest())
     reader.assert_not_called()
     assert len(result["venues"]) == 1
@@ -345,11 +347,81 @@ def test_period_can_use_separate_end_offset():
     assert request.period()[1].isoformat() == "2026-11-08T02:00:00+01:00"
 
 
-def test_overnight_search_checks_next_day_blocks(database):
+def test_overnight_search_is_excluded_by_same_day_operating_hours(database):
     request = VenueSearchRequest(date="2026-11-07", end_date="2026-11-08",
                                  start_time="22:00", end_time="02:00", timezone_offset_minutes=480)
     set_blocks(database, [{"venue_id": "hall", "start_at": "2026-11-08T00:00:00+08:00", "end_at": "2026-11-08T01:00:00+08:00"}])
     assert venue_search_service.search_venues("token", request)["venues"] == []
+    database[0].table.assert_called_once_with("venues")
+
+
+@pytest.mark.parametrize("start,end,setup,turnaround,matches", [
+    ("01:08", "02:08", 0, 0, False),
+    ("07:59", "09:00", 0, 0, False),
+    ("08:00", "22:00", 0, 0, True),
+    ("21:00", "22:01", 0, 0, False),
+    ("22:00", "23:00", 0, 0, False),
+    ("08:00", "10:00", 30, 0, False),
+    ("08:30", "10:00", 30, 0, True),
+    ("20:00", "22:00", 0, 45, False),
+    ("20:00", "21:15", 0, 45, True),
+    ("08:30", "21:15", 30, 45, True),
+    ("00:15", "01:00", 30, 0, False),
+    ("22:30", "23:45", 0, 30, False),
+])
+def test_timed_search_enforces_operating_hours_including_buffers(
+    database, catalogue, start, end, setup, turnaround, matches,
+):
+    catalogue[0].update(operating_hours={"open": "08:00", "close": "22:00"},
+                        setup_time_minutes=setup, turnaround_time_minutes=turnaround)
+    request = VenueSearchRequest(**{**PAYLOAD, "start_time": start, "end_time": end})
+    assert bool(venue_search_service.search_venues("token", request)["venues"]) == matches
+    if not matches:
+        database[0].table.assert_called_once_with("venues")
+
+
+@pytest.mark.parametrize("start,end,offset,matches", [
+    ("00:00", "01:00", 0, True),  # 08:00-09:00 Singapore.
+    ("01:08", "02:08", 480, False),
+    ("23:30", "23:45", -60, True),  # Next day 08:30-08:45 Singapore.
+    ("07:00", "08:00", -420, False),  # 22:00-23:00 Singapore: after closing.
+])
+def test_operating_hours_use_venue_timezone_not_browser_offset(
+    database, catalogue, start, end, offset, matches,
+):
+    catalogue[0].update(operating_hours={"open": "08:00", "close": "22:00"},
+                        setup_time_minutes=0, turnaround_time_minutes=0)
+    request = VenueSearchRequest(**{**PAYLOAD, "start_time": start, "end_time": end,
+                                   "timezone_offset_minutes": offset})
+    assert bool(venue_search_service.search_venues("token", request)["venues"]) == matches
+
+
+def test_multi_date_search_cannot_span_closed_overnight_hours(database, catalogue):
+    catalogue[0].update(setup_time_minutes=0, turnaround_time_minutes=0)
+    request = VenueSearchRequest(**{**PAYLOAD, "end_date": "2026-11-08"})
+    assert venue_search_service.search_venues("token", request)["venues"] == []
+    database[0].table.assert_called_once_with("venues")
+
+
+def test_outside_hours_is_excluded_even_when_buffers_are_missing(database):
+    request = VenueSearchRequest(**{**PAYLOAD, "start_time": "01:08", "end_time": "02:08"})
+    assert venue_search_service.search_venues("token", request)["venues"] == []
+
+
+def test_operating_hours_are_checked_per_venue(database, catalogue, search_request):
+    catalogue[0].update(setup_time_minutes=0, turnaround_time_minutes=0)
+    catalogue.append({**catalogue[0], "id": "closed-hall",
+                      "operating_hours": {"open": "13:00", "close": "20:00"}})
+    result = venue_search_service.search_venues("token", search_request)
+    assert [venue["id"] for venue in result["venues"]] == ["hall"]
+
+
+def test_untimed_search_keeps_venues_without_checking_opening_hours(database, catalogue, monkeypatch):
+    catalogue[0]["operating_hours"] = {"open": "08:00", "close": "09:00"}
+    checker = Mock(side_effect=AssertionError("untimed browsing must not check hours"))
+    monkeypatch.setattr(availability, "within_operating_hours", checker)
+    assert len(venue_search_service.search_venues("token", VenueSearchRequest())["venues"]) == 1
+    checker.assert_not_called()
 
 
 def test_effective_period_example_and_midnight():
@@ -360,6 +432,46 @@ def test_effective_period_example_and_midnight():
     assert occupied_end.isoformat() == "2026-11-07T12:45:00+08:00"
     midnight = start.replace(hour=0, minute=15)
     assert availability.effective_period(midnight, end, 30, 0)[0].day == 6
+
+
+@pytest.mark.parametrize("start,end,setup,turnaround,expected_start,expected_end", [
+    ("2026-11-07T10:00:00+08:00", "2026-11-07T12:00:00+08:00", 0, 0,
+     "2026-11-07T10:00:00+08:00", "2026-11-07T12:00:00+08:00"),
+    ("2026-12-31T00:15:00+08:00", "2027-01-02T23:45:00+08:00", 30, 45,
+     "2026-12-30T23:45:00+08:00", "2027-01-03T00:30:00+08:00"),
+    ("2026-11-07T23:00:00+08:00", "2026-11-08T02:00:00+08:00", 30, 45,
+     "2026-11-07T22:30:00+08:00", "2026-11-08T02:45:00+08:00"),
+])
+def test_configured_effective_period_boundaries(start, end, setup, turnaround, expected_start, expected_end):
+    original = datetime.fromisoformat(start), datetime.fromisoformat(end)
+    occupied = availability.effective_period(*original, setup, turnaround)
+    assert tuple(value.isoformat() for value in occupied) == (expected_start, expected_end)
+    assert tuple(value.isoformat() for value in original) == (start, end)
+
+
+@pytest.mark.parametrize("start,end,matches", [
+    ("09:00", "09:30", True),
+    ("12:45", "13:00", True),
+    ("09:29", "09:31", False),
+    ("12:44", "12:46", False),
+])
+def test_search_consumes_venue_contract_buffers_and_exact_touching(database, catalogue, search_request, start, end, matches):
+    from models.venue import VenueCreateRequest, Venue
+
+    request = VenueCreateRequest(**{
+        **catalogue[0], "setup_time_minutes": 30, "turnaround_time_minutes": 45,
+    })
+    catalogue[0] = Venue(id="hall", **request.model_dump()).model_dump(mode="json")
+    set_blocks(database, [{"venue_id": "hall", "start_at": f"2026-11-07T{start}:00+08:00",
+                          "end_at": f"2026-11-07T{end}:00+08:00"}])
+    result = venue_search_service.search_venues("token", search_request)
+    assert bool(result["venues"]) == matches
+    if matches:
+        venue = result["venues"][0]
+        assert venue["effective_start"] == "2026-11-07T09:30:00+08:00"
+        assert venue["effective_end"] == "2026-11-07T12:45:00+08:00"
+        assert venue["availability_status"] == "unverified"
+        assert len(result["warnings"]) == 1  # Booking integration is still unavailable.
 
 
 def test_verified_adapter_contract_can_be_plugged_in(database, catalogue, search_request, monkeypatch):

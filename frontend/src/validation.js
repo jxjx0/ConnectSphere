@@ -73,6 +73,17 @@ export function validateOperatingHours(open, close) {
   return null
 }
 
+export function validateVenueBuffers(setup, turnaround) {
+  for (const [label, value] of [['Setup time', setup], ['Turnaround time', turnaround]]) {
+    const minutes = Number(value)
+    if (value === null || value === undefined || String(value).trim() === ''
+        || !Number.isInteger(minutes) || minutes < 0 || minutes > 2147483647) {
+      return `${label} must be a non-negative whole number of minutes.`
+    }
+  }
+  return null
+}
+
 // Event request field validation, mirrored from the backend's
 // EventSubmitRequest (backend/models/event.py). The backend remains the
 // real boundary -- this is convenience, so the Organiser sees a problem

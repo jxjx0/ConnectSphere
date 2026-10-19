@@ -79,6 +79,10 @@ def _search(client, records, request):
             availability.effective_period(start, end, *buffers) if period is not None and buffers is not None
             else (start, end)
         )
+        if period is not None and not availability.within_operating_hours(
+            occupied_start, occupied_end, venue.operating_hours,
+        ):
+            continue
         candidates.append((venue, layout, buffers, occupied_start, occupied_end))
 
     if not candidates:

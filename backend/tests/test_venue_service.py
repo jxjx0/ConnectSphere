@@ -47,6 +47,60 @@ def query_returning(rows):
     return query
 
 
+@pytest.mark.parametrize("setup,turnaround", [(0, 0), (30, 45)])
+def test_buffer_create_read_update_round_trip(database, access_token, venue_payload, setup, turnaround):
+    client, _ = database
+    stored = {"id": str(uuid4())}
+    query = query_returning([])
+
+    def write(payload):
+        stored.update(payload)
+        return query
+
+    query.insert.side_effect = write
+    query.update.side_effect = write
+    query.execute.side_effect = lambda: SimpleNamespace(data=[dict(stored)])
+    client.table.return_value = query
+    request = VenueCreateRequest(**{
+        **venue_payload, "setup_time_minutes": setup, "turnaround_time_minutes": turnaround,
+    })
+    created = venue_service.create_venue(access_token, request)
+    assert (created.setup_time_minutes, created.turnaround_time_minutes) == (setup, turnaround)
+    assert venue_service.list_venues(access_token)[0] == created
+
+    # Legacy callers need not know about buffers to rename a venue safely.
+    renamed = VenueUpdateRequest(**{**venue_payload, "name": "Renamed Hall"})
+    updated = venue_service.update_venue(access_token, created.id, renamed)
+    assert updated.name == "Renamed Hall"
+    assert (updated.setup_time_minutes, updated.turnaround_time_minutes) == (setup, turnaround)
+    assert "setup_time_minutes" not in query.update.call_args.args[0]
+
+    # Explicit zero is a real update, not an omitted value.
+    reset = VenueUpdateRequest(**{**venue_payload, "setup_time_minutes": 0})
+    updated = venue_service.update_venue(access_token, created.id, reset)
+    assert updated.setup_time_minutes == 0
+    assert updated.turnaround_time_minutes == turnaround
+
+
+def test_buffer_history_values_are_returned(database, access_token, history_record):
+    client, _ = database
+    record = {
+        **history_record,
+        "changed_fields": ["setup_time_minutes", "turnaround_time_minutes"],
+        "old_values": {"setup_time_minutes": 0, "turnaround_time_minutes": 0},
+        "new_values": {"setup_time_minutes": 30, "turnaround_time_minutes": 45},
+    }
+    tables = {
+        "venue_edit_history": query_returning([record]),
+        "profiles": query_returning([{"id": record["changed_by"], "full_name": "Venue Staff"}]),
+    }
+    client.table.side_effect = tables.__getitem__
+    result = venue_service.get_venue_history(access_token, record["venue_id"])[0]
+    assert result.changed_fields == record["changed_fields"]
+    assert result.old_values == record["old_values"]
+    assert result.new_values == record["new_values"]
+
+
 def call_service(operation, access_token, venue_record, venue_request):
     if operation == "create":
         return venue_service.create_venue(access_token, venue_request)

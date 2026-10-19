@@ -75,6 +75,7 @@ function getBookingCardStyle(status) {
         borderLeft: '3px solid var(--rule-strong)',
         backgroundColor: 'var(--surface)',
       }
+    case 'AFFECTED_BY_UNAVAILABILITY':
     case 'REJECTED':
       return {
         borderLeft: '3px solid var(--danger)',
@@ -384,6 +385,11 @@ export default function EventReviewDetailPage() {
                       )}
                     </div>
 
+                    {booking.status === 'AFFECTED_BY_UNAVAILABILITY' && (
+                      <p className="form-error" role="status">
+                        Originally approved. Venue now unavailable. Please arrange another venue.
+                      </p>
+                    )}
                     {booking.status === 'REJECTED' && booking.rejection_reason && (
                       <div className="form-error" style={{ marginTop: 'var(--space-3)', maxWidth: 'none' }}>
                         <strong>Rejection Reason:</strong> {booking.rejection_reason}
