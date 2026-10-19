@@ -29,7 +29,7 @@ export default function BookingForm({ venue, eventId: initialEventId, initialVal
       getAssignedEventRequests(token)
         .then((data) => {
           const active = (data.events || []).filter((e) =>
-            ['under_review', 'planning', 'change_requested'].includes(e.status)
+            ['under_review', 'planning', 'change_requested', 'confirmed'].includes(e.status)
           )
           setAssignedEvents(active)
           if (active.length === 1) setSelectedEventId(active[0].id)

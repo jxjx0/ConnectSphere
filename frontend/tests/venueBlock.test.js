@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { transformWithEsbuild } from 'vite'
 import * as jsxRuntime from 'react/jsx-runtime'
 import { venueBlockPayload } from '../src/venueBlock.js'
+import { venueHoldPayload } from '../src/venueBlock.js'
 import { formatDateRange } from '../src/eventDisplay.js'
 
 const form = { startDate: '2026-11-07', startTime: '10:00', endDate: '2026-11-07', endTime: '12:00', reason: ' Maintenance ' }
@@ -48,14 +49,15 @@ function harness(create = async () => ({ block: { block_id: 'block-1' }, booking
   const effects = []
   const module = { exports: {} }
   const imports = {
-    react: { ...React, useRef: () => dialogRef, useEffect: (effect) => effects.push(effect), useState: () => {
+    react: { ...React, useRef: () => dialogRef, useEffect: (effect) => effects.push(effect), useState: (initial) => {
       const current = index++
+      if (!(current in states)) states[current] = initial
       return [states[current], (value) => { states[current] = value }]
     } },
     'react/jsx-runtime': jsxRuntime,
     '../context/AuthContext': { useAuth: () => ({ token: 'staff-token' }) },
     '../api/venues': { createVenueBlock: create },
-    '../venueBlock.js': { venueBlockPayload },
+    '../venueBlock.js': { venueBlockPayload, venueHoldPayload },
     '../eventDisplay.js': { formatDateRange },
   }
   new Function('require', 'module', 'exports', code)((name) => {
@@ -245,20 +247,21 @@ test('invalid form does not call the API and submitting disables mutable fields'
   }
 })
 
-test('modal has an accessible title, read-only venue text and exactly five editable fields', () => {
+test('modal has an accessible title, two visible type choices and five operational fields', () => {
   const page = harness()
   const dialog = find(page.tree(), (node) => node.type === 'dialog')
   assert.equal(dialog.props['aria-labelledby'], 'blockVenueTitle')
   const html = page.html()
-  assert.match(html, /id="blockVenueTitle">Block Venue/)
+  assert.match(html, /id="blockVenueTitle">Block \/ Tentative Hold/)
   assert.match(html, /<strong>Venue:<\/strong> Grand Hall/)
   assert.ok(!html.includes('Venue ID'))
   assert.ok(!html.includes('value="hall"'))
   assert.ok(!html.includes('value="Grand Hall"'))
-  assert.equal((html.match(/<input/g) || []).length, 5)
-  assert.match(html, /Specify when and why this venue should be unavailable/)
-  assert.ok(html.indexOf('id="blockVenueTitle"') < html.indexOf('Specify when'))
-  assert.ok(html.indexOf('Specify when') < html.indexOf('<strong>Venue:</strong>'))
+  assert.equal((html.match(/<input/g) || []).length, 7)
+  assert.equal((html.match(/type="radio"/g) || []).length, 2)
+  assert.match(html, /Operational Unavailability/)
+  assert.match(html, /Tentative Hold/)
+  assert.equal(find(page.tree(), node => node.props.type === 'radio' && node.props.value === 'operational_block').props.checked, true)
   assert.equal(find(page.tree(), (node) => node.props.id === 'blockVenueTitle').props.className, 'venue-block-dialog__title')
   assert.ok(!html.includes('Times use your local timezone.'))
   assert.equal(find(page.tree(), (node) => node.props.id === 'blockStartDate').props.autoFocus, true)
@@ -332,7 +335,7 @@ test('catalogue Block action selects the correct venue and closing unmounts the 
   assert.equal(header.props.children[0], backLink)
   assert.equal(find(header, (node) => node.type === 'h1').props.children, 'Venue Catalogue')
   const row = find(tree(), (node) => node.type === 'tr' && node.key === 'venue-1')
-  const blockButton = find(row, (node) => node.type === 'button' && node.props.children === 'Block')
+  const blockButton = find(row, (node) => node.type === 'button' && node.props.children === 'Block / Tentative Hold')
   const editLink = find(row, (node) => node.props.children === 'Edit')
   const availabilityLink = find(row, (node) => node.props.children === 'View Availability')
   const availabilityUrl = new URL(availabilityLink.props.to, 'http://localhost')

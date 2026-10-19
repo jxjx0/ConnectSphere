@@ -596,7 +596,7 @@ export default function VenuePage({ createMode = false }) {
                             disabled={blockingVenue !== null}
                             onClick={() => setBlockingVenue(venue)}
                           >
-                            Block
+                            Block / Tentative Hold
                           </button>
                         </div>
                       </td>
