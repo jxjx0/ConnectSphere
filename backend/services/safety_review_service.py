@@ -4,10 +4,20 @@ import logging
 from datetime import datetime, timezone
 from postgrest import APIError as PostgrestAPIError
 from config import get_admin_client, get_user_client
+from services import venue_availability_service as availability
 from services.auth_service import AuthError
 from services.notification_service import notify
 
 logger = logging.getLogger(__name__)
+
+# Where each Safety Officer decision sends the event next.
+DECISION_NEXT_STATUS = {
+    "approved": "confirmed",
+    "changes_requested": "planning",
+    "rejected": "planning",
+}
+# Bookings that still hold the venue and must be released when safety is rejected.
+RELEASABLE_BOOKING_STATUSES = ("PENDING_VENUE_APPROVAL", "APPROVED", "AFFECTED_BY_UNAVAILABILITY")
 
 
 def _get_client(access_token: str = None):
@@ -18,47 +28,6 @@ def _get_client(access_token: str = None):
         if access_token:
             return get_user_client(access_token)
         raise AuthError("Database client initialization failed.", status_code=500)
-
-
-def is_within_operating_hours(start_dt: datetime, end_dt: datetime, operating_hours: dict | None) -> bool:
-    """Verify if requested start and end times fall within venue operating hours."""
-    if not operating_hours or not isinstance(operating_hours, dict):
-        return True
-
-    open_str = operating_hours.get("open")
-    close_str = operating_hours.get("close")
-    if not open_str or not close_str:
-        return True
-
-    try:
-        open_raw = str(open_str).strip()
-        close_raw = str(close_str).strip()
-
-        fmt_open = "%H:%M:%S" if len(open_raw) == 8 else "%H:%M"
-        fmt_close = "%H:%M:%S" if len(close_raw) == 8 else "%H:%M"
-
-        open_time = datetime.strptime(open_raw, fmt_open).time()
-        close_time = datetime.strptime(close_raw, fmt_close).time()
-    except Exception as exc:
-        logger.warning(f"Failed to parse venue operating hours '{operating_hours}': {exc}")
-        return True
-
-    # Ensure naive datetime comparison or strip timezone offsets cleanly
-    if isinstance(start_dt, datetime):
-        # Convert timezone-aware datetimes to naive time
-        start_time = start_dt.timetz().replace(tzinfo=None) if start_dt.tzinfo else start_dt.time()
-    else:
-        start_time = start_dt
-
-    if isinstance(end_dt, datetime):
-        end_time = end_dt.timetz().replace(tzinfo=None) if end_dt.tzinfo else end_dt.time()
-    else:
-        end_time = end_dt
-
-    if start_time < open_time or end_time > close_time:
-        return False
-
-    return True
 
 
 def get_safety_review_queue(access_token: str) -> list[dict]:
@@ -161,28 +130,41 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
             if layout_match:
                 layout_capacity = layout_match.get("capacity") or 0
 
-        # Flag 1: Capacity Exceeded for Selected Layout
+        # Flag 1: Capacity Exceeded (booked layout when known, otherwise the whole venue)
+        venue_capacity = (venue.get("capacity") or 0) if isinstance(venue, dict) else 0
         if layout_capacity > 0 and expected_attendance > layout_capacity:
             flags.append({
                 "type": "CAPACITY_EXCEEDED",
                 "severity": "HIGH",
                 "message": f"Expected attendance ({expected_attendance}) exceeds capacity ({layout_capacity}) for layout '{requested_layout}'.",
             })
+        elif layout_capacity == 0 and venue_capacity > 0 and expected_attendance > venue_capacity:
+            flags.append({
+                "type": "CAPACITY_EXCEEDED",
+                "severity": "HIGH",
+                "message": f"Expected attendance ({expected_attendance}) exceeds venue capacity ({venue_capacity}).",
+            })
 
         # Flag 2: Operating Hours Violation
         if booking and isinstance(venue, dict):
             op_hours = venue.get("operating_hours")
-            start_str = booking.get("start_at")
-            end_str = booking.get("end_at")
+            start_str = booking.get("effective_start_at") or booking.get("start_at")
+            end_str = booking.get("effective_end_at") or booking.get("end_at")
             if op_hours and start_str and end_str:
                 try:
-                    start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
-                    end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
-                    if not is_within_operating_hours(start_dt, end_dt, op_hours):
+                    start_dt = datetime.fromisoformat(start_str)
+                    end_dt = datetime.fromisoformat(end_str)
+                    if not availability.booking_within_operating_hours(start_dt, end_dt, op_hours):
+                        local_start = start_dt.astimezone(availability.VENUE_TIMEZONE)
+                        local_end = end_dt.astimezone(availability.VENUE_TIMEZONE)
                         flags.append({
                             "type": "OPERATING_HOURS_VIOLATION",
                             "severity": "HIGH",
-                            "message": f"Event schedule ({start_dt.strftime('%H:%M')} - {end_dt.strftime('%H:%M')}) falls outside venue operating hours ({op_hours.get('open')} - {op_hours.get('close')}).",
+                            "message": (
+                                f"Event schedule including setup and turnaround "
+                                f"({local_start:%H:%M} - {local_end:%H:%M}) falls outside venue "
+                                f"operating hours ({op_hours.get('open')} - {op_hours.get('close')})."
+                            ),
                         })
                 except ValueError:
                     pass
@@ -310,6 +292,54 @@ def request_safety_check(event_id: str, access_token: str) -> dict:
         )
 
 
+def _release_event_arrangements(client, event_id: str, reason: str) -> None:
+    """Free the venue and equipment a rejected event holds so other events can use them."""
+    bookings = (
+        client.table("venue_bookings")
+        .select("booking_id, venue_id, status, effective_start_at, effective_end_at")
+        .eq("event_id", event_id)
+        .in_("status", list(RELEASABLE_BOOKING_STATUSES))
+        .execute()
+    ).data or []
+
+    for booking in bookings:
+        client.table("venue_bookings").update({
+            "status": "REJECTED_BY_SAFETY",
+            "rejection_reason": f"Safety Officer Rejection: {reason}",
+        }).eq("booking_id", booking["booking_id"]).execute()
+
+        if booking.get("status") == "PENDING_VENUE_APPROVAL":
+            continue
+        removed = (
+            client.table("venue_blocks").delete()
+            .eq("booking_id", booking["booking_id"])
+            .execute()
+        ).data
+        if not removed:
+            # Approval blocks created before venue_blocks.booking_id existed carry no link.
+            (
+                client.table("venue_blocks").delete()
+                .eq("venue_id", booking["venue_id"])
+                .eq("start_at", booking["effective_start_at"])
+                .eq("end_at", booking["effective_end_at"])
+                .is_("booking_id", "null")
+                .like("block_reason", "Approved Booking:%")
+                .execute()
+            )
+
+    equipment_requests = (
+        client.table("equipment_requests")
+        .select("id")
+        .eq("event_id", event_id)
+        .neq("status", "Rejected")
+        .execute()
+    ).data or []
+    request_ids = [request["id"] for request in equipment_requests]
+    if request_ids:
+        client.table("equipment_bookings").delete().in_("request_id", request_ids).execute()
+        client.table("equipment_requests").update({"status": "Rejected"}).in_("id", request_ids).execute()
+
+
 def submit_safety_decision(
     event_id: str,
     safety_officer_id: str,
@@ -318,8 +348,8 @@ def submit_safety_decision(
     rejection_or_change_reason: str | None = None,
     access_token: str | None = None,
 ) -> dict:
-    """Record a Safety Officer's decision while updating ONLY safety_status on the events table."""
-    if decision not in ("approved", "rejected", "changes_requested"):
+    """Record a Safety Officer's decision and move the event to its next status."""
+    if decision not in DECISION_NEXT_STATUS:
         raise AuthError("Invalid decision outcome. Must be 'approved', 'rejected', or 'changes_requested'.", status_code=400)
 
     if decision in ("rejected", "changes_requested") and not (rejection_or_change_reason or "").strip():
@@ -328,10 +358,9 @@ def submit_safety_decision(
     try:
         client = _get_client(access_token)
 
-        # 1. Fetch current event state
         event_res = (
             client.table("events")
-            .select("id, name, status, safety_status, coordinator_id")
+            .select("id, name, status, coordinator_id")
             .eq("id", event_id)
             .execute()
         )
@@ -339,102 +368,62 @@ def submit_safety_decision(
             raise AuthError("Event not found.", status_code=404)
         event = event_res.data[0]
 
-        if event.get("safety_status") != "pending":
+        if event.get("status") != "awaiting_safety_check":
             raise AuthError("This event is not currently awaiting an operational safety review.", status_code=409)
 
-        # 2. Insert audit log record into event_safety_reviews
-        log_payload = {
+        client.table("event_safety_reviews").insert({
             "event_id": event_id,
             "safety_officer_id": safety_officer_id,
             "decision": decision.upper(),
             "notes": notes,
             "reason": rejection_or_change_reason,
-        }
-        client.table("event_safety_reviews").insert(log_payload).execute()
-
-        coordinator_id = event.get("coordinator_id")
-        event_name = event.get("name", "your event")
-
-        # 3. Handle Decision Outcomes (ONLY update safety_status on events)
-        if decision == "approved":
-            event_update = {
-                "safety_status": "approved",
-                "safety_reviewed_by": safety_officer_id,
-            }
-            updated_res = client.table("events").update(event_update).eq("id", event_id).execute()
-
-            if coordinator_id:
-                notify(
-                    user_id=coordinator_id,
-                    notification_type="safety_review_approved",
-                    title="Operational Safety Check Approved",
-                    body=f"Safety Officer approved '{event_name}'.",
-                    event_id=event_id,
-                )
-            return updated_res.data[0]
+        }).execute()
 
         if decision == "rejected":
-            # Release venue bookings to REJECTED_BY_SAFETY and delete operational schedule blocks
-            venue_bookings = (
-                client.table("venue_bookings")
-                .select("booking_id, venue_id")
-                .eq("event_id", event_id)
-                .execute()
-            ).data or []
+            _release_event_arrangements(client, event_id, rejection_or_change_reason)
 
-            for booking in venue_bookings:
-                client.table("venue_bookings").update({
-                    "status": "REJECTED_BY_SAFETY",
-                    "rejection_reason": f"Safety Officer Rejection: {rejection_or_change_reason}",
-                }).eq("booking_id", booking["booking_id"]).execute()
+        updated_res = (
+            client.table("events")
+            .update({
+                "status": DECISION_NEXT_STATUS[decision],
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+            .eq("id", event_id)
+            .execute()
+        )
 
-                client.table("venue_blocks").delete().eq("booking_id", booking["booking_id"]).execute()
-
-            # Reject equipment requests
-            equip_requests = (
-                client.table("equipment_requests")
-                .select("id")
-                .eq("event_id", event_id)
-                .execute()
-            ).data or []
-
-            for eq_req in equip_requests:
-                client.table("equipment_requests").update({
-                    "status": "Rejected",
-                }).eq("id", eq_req["id"]).execute()
-
-            event_update = {
-                "safety_status": "rejected",
-                "safety_reviewed_by": safety_officer_id,
-            }
-            updated_res = client.table("events").update(event_update).eq("id", event_id).execute()
-
-            if coordinator_id:
-                notify(
-                    user_id=coordinator_id,
-                    notification_type="safety_review_rejected",
-                    title="Operational Safety Check Rejected",
-                    body=f"Safety Officer rejected safety arrangements for '{event_name}'. Venue and equipment reservations have been released. Reason: {rejection_or_change_reason}",
-                    event_id=event_id,
-                )
-            return updated_res.data[0]
-
-        if decision == "changes_requested":
-            event_update = {
-                "safety_status": "changes_requested",
-                "safety_reviewed_by": safety_officer_id,
-            }
-            updated_res = client.table("events").update(event_update).eq("id", event_id).execute()
-
-            if coordinator_id:
-                notify(
-                    user_id=coordinator_id,
-                    notification_type="safety_review_changes_requested",
-                    title="Safety Changes Required for Event",
-                    body=f"Safety Officer requested changes for '{event_name}'. Reason: {rejection_or_change_reason}",
-                    event_id=event_id,
-                )
-            return updated_res.data[0]
+        coordinator_id = event.get("coordinator_id")
+        if coordinator_id:
+            event_name = event.get("name") or "your event"
+            notification_type, title, body = {
+                "approved": (
+                    "safety_review_approved",
+                    "Operational Safety Check Approved",
+                    f"Safety Officer approved '{event_name}'. The event is now confirmed.",
+                ),
+                "rejected": (
+                    "safety_review_rejected",
+                    "Operational Safety Check Rejected",
+                    f"Safety Officer rejected safety arrangements for '{event_name}'. "
+                    "Venue and equipment reservations have been released and the event is back in Planning. "
+                    f"Reason: {rejection_or_change_reason}",
+                ),
+                "changes_requested": (
+                    "safety_review_changes_requested",
+                    "Safety Changes Required for Event",
+                    f"Safety Officer requested changes for '{event_name}'. "
+                    "The event is back in Planning so you can update its arrangements. "
+                    f"Reason: {rejection_or_change_reason}",
+                ),
+            }[decision]
+            notify(
+                user_id=coordinator_id,
+                notification_type=notification_type,
+                title=title,
+                body=body,
+                event_id=event_id,
+            )
+        return updated_res.data[0]
 
     except AuthError:
         raise

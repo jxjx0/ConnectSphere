@@ -1,12 +1,22 @@
 """Venue booking persistence, review workflow, and block synchronization."""
 
-from datetime import timedelta, datetime, time, timezone
+from datetime import datetime, timedelta
 from postgrest import APIError as PostgrestAPIError
 
 import config
 from models.venue_booking import VenueBookingCreateRequest, VenueBookingReviewRequest
+from services import venue_availability_service as availability
 from services.auth_service import AuthError
 from services.notification_service import notify
+
+# Requests that still hold, or may soon hold, the venue for their event.
+LIVE_BOOKING_STATUSES = ("PENDING_VENUE_APPROVAL", "APPROVED")
+
+
+def _hours_label(operating_hours) -> str:
+    if isinstance(operating_hours, dict) and operating_hours.get("open") and operating_hours.get("close"):
+        return f"{operating_hours['open']} - {operating_hours['close']}"
+    return "unknown"
 
 
 def get_pending_venue_bookings(access_token: str, venue_id: str | None = None) -> list[dict]:
@@ -41,32 +51,26 @@ def check_schedule_conflict_details(client, venue_id: str, effective_start: str,
 
 
 def check_duplicate_event_booking(client, venue_id: str, event_id: str) -> None:
-    """Disallow submitting a booking request if any prior request exists for this venue and event, including rejected ones."""
+    """Prevent a second live request for one venue and event; settled requests may be retried."""
     if not event_id:
         return
 
-    # Fetch any prior request for this venue/event pair (excluding voluntarily cancelled ones)
     existing = (
         client.table("venue_bookings")
         .select("booking_id, status")
         .eq("venue_id", venue_id)
         .eq("event_id", event_id)
-        .neq("status", "CANCELLED")  # Allows resubmission only if the coordinator voluntarily cancelled
+        .in_("status", list(LIVE_BOOKING_STATUSES))
         .execute()
         .data
     )
 
     if existing:
-        last_status = existing[0].get("status")
-        if last_status in ("REJECTED", "REJECTED_BY_SAFETY"):
-            raise AuthError(
-                "A booking request for this venue and event was previously rejected and cannot be resubmitted.",
-                status_code=409,
-            )
         raise AuthError(
             "A booking request for this venue and event has already been submitted.",
             status_code=409,
         )
+
 
 def review_venue_booking(
     access_token: str,
@@ -95,20 +99,6 @@ def review_venue_booking(
     event = booking.get("events") or {}
 
     if review.status == "APPROVED":
-        # 1. Enforce Operating Hours Check on Approval
-        operating_hours = venue.get("operating_hours")
-        start_dt = datetime.fromisoformat(booking["start_at"])
-        end_dt = datetime.fromisoformat(booking["end_at"])
-
-        if not is_within_operating_hours(start_dt, end_dt, operating_hours):
-            open_time = operating_hours.get("open", "N/A") if isinstance(operating_hours, dict) else "N/A"
-            close_time = operating_hours.get("close", "N/A") if isinstance(operating_hours, dict) else "N/A"
-            raise AuthError(
-                f"Cannot approve: The requested time falls outside venue operating hours ({open_time} - {close_time}).",
-                status_code=400,
-            )
-
-        # 2. Room Layout & Capacity Validation
         supported_layouts = venue.get("layouts") or []
         if isinstance(supported_layouts, dict):
             supported_layouts = [{"name": k, "capacity": v} for k, v in supported_layouts.items()]
@@ -137,7 +127,18 @@ def review_venue_booking(
                 status_code=400,
             )
 
-        # 3. Schedule Conflict Validation
+        operating_hours = venue.get("operating_hours")
+        if not availability.booking_within_operating_hours(
+            datetime.fromisoformat(booking["effective_start_at"]),
+            datetime.fromisoformat(booking["effective_end_at"]),
+            operating_hours,
+        ):
+            raise AuthError(
+                "Cannot approve: the booking, including setup and turnaround, falls outside "
+                f"venue operating hours ({_hours_label(operating_hours)}).",
+                status_code=400,
+            )
+
         conflicts = check_schedule_conflict_details(
             client, booking["venue_id"], booking["effective_start_at"], booking["effective_end_at"]
         )
@@ -149,7 +150,6 @@ def review_venue_booking(
                 status_code=409,
             )
 
-        # 4. Create Calendar Block
         block_data = {
             "venue_id": booking["venue_id"],
             "booking_id": booking["booking_id"],
@@ -174,7 +174,6 @@ def review_venue_booking(
         )
 
         approved_booking = update_res.data[0]
-
 
         # Dispatch notification with positional notification_type
         if booking.get("coordinator_id"):
@@ -211,37 +210,6 @@ def review_venue_booking(
 
     return rejected_booking
 
-def is_within_operating_hours(
-    start_dt: datetime,
-    end_dt: datetime,
-    operating_hours: dict | None,
-    utc_offset_hours: int = 8,  # Match local venue timezone offset (SGT UTC+8)
-) -> bool:
-    """Verify if start and end times fall within operating hours using local venue time."""
-    if not operating_hours or not isinstance(operating_hours, dict):
-        return True
-
-    open_str = operating_hours.get("open")
-    close_str = operating_hours.get("close")
-    if not open_str or not close_str:
-        return True
-
-    try:
-        open_time = time.fromisoformat(open_str)
-        close_time = time.fromisoformat(close_str)
-    except ValueError:
-        return True
-
-    # Convert UTC datetimes to local venue time offset
-    local_tz = timezone(timedelta(hours=utc_offset_hours))
-    local_start = start_dt.astimezone(local_tz).time()
-    local_end = end_dt.astimezone(local_tz).time()
-
-    # Reject if start time is before open time or end time is after close time
-    if local_start < open_time or local_end > close_time:
-        return False
-
-    return True
 
 def create_venue_booking(
     access_token: str,
@@ -252,7 +220,6 @@ def create_venue_booking(
     """Submit a venue booking request with operating hours & buffer validation."""
     client = config.get_user_client(access_token)
 
-    # 1. Query setup/turnaround buffers and operating hours from venue catalog FIRST
     venue_res = (
         client.table("venues")
         .select("setup_time_minutes, turnaround_time_minutes, operating_hours")
@@ -267,22 +234,18 @@ def create_venue_booking(
     turnaround_mins = venue_info.get("turnaround_time_minutes") or 0
     operating_hours = venue_info.get("operating_hours")
 
-    # 2. Enforce operating hours check BEFORE duplicate/conflict checks
-    if not is_within_operating_hours(request.start_at, request.end_at, operating_hours):
-        open_time = operating_hours.get("open", "N/A") if isinstance(operating_hours, dict) else "N/A"
-        close_time = operating_hours.get("close", "N/A") if isinstance(operating_hours, dict) else "N/A"
+    effective_start = request.start_at - timedelta(minutes=setup_mins)
+    effective_end = request.end_at + timedelta(minutes=turnaround_mins)
+
+    if not availability.booking_within_operating_hours(effective_start, effective_end, operating_hours):
         raise AuthError(
-            f"The requested time falls outside venue operating hours ({open_time} - {close_time}).",
+            "The requested time, including setup and turnaround, falls outside venue operating "
+            f"hours ({_hours_label(operating_hours)}).",
             status_code=400,
         )
 
-    # 3. Check duplicate event bookings
     if request.event_id:
         check_duplicate_event_booking(client, venue_id, request.event_id)
-
-    # 4. Compute effective operational interval using venue-defined buffers
-    effective_start = request.start_at - timedelta(minutes=setup_mins)
-    effective_end = request.end_at + timedelta(minutes=turnaround_mins)
 
     effective_start_iso = effective_start.isoformat()
     effective_end_iso = effective_end.isoformat()
