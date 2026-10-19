@@ -44,7 +44,7 @@ test('existing booking card explains original approval and alternative arrangeme
 
 test('dashboard flags an affected venue even when another venue remains approved', async () => {
   const Tabs = await compile('../src/components/AssignedRequestTabs.jsx', {
-    'react-router-dom': { Link: link, useSearchParams: () => [new URLSearchParams('tab=ongoing'), () => {}] },
+    'react-router-dom': { Link: link, useSearchParams: () => [new URLSearchParams('tab=planning'), () => {}] },
   })
   const value = { ...event, venue_bookings: [affected, { status: 'APPROVED' }] }
   const markup = renderToStaticMarkup(React.createElement(Tabs, { events: [value] }))

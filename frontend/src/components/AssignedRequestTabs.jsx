@@ -188,8 +188,8 @@ function getSafetyBadge(event) {
 }
 
 export default function AssignedRequestTabs({ events }) {
-  // The open tab lives in the URL (?tab=ongoing), so the back button
-  // returns to the same tab. Incoming is the default.
+  // The open tab lives in the URL (?tab=planning), so the back button
+  // returns to the same tab. Under Review is the default.
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = TABS.find((t) => t.id === searchParams.get('tab')) ?? TABS[0]
   const tabEvents = events.filter((event) => tab.statuses.includes(event.status))
