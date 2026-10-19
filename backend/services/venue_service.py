@@ -52,10 +52,12 @@ def update_venue(
 ) -> Venue:
     """Update a venue using the caller's RLS-scoped Supabase client."""
     client = config.get_user_client(access_token)
+    # Older clients may omit these fields; omission must not reset configuration.
+    omitted_buffers = {"setup_time_minutes", "turnaround_time_minutes"} - request.model_fields_set
     try:
         result = (
             client.table("venues")
-            .update(request.model_dump(mode="json"))
+            .update(request.model_dump(mode="json", exclude=omitted_buffers))
             .eq("id", venue_id)
             .execute()
         )

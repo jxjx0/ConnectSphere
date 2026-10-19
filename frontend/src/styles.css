@@ -1213,10 +1213,15 @@ a:hover {
   max-width: 100%;
 }
 
-/* Catalogue content wraps within the page; other venue tables keep their layout. */
+/* Catalogue columns stay readable; narrow screens scroll inside the wrapper. */
 .venue-catalogue-table {
-  min-width: 0;
+  min-width: 56rem;
   table-layout: fixed;
+}
+
+.venue-catalogue-table thead th {
+  white-space: normal;
+  overflow-wrap: normal;
 }
 
 .venue-catalogue-table th,
@@ -1231,10 +1236,6 @@ a:hover {
 .venue-catalogue-table__capacity { width: 6.5rem; }
 .venue-catalogue-table .venue-table__actions { width: 9rem; }
 .venue-catalogue-table .venue-table__action-buttons { width: auto; }
-
-@media (max-width: 36rem) {
-  .venue-catalogue-table { min-width: 34rem; }
-}
 
 .table-values {
   display: flex;

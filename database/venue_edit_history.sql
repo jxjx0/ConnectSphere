@@ -84,6 +84,18 @@ begin
         new_values := new_values || jsonb_build_object('operating_hours', new.operating_hours);
     end if;
 
+    if old.setup_time_minutes is distinct from new.setup_time_minutes then
+        changed_fields := array_append(changed_fields, 'setup_time_minutes');
+        old_values := old_values || jsonb_build_object('setup_time_minutes', old.setup_time_minutes);
+        new_values := new_values || jsonb_build_object('setup_time_minutes', new.setup_time_minutes);
+    end if;
+
+    if old.turnaround_time_minutes is distinct from new.turnaround_time_minutes then
+        changed_fields := array_append(changed_fields, 'turnaround_time_minutes');
+        old_values := old_values || jsonb_build_object('turnaround_time_minutes', old.turnaround_time_minutes);
+        new_values := new_values || jsonb_build_object('turnaround_time_minutes', new.turnaround_time_minutes);
+    end if;
+
     if cardinality(changed_fields) > 0 then
         insert into public.venue_edit_history (
             venue_id,

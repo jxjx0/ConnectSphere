@@ -1,7 +1,8 @@
 """Shared venue interval rules, calendar reads and booking integration boundary."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta, timezone
 
+from models.venue import OperatingHours
 from models.venue_search import OccupiedPeriod
 from models.venue_availability import VenueAvailabilityRequest, VenueAvailabilityResponse
 from postgrest import APIError as PostgrestAPIError
@@ -9,6 +10,10 @@ from pydantic import ValidationError
 
 import config
 from services.auth_service import AuthError
+
+
+# Venue profiles use Singapore wall-clock hours, independent of browser offsets.
+VENUE_TIMEZONE = timezone(timedelta(hours=8))
 
 
 def get_venue_availability(access_token: str, request: VenueAvailabilityRequest):
@@ -53,6 +58,21 @@ def load_booking_occupancy(client, venue_ids: list[str]) -> dict[str, list[Occup
 
 def effective_period(start: datetime, end: datetime, setup: int, turnaround: int):
     return start - timedelta(minutes=setup), end + timedelta(minutes=turnaround)
+
+
+def within_operating_hours(start: datetime, end: datetime, hours: OperatingHours) -> bool:
+    """Fit the whole occupied period into one of the venue's daily open windows."""
+    if start.utcoffset() is None or end.utcoffset() is None:
+        raise ValueError("operating-hours checks require explicit timezones")
+    local_start = start.astimezone(VENUE_TIMEZONE)
+    local_end = end.astimezone(VENUE_TIMEZONE)
+    # The current profile model allows only same-day opening/closing hours.
+    return (
+        local_start < local_end
+        and local_start.date() == local_end.date()
+        and time.fromisoformat(hours.open) <= local_start.time()
+        and local_end.time() <= time.fromisoformat(hours.close)
+    )
 
 
 def overlaps(start: datetime, end: datetime, occupied: OccupiedPeriod) -> bool:
