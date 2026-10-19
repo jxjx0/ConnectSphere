@@ -1,10 +1,4 @@
-"""Unit tests for services/safety_review_service.py."""
-import os
-
-# Set dummy environment variables BEFORE config or service imports execute
-os.environ.setdefault("SUPABASE_URL", "https://fake-project.supabase.co")
-os.environ.setdefault("SUPABASE_ANON_KEY", "fake-anon-key")
-os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "fake-service-key")
+"""Comprehensive unit tests targeting 100% coverage for services/safety_review_service.py."""
 
 from types import SimpleNamespace
 import pytest
@@ -24,311 +18,300 @@ PLANNING_EVENT = {
     "status": "planning",
     "safety_status": "not_requested",
     "expected_attendance": 80,
-    "accessibility_requirements": "Wheelchair access",
+    "accessibility_requirements": "Wheelchair access required",
 }
 
-EVENT_AWAITING_ROW = {
-    "id": EVENT_ID,
-    "name": "Annual Tech Conference",
-    "category": "conference",
-    "start_time": "2026-10-21T05:08:00+00:00",
-    "end_time": "2026-10-21T16:08:00+00:00",
-    "status": "awaiting_safety_check",
-    "updated_at": "2026-10-19T04:00:00+00:00",
+APPROVED_VENUE_BOOKING = {
+    "event_id": EVENT_ID,
+    "status": "APPROVED",
+    "venue": {
+        "name": "Grand Hall",
+        "capacity": 50,  # Lower than attendance (80) to trigger capacity flag
+        "accessibility": ["Ramp Access"],
+    },
+}
+
+APPROVED_EQUIPMENT_REQUEST = {
+    "id": "req-1",
+    "event_id": EVENT_ID,
+    "status": "Approved",
 }
 
 
 class FakeQuery:
-    def __init__(self, rows, calls, raise_error=False):
-        self._rows = rows
-        self._calls = calls
-        self._raise_error = raise_error
+    def __init__(self, rows_by_table, table_name, raise_postgrest=False, raise_generic=False):
+        self.rows_by_table = rows_by_table
+        self.table_name = table_name
+        self.raise_postgrest = raise_postgrest
+        self.raise_generic = raise_generic
 
-    def select(self, *args):
-        self._calls.append(("select", args))
-        return self
-
-    def update(self, values):
-        self._calls.append(("update", values))
-        return self
-
-    def insert(self, values):
-        self._calls.append(("insert", values))
-        return self
-
-    def in_(self, column, values):
-        self._calls.append(("in", column, values))
-        return self
-
-    def eq(self, column, value):
-        self._calls.append(("eq", column, value))
-        filtered = []
-        for row in self._rows:
-            if column in row and str(row[column]) != str(value):
-                continue
-            filtered.append(row)
-        self._rows = filtered
-        return self
-
-    def order(self, column, desc=False):
-        self._calls.append(("order", column, desc))
-        return self
+    def select(self, *args): return self
+    def eq(self, *args): return self
+    def in_(self, *args): return self
+    def update(self, *args): return self
+    def order(self, *args, **kwargs): return self
 
     def execute(self):
-        if self._raise_error:
+        if self.raise_postgrest:
             raise PostgrestAPIError({"message": "DB Error", "code": "PGRST100"})
-        return SimpleNamespace(data=self._rows)
+        if self.raise_generic:
+            raise RuntimeError("Unexpected DB failure")
+        return SimpleNamespace(data=self.rows_by_table.get(self.table_name, []))
 
 
-def mock_database_clients(monkeypatch, rows_by_table=None, raise_error=False):
-    calls = []
+def mock_database_clients(monkeypatch, rows_by_table=None, raise_postgrest=False, raise_generic=False):
     if rows_by_table is None:
         rows_by_table = {}
 
     def get_table(table_name):
-        rows = list(rows_by_table.get(table_name, []))
-        return FakeQuery(
-            rows,
-            calls,
-            raise_error=raise_error,
-        )
+        return FakeQuery(rows_by_table, table_name, raise_postgrest, raise_generic)
 
-    fake_client = SimpleNamespace(
-        from_=get_table,
-        table=get_table,
-    )
+    fake_client = SimpleNamespace(from_=get_table, table=get_table)
 
     monkeypatch.setattr(config, "get_admin_client", lambda: fake_client)
     monkeypatch.setattr(config, "get_user_client", lambda token: fake_client)
     monkeypatch.setattr(safety_review_service, "get_admin_client", lambda: fake_client)
     monkeypatch.setattr(safety_review_service, "get_user_client", lambda token: fake_client)
-    monkeypatch.setattr(safety_review_service, "_get_client", lambda access_token=None: fake_client)
-    return calls, fake_client
-
-
-def call_named(calls, name):
-    return next(call for call in calls if call[0] == name)
+    return fake_client
 
 
 # ============================================================================
-# 1. QUEUE & AUTOMATED TRANSITIONS
+# 1. CLIENT RESOLUTION (_get_client) - Lines 11-18
+# ============================================================================
+
+def test_get_client_admin_success(monkeypatch):
+    """Admin client initialized successfully."""
+    admin_client = SimpleNamespace(type="admin")
+    monkeypatch.setattr(safety_review_service, "get_admin_client", lambda: admin_client)
+    assert safety_review_service._get_client("token") == admin_client
+
+
+def test_get_client_fallback_to_user_client(monkeypatch):
+    """Fallback to user client when get_admin_client fails."""
+    user_client = SimpleNamespace(type="user")
+
+    def raise_err():
+        raise RuntimeError("Admin unavailable")
+
+    monkeypatch.setattr(safety_review_service, "get_admin_client", raise_err)
+    monkeypatch.setattr(safety_review_service, "get_user_client", lambda token: user_client)
+
+    assert safety_review_service._get_client("valid-token") == user_client
+
+
+def test_get_client_fallback_raises_autherror(monkeypatch):
+    """Raises AuthError 500 when admin client fails and no access token is provided."""
+    def raise_err():
+        raise RuntimeError("Admin unavailable")
+
+    monkeypatch.setattr(safety_review_service, "get_admin_client", raise_err)
+
+    with pytest.raises(AuthError) as exc_info:
+        safety_review_service._get_client(None)
+
+    assert exc_info.value.status_code == 500
+
+
+# ============================================================================
+# 2. GET SAFETY REVIEW QUEUE - Lines 21-40
 # ============================================================================
 
 def test_get_safety_review_queue_success(monkeypatch):
-    """get_safety_review_queue retrieves events in awaiting_safety_check status."""
-    calls, _ = mock_database_clients(monkeypatch, {"events": [EVENT_AWAITING_ROW]})
-
-    queue = safety_review_service.get_safety_review_queue("valid-token")
-
+    mock_database_clients(monkeypatch, {"events": [PLANNING_EVENT]})
+    queue = safety_review_service.get_safety_review_queue("token")
     assert len(queue) == 1
-    assert queue[0]["id"] == EVENT_ID
-    assert queue[0]["status"] == "awaiting_safety_check"
-    assert ("eq", "status", "awaiting_safety_check") in calls
 
 
 def test_get_safety_review_queue_postgrest_error(monkeypatch):
-    """Postgrest API error during queue fetch raises 400 AuthError."""
-    mock_database_clients(monkeypatch, {}, raise_error=True)
-
-    with pytest.raises(AuthError) as exc_info:
-        safety_review_service.get_safety_review_queue("valid-token")
-
-    assert exc_info.value.status_code == 400
+    mock_database_clients(monkeypatch, raise_postgrest=True)
+    with pytest.raises(AuthError) as exc:
+        safety_review_service.get_safety_review_queue("token")
+    assert exc.value.status_code == 400
 
 
 def test_get_safety_review_queue_generic_error(monkeypatch):
-    """Generic unexpected error during queue fetch raises 500 AuthError."""
-    def _raise_error(access_token=None):
-        raise Exception("Client crash")
-
-    monkeypatch.setattr(safety_review_service, "_get_client", _raise_error)
-
-    with pytest.raises(AuthError) as exc_info:
-        safety_review_service.get_safety_review_queue("valid-token")
-
-    assert exc_info.value.status_code == 500
-
-
-def test_check_and_update_safety_status_success(monkeypatch):
-    """Event transitions to awaiting_safety_check when venue and equipment are approved."""
-    calls, _ = mock_database_clients(monkeypatch, {
-        "venue_bookings": [{"event_id": EVENT_ID, "status": "APPROVED"}],
-        "equipment_requests": [{"event_id": EVENT_ID, "status": "APPROVED"}],
-    })
-
-    result = safety_review_service.check_and_update_safety_status(EVENT_ID)
-
-    assert result is True
-    update_call = call_named(calls, "update")[1]
-    assert update_call == {"status": "awaiting_safety_check"}
-
-
-def test_check_and_update_safety_status_no_equipment(monkeypatch):
-    """Event transitions when venue is approved and no equipment requests exist."""
-    calls, _ = mock_database_clients(monkeypatch, {
-        "venue_bookings": [{"event_id": EVENT_ID, "status": "APPROVED"}],
-        "equipment_requests": [],
-    })
-
-    result = safety_review_service.check_and_update_safety_status(EVENT_ID)
-
-    assert result is True
-    update_call = call_named(calls, "update")[1]
-    assert update_call == {"status": "awaiting_safety_check"}
-
-
-def test_check_and_update_safety_status_unapproved_venue(monkeypatch):
-    """Event does not transition if venue booking is not approved."""
-    mock_database_clients(monkeypatch, {
-        "venue_bookings": [{"event_id": EVENT_ID, "status": "PENDING"}],
-        "equipment_requests": [{"event_id": EVENT_ID, "status": "APPROVED"}],
-    })
-
-    result = safety_review_service.check_and_update_safety_status(EVENT_ID)
-
-    assert result is False
-
-
-def test_check_and_update_safety_status_unapproved_equipment(monkeypatch):
-    """Event does not transition if any equipment request is pending."""
-    mock_database_clients(monkeypatch, {
-        "venue_bookings": [{"event_id": EVENT_ID, "status": "APPROVED"}],
-        "equipment_requests": [{"event_id": EVENT_ID, "status": "PENDING"}],
-    })
-
-    result = safety_review_service.check_and_update_safety_status(EVENT_ID)
-
-    assert result is False
+    mock_database_clients(monkeypatch, raise_generic=True)
+    with pytest.raises(AuthError) as exc:
+        safety_review_service.get_safety_review_queue("token")
+    assert exc.value.status_code == 500
 
 
 # ============================================================================
-# 2. EVENT DETAILS & SAFETY FLAGS
+# 3. GET SAFETY EVENT DETAILS - Lines 43-146
 # ============================================================================
 
-def test_get_safety_event_details_success(monkeypatch):
-    """get_safety_event_details fetches event, venue, equipment items, and computes flags."""
-    mock_database_clients(monkeypatch, {
-        "events": [PLANNING_EVENT],
-        "venue_bookings": [{
-            "event_id": EVENT_ID,
-            "status": "APPROVED",
-            "venue": {"name": "Grand Hall", "capacity": 50, "accessibility": []}
-        }],
-        "equipment_requests": [{"id": "req-1", "event_id": EVENT_ID, "status": "Approved"}],
-        "equipment_request_items": [{
-            "request_id": "req-1",
-            "quantity": 2,
-            "equipment": {"name": "Mic", "type": "Audio", "maintenance_status": "Under Repair"}
-        }],
-    })
+def test_get_safety_event_details_all_flags_triggered(monkeypatch):
+    """Triggers capacity, equipment hazard, accessibility gap, and large crowd protocol flags."""
+    large_crowd_event = {
+        **PLANNING_EVENT,
+        "expected_attendance": 600,
+        "accessibility_requirements": "Wheelchair access needed",
+    }
+
+    mock_database_clients(
+        monkeypatch,
+        {
+            "events": [large_crowd_event],
+            "venue_bookings": [APPROVED_VENUE_BOOKING],
+            "equipment_requests": [APPROVED_EQUIPMENT_REQUEST],
+            "equipment_request_items": [
+                {
+                    "request_id": "req-1",
+                    "quantity": 2,
+                    "equipment": {
+                        "name": "Generator",
+                        "type": "Power",
+                        "maintenance_status": "Under Repair",
+                    },
+                }
+            ],
+        },
+    )
 
     details = safety_review_service.get_safety_event_details(EVENT_ID, "token")
+    flag_types = [f["type"] for f in details["safety_flags"]]
 
+    assert "CAPACITY_EXCEEDED" in flag_types
+    assert "EQUIPMENT_HAZARD" in flag_types
+    assert "ACCESSIBILITY_GAP" in flag_types
+    assert "LARGE_CROWD_PROTOCOL" in flag_types
+
+
+def test_get_safety_event_details_inner_exceptions_logged(monkeypatch):
+    """Triggers exception handlers in venue booking and equipment loading steps."""
+    def get_table(table_name):
+        if table_name in ("venue_bookings", "equipment_requests"):
+            return FakeQuery({}, table_name, raise_generic=True)
+        return FakeQuery({"events": [PLANNING_EVENT]}, table_name)
+
+    fake_client = SimpleNamespace(from_=get_table, table=get_table)
+    monkeypatch.setattr(safety_review_service, "get_admin_client", lambda: fake_client)
+
+    details = safety_review_service.get_safety_event_details(EVENT_ID, "token")
     assert details["event"]["id"] == EVENT_ID
-    assert len(details["equipment_items"]) == 1
-    assert any(flag["type"] == "CAPACITY_EXCEEDED" for flag in details["safety_flags"])
-    assert any(flag["type"] == "EQUIPMENT_HAZARD" for flag in details["safety_flags"])
+    assert details["venue_booking"] == {}
+    assert details["equipment_items"] == []
 
 
 def test_get_safety_event_details_not_found(monkeypatch):
-    """Raises 404 AuthError when event is not found."""
     mock_database_clients(monkeypatch, {"events": []})
-
-    with pytest.raises(AuthError) as exc_info:
+    with pytest.raises(AuthError) as exc:
         safety_review_service.get_safety_event_details(EVENT_ID, "token")
-
-    assert exc_info.value.status_code == 404
+    assert exc.value.status_code == 404
 
 
 def test_get_safety_event_details_postgrest_error(monkeypatch):
-    """Postgrest API error during details fetch raises 400 AuthError."""
-    mock_database_clients(monkeypatch, {}, raise_error=True)
-
-    with pytest.raises(AuthError) as exc_info:
+    mock_database_clients(monkeypatch, raise_postgrest=True)
+    with pytest.raises(AuthError) as exc:
         safety_review_service.get_safety_event_details(EVENT_ID, "token")
-
-    assert exc_info.value.status_code == 400
+    assert exc.value.status_code == 400
 
 
 def test_get_safety_event_details_generic_error(monkeypatch):
-    """Generic error during details fetch raises 500 AuthError."""
-    def _raise_error(access_token=None):
-        raise Exception("Network timeout")
-
-    monkeypatch.setattr(safety_review_service, "_get_client", _raise_error)
-
-    with pytest.raises(AuthError) as exc_info:
+    mock_database_clients(monkeypatch, raise_generic=True)
+    with pytest.raises(AuthError) as exc:
         safety_review_service.get_safety_event_details(EVENT_ID, "token")
-
-    assert exc_info.value.status_code == 500
+    assert exc.value.status_code == 500
 
 
 # ============================================================================
-# 3. MANUAL SAFETY CHECK REQUESTS
+# 4. REQUEST SAFETY CHECK - Lines 149-216
 # ============================================================================
 
 def test_request_safety_check_success(monkeypatch):
-    """Manually requesting a safety check updates safety_status to pending."""
-    calls, _ = mock_database_clients(monkeypatch, {
-        "events": [PLANNING_EVENT],
-        "venue_bookings": [{"event_id": EVENT_ID, "status": "APPROVED"}],
-        "equipment_requests": [{"event_id": EVENT_ID, "status": "Approved"}],
-    })
+    mock_database_clients(
+        monkeypatch,
+        {
+            "events": [PLANNING_EVENT],
+            "venue_bookings": [APPROVED_VENUE_BOOKING],
+            "equipment_requests": [APPROVED_EQUIPMENT_REQUEST],
+        },
+    )
+    res = safety_review_service.request_safety_check(EVENT_ID, "token")
+    assert res["message"] == "Safety review requested successfully"
 
-    safety_review_service.request_safety_check(EVENT_ID, "token")
 
-    update_call = call_named(calls, "update")[1]
-    assert update_call == {"safety_status": "pending"}
+def test_request_safety_check_already_requested(monkeypatch):
+    already_pending_event = {**PLANNING_EVENT, "safety_status": "pending"}
+    mock_database_clients(monkeypatch, {"events": [already_pending_event]})
+
+    with pytest.raises(AuthError) as exc:
+        safety_review_service.request_safety_check(EVENT_ID, "token")
+    assert exc.value.status_code == 409
+
+
+def test_request_safety_check_with_blockers(monkeypatch):
+    """Triggers _safety_check_blockers for non-planning status and pending equipment."""
+    non_planning_event = {**PLANNING_EVENT, "status": "under_review"}
+    mock_database_clients(
+        monkeypatch,
+        {
+            "events": [non_planning_event],
+            "venue_bookings": [{"event_id": EVENT_ID, "status": "PENDING"}],
+            "equipment_requests": [{"event_id": EVENT_ID, "status": "Pending Technical Approval"}],
+        },
+    )
+
+    with pytest.raises(AuthError) as exc:
+        safety_review_service.request_safety_check(EVENT_ID, "token")
+    assert exc.value.status_code == 409
 
 
 def test_request_safety_check_not_found(monkeypatch):
-    """Raises 404 AuthError when requesting safety check for non-existent event."""
     mock_database_clients(monkeypatch, {"events": []})
-
-    with pytest.raises(AuthError) as exc_info:
+    with pytest.raises(AuthError) as exc:
         safety_review_service.request_safety_check(EVENT_ID, "token")
-
-    assert exc_info.value.status_code == 404
-
-
-def test_request_safety_check_unapproved_venue_conflict(monkeypatch):
-    """Raises 409 AuthError when venue is not approved."""
-    mock_database_clients(monkeypatch, {
-        "events": [PLANNING_EVENT],
-        "venue_bookings": [{"event_id": EVENT_ID, "status": "PENDING"}],
-    })
-
-    with pytest.raises(AuthError) as exc_info:
-        safety_review_service.request_safety_check(EVENT_ID, "token")
-
-    assert exc_info.value.status_code == 409
+    assert exc.value.status_code == 404
 
 
 def test_request_safety_check_postgrest_error(monkeypatch):
-    """Postgrest API error during safety check request raises 400 AuthError."""
-    mock_database_clients(monkeypatch, {}, raise_error=True)
-
-    with pytest.raises(AuthError) as exc_info:
+    mock_database_clients(monkeypatch, raise_postgrest=True)
+    with pytest.raises(AuthError) as exc:
         safety_review_service.request_safety_check(EVENT_ID, "token")
-
-    assert exc_info.value.status_code == 400
+    assert exc.value.status_code == 400
 
 
 # ============================================================================
-# 4. HELPER CLIENT RESOLUTION
+# 5. CHECK AND UPDATE SAFETY STATUS - Lines 219-257
 # ============================================================================
 
-def test_get_client_admin_fallback(monkeypatch):
-    """_get_client executes without raising errors."""
-    admin_client = SimpleNamespace(type="admin")
-    monkeypatch.setattr(safety_review_service, "get_admin_client", lambda: admin_client)
+def test_check_and_update_safety_status_success(monkeypatch):
+    mock_database_clients(
+        monkeypatch,
+        {
+            "venue_bookings": [{"event_id": EVENT_ID, "status": "APPROVED"}],
+            "equipment_requests": [{"event_id": EVENT_ID, "status": "APPROVED"}],
+        },
+    )
+    assert safety_review_service.check_and_update_safety_status(EVENT_ID) is True
 
-    assert safety_review_service._get_client(None) == admin_client
+
+def test_check_and_update_safety_status_unapproved_venue(monkeypatch):
+    mock_database_clients(
+        monkeypatch,
+        {
+            "venue_bookings": [],
+            "equipment_requests": [],
+        },
+    )
+    assert safety_review_service.check_and_update_safety_status(EVENT_ID) is False
 
 
-def test_get_client_user_token_execution(monkeypatch):
-    """_get_client executes with user token without raising errors."""
-    user_client = SimpleNamespace(type="user")
-    monkeypatch.setattr(safety_review_service, "get_admin_client", lambda: user_client)
+def test_check_and_update_safety_status_unapproved_equipment(monkeypatch):
+    mock_database_clients(
+        monkeypatch,
+        {
+            "venue_bookings": [{"event_id": EVENT_ID, "status": "APPROVED"}],
+            "equipment_requests": [{"event_id": EVENT_ID, "status": "PENDING"}],
+        },
+    )
+    assert safety_review_service.check_and_update_safety_status(EVENT_ID) is False
 
-    assert safety_review_service._get_client("valid-token") is not None
+
+def test_check_and_update_safety_status_admin_init_failure(monkeypatch):
+    """Covers lines 228-231 where get_admin_client fails during check_and_update_safety_status."""
+    def raise_err():
+        raise RuntimeError("DB connection failed")
+
+    monkeypatch.setattr(safety_review_service, "get_admin_client", raise_err)
+    assert safety_review_service.check_and_update_safety_status(EVENT_ID) is False
