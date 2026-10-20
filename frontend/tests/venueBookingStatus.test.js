@@ -88,6 +88,38 @@ test('Coordinator event page shows stored affected status and retains other appr
   assert.equal(JSON.stringify({ event, bookings }), snapshot)
 })
 
+
+for (const status of ['under_review', 'change_requested', 'confirmed', 'rejected', 'completed']) {
+  for (const activeHold of [true, false]) {
+    test(`contextual booking journey: ${status}, active hold ${activeHold}`, async () => {
+      const states = [], effects = []
+      let index = 0
+      const Page = await compile('../src/pages/EventReviewDetailPage.jsx', {
+        react: { ...React, useEffect: fn => effects.push(fn), useState(initial) {
+          const position = index++
+          if (!(position in states)) states[position] = initial
+          return [states[position], value => { states[position] = typeof value === 'function' ? value(states[position]) : value }]
+        } },
+        'react-router-dom': { Link: link, useParams: () => ({ eventId: event.id }) },
+        '../eventCategories': categories,
+        '../context/AuthContext': { useAuth: () => ({ token: 'token' }) },
+        '../components/AppShell': { default: ({ children }) => React.createElement('main', null, children), __esModule: true },
+        '../api/events': {
+          getAssignedEventRequest: async () => ({ event: { ...event, status }, organiser: null }),
+          getAssignedEventClarifications: async () => ({ clarifications: [] }),
+        },
+        '../api/venues': { getVenueBookingsForEvent: async () => ({ bookings: [], has_active_venue_hold: activeHold }) },
+      })
+      Page(); effects.forEach(fn => fn())
+      await new Promise(resolve => setImmediate(resolve)); index = 0
+      const markup = renderToStaticMarkup(Page())
+      const eligible = activeHold && ['under_review', 'change_requested', 'confirmed'].includes(status)
+      assert.equal(markup.includes(`/venues/search?eventId=${event.id}`), eligible)
+      assert.equal(markup.includes('Find / Request Venue'), eligible)
+    })
+  }
+}
+
 async function renderCoordinatorPage(pageEvent, safetyDecision, bookings = []) {
   const states = [], effects = []
   let index = 0

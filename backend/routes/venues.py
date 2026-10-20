@@ -3,7 +3,6 @@
 from flask import Blueprint, g, jsonify, request
 from pydantic import ValidationError
 
-import config
 from models.profile import Role
 from models.venue import VenueCreateRequest, VenueUpdateRequest
 from models.venue_block import VenueBlockCreateRequest
@@ -16,8 +15,28 @@ from services import venue_search_service
 from services import venue_availability_service
 from models.venue_booking import VenueBookingCreateRequest, VenueBookingReviewRequest
 from services import venue_booking_service
+from models.venue_hold import VenueHoldCreateRequest
+from services import venue_hold_service
 
 venues_bp = Blueprint("venues", __name__, url_prefix="/venues")
+
+
+@venues_bp.get("/holds/events")
+@require_auth
+def list_hold_events():
+    _require_venue_staff("Only Venue Staff can select hold events.")
+    return jsonify({"events": venue_hold_service.list_hold_events(g.access_token)}), 200
+
+
+@venues_bp.post("/<venue_id>/holds")
+@require_auth
+def create_venue_hold(venue_id):
+    _require_venue_staff("Only Venue Staff can create tentative holds.")
+    try:
+        hold_request = VenueHoldCreateRequest.model_validate(request.get_json(silent=True))
+    except ValidationError as error:
+        return jsonify({"errors": _validation_messages(error)}), 400
+    return jsonify(venue_hold_service.create_hold(g.access_token, venue_id, hold_request)), 201
 
 def _require_coordinator(message: str = "Only Event Coordinators can perform this action.") -> None:
     """Require the authenticated profile to have the coordinator role."""
@@ -102,7 +121,10 @@ def update_venue(venue_id):
         venue_id,
         venue_request,
     )
-    return jsonify({"venue": venue.model_dump(mode="json")}), 200
+    response = {"venue": venue.model_dump(mode="json")}
+    if getattr(venue, "buffer_impact", None) is not None:
+        response["buffer_impact"] = venue.buffer_impact
+    return jsonify(response), 200
 
 
 @venues_bp.get("/<venue_id>/history")
@@ -197,18 +219,10 @@ def review_venue_booking(booking_id: str):
 @require_auth
 def get_venue_booking_for_event(event_id: str):
     """Return all requested venue bookings for an event."""
-    client = config.get_user_client(g.access_token)
-    
-    result = (
-        client.table("venue_bookings")
-        .select("*, venues(name)")
-        .eq("event_id", event_id)
-        .order("created_at", desc=True)
-        .execute()
-    )
-
-    # Fixed: Returns array of all bookings for the event rather than just the latest single item
-    return jsonify({"bookings": result.data or []}), 200
+    profile = auth_service.get_profile(g.access_token, g.user_id)
+    if profile.role not in {Role.VENUE_STAFF, Role.COORDINATOR}:
+        raise AuthError("Only Venue Staff and Coordinators can view venue arrangements.", status_code=403)
+    return jsonify(venue_booking_service.get_event_booking_context(g.access_token, event_id)), 200
 
 @venues_bp.get("/bookings/pending")
 @require_auth

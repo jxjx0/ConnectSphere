@@ -109,6 +109,8 @@ export default function EventReviewDetailPage() {
 
   const [submittingSafety, setSubmittingSafety] = useState(false)
   const [safetyError, setSafetyError] = useState('')
+  const [hasActiveHold, setHasActiveHold] = useState(false)
+  const [venueError, setVenueError] = useState('')
   const [safetyDecision, setSafetyDecision] = useState(null)
 
   useEffect(() => {
@@ -116,7 +118,7 @@ export default function EventReviewDetailPage() {
 
     Promise.all([
       getAssignedEventRequest(eventId, token),
-      getVenueBookingsForEvent(eventId, token).catch(() => ({ bookings: [] })),
+      getVenueBookingsForEvent(eventId, token).catch(caught => ({ bookings: [], error: caught.message })),
     ])
       .then(([data, bookingData]) => {
         if (!active) return
@@ -124,6 +126,8 @@ export default function EventReviewDetailPage() {
         setOrganiser(data.organiser)
         setSafetyDecision(data.safety_decision ?? null)
         setVenueBookings(bookingData.bookings || [])
+        setHasActiveHold(bookingData.has_active_venue_hold === true)
+        setVenueError(bookingData.error || '')
       })
       .catch((caught) => {
         if (active) setError(caught.message)
@@ -265,7 +269,14 @@ export default function EventReviewDetailPage() {
             <span className="tag">{readableStatus(event.status)}</span>
           </p>
 
-          
+          {venueError && <p role="alert">Unable to load venue arrangements. Please refresh and try again.</p>}
+          {hasActiveHold && ['under_review', 'change_requested', 'confirmed'].includes(event.status) && (
+            <div className="form-actions">
+              <Link to={`/venues/search?eventId=${encodeURIComponent(eventId)}`} className="button">
+                Find / Request Venue
+              </Link>
+            </div>
+          )}
           {event.status === 'planning' && (
             <div className="stack stack--tight">
               {['CHANGES_REQUESTED', 'REJECTED'].includes(safetyDecision?.decision) && (

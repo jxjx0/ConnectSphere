@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 
 from models.venue_search import OccupiedPeriod
+from models.venue_hold import ReservationItem
 
 
 class VenueAvailabilityRequest(OccupiedPeriod):
@@ -24,6 +25,7 @@ class OperationalBlockItem(OccupiedPeriod):
     id: UUID
     type: Literal["operational_block"] = "operational_block"
     reason: str = Field(min_length=1)
+    source_booking_id: UUID | None = Field(default=None, exclude=True)
 
 
 class ApprovedVenueBooking(OccupiedPeriod):
@@ -42,14 +44,14 @@ class ApprovedVenueBooking(OccupiedPeriod):
 
 class AvailabilitySources(BaseModel):
     operational_blocks: Literal["verified"] = "verified"
-    confirmed_bookings: Literal["unavailable"] = "unavailable"
-    tentative_holds: Literal["unavailable"] = "unavailable"
-    hold_expiry: Literal["unavailable"] = "unavailable"
-    venue_buffers: Literal["unavailable"] = "unavailable"
+    confirmed_bookings: Literal["verified", "unavailable"] = "unavailable"
+    tentative_holds: Literal["verified", "unavailable"] = "unavailable"
+    hold_expiry: Literal["verified", "unavailable"] = "unavailable"
+    venue_buffers: Literal["verified", "unavailable"] = "unavailable"
 
 
 class VenueAvailabilityResponse(OccupiedPeriod):
     venue: dict[str, str]
-    verification_status: Literal["partial"] = "partial"
+    verification_status: Literal["verified", "partial"] = "partial"
     sources: AvailabilitySources = Field(default_factory=AvailabilitySources)
-    items: list[OperationalBlockItem]
+    items: list[OperationalBlockItem | ReservationItem]

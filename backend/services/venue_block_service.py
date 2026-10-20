@@ -15,15 +15,12 @@ from services.notification_service import notify
 
 def read_operational_blocks(client, venue_id, start, end) -> list[OperationalBlockItem]:
     """Read half-open overlapping blocks through the caller's RLS client."""
-    from services.venue_availability_service import overlaps
-
     try:
-        records = (client.table("venue_blocks")
-                   .select("block_id, venue_id, start_at, end_at, block_reason")
-                   .eq("venue_id", venue_id)
-                   .lt("start_at", end.isoformat())
-                   .gt("end_at", start.isoformat())
-                   .order("start_at").execute().data)
+        records = client.rpc("get_venue_operational_blocks", {
+            "p_venue_ids": [venue_id], "p_start_at": start.isoformat(), "p_end_at": end.isoformat(),
+        }).execute().data
+        if not isinstance(records, list):
+            raise ValueError("block data must be a complete list")
         items = []
         for record in records:
             if record["venue_id"] != venue_id:
@@ -31,13 +28,14 @@ def read_operational_blocks(client, venue_id, start, end) -> list[OperationalBlo
             item = OperationalBlockItem(
                 id=record["block_id"], start_at=record["start_at"],
                 end_at=record["end_at"], reason=record["block_reason"],
+                source_booking_id=record.get("source_booking_id"),
             )
-            if overlaps(start, end, item):
+            if availability.overlaps(start, end, item):
                 items.append(item)
+        if len({item.id for item in items}) != len(items):
+            raise ValueError("duplicate blocks")
         return sorted(items, key=lambda item: item.start_at)
-    except PostgrestAPIError as error:
-        raise AuthError("Unable to load venue blocks.", status_code=502) from error
-    except (ValidationError, KeyError, TypeError) as error:
+    except (PostgrestAPIError, HTTPError, ValidationError, KeyError, TypeError, ValueError) as error:
         raise AuthError("Unable to verify venue block data.", status_code=502) from error
 
 
@@ -65,7 +63,7 @@ def check_booking_impact(access_token: str, venue_id: str, request: VenueBlockCr
         # failed creation response that encourages duplicate block submissions.
         return {"status": "unavailable", "affected_bookings": None}
 
-    updates = _mark_affected_bookings(client, venue_id, affected)
+    updates = mark_affected_bookings(client, venue_id, affected)
     for booking in affected:
         booking["status_update"] = updates[booking["booking_id"]]
         booking["notification_status"] = (
@@ -77,7 +75,7 @@ def check_booking_impact(access_token: str, venue_id: str, request: VenueBlockCr
     return {"status": "verified" if complete else "partial", "affected_bookings": affected}
 
 
-def _mark_affected_bookings(client, venue_id: str, affected: list[dict]) -> dict[str, str]:
+def mark_affected_bookings(client, venue_id: str, affected: list[dict]) -> dict[str, str]:
     """One conditional UPDATE is atomic; never overwrite a concurrently changed status."""
     identities = {booking["booking_id"] for booking in affected}
     if not identities:

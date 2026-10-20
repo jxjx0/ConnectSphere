@@ -27,9 +27,17 @@ def block(start, end, venue_id=VENUE_ID):
 
 class ReadClient:
     def __init__(self, blocks=None, venues=None, failure=None):
-        self.records = {"venue_blocks": blocks or [], "venues": venues if venues is not None else [{"id": VENUE_ID, "name": "Hall"}]}
+        self.records = {"venue_blocks": blocks or [], "venues": venues if venues is not None else [{"id": VENUE_ID, "name": "Hall", "setup_time_minutes":0, "turnaround_time_minutes":0}]}
         self.calls = []
         self.failure = failure
+
+    def rpc(self, name, params):
+        self.calls.append(("rpc", name, params))
+        def execute():
+            if name == "get_venue_operational_blocks" and self.failure == "venue_blocks":
+                raise APIError({"code": "XX000", "message": "private database details"})
+            return SimpleNamespace(data=self.records["venue_blocks"] if name == "get_venue_operational_blocks" else [])
+        return SimpleNamespace(execute=execute)
 
     def table(self, table):
         self.calls.append(("table", table))
@@ -90,21 +98,22 @@ def test_overlap_isolation_and_multidate(monkeypatch, start, end, venue_id, incl
     monkeypatch.setattr(availability.config, "get_user_client", lambda token: client)
     result = availability.get_venue_availability("token", request())
     assert bool(result.items) is included
-    assert ("eq", "venue_id", VENUE_ID) in client.calls
-    assert ("lt", "start_at", request().end_at.isoformat()) in client.calls
-    assert ("gt", "end_at", request().start_at.isoformat()) in client.calls
+    assert ("rpc", "get_venue_operational_blocks", {
+        "p_venue_ids": [VENUE_ID], "p_start_at": request().start_at.isoformat(),
+        "p_end_at": request().end_at.isoformat(),
+    }) in client.calls
     if included:
         assert result.items[0].reason == "Maintenance"
         assert result.items[0].start_at.isoformat() == start
 
 
-def test_empty_blocks_are_verified_but_overall_is_partial(monkeypatch):
+def test_empty_blocks_and_authoritative_reservations_are_verified(monkeypatch):
     monkeypatch.setattr(availability.config, "get_user_client", lambda token: ReadClient())
     result = availability.get_venue_availability("token", request()).model_dump(mode="json")
     assert result["items"] == []
-    assert result["verification_status"] == "partial"
-    assert result["sources"] == {"operational_blocks": "verified", "confirmed_bookings": "unavailable",
-                                 "tentative_holds": "unavailable", "hold_expiry": "unavailable", "venue_buffers": "unavailable"}
+    assert result["verification_status"] == "verified"
+    assert result["sources"] == {key: "verified" for key in (
+        "operational_blocks", "confirmed_bookings", "tentative_holds", "hold_expiry", "venue_buffers")}
 
 
 @pytest.mark.parametrize("table", ["venues", "venue_blocks"])
@@ -161,7 +170,7 @@ def test_route_role_allowlist(client, monkeypatch, role):
     assert response.status_code == (200 if role in {Role.VENUE_STAFF, Role.COORDINATOR} else 403)
     if response.status_code == 200:
         assert response.json["venue"]["name"] == "Hall"
-        assert response.json["verification_status"] == "partial"
+        assert response.json["verification_status"] == "verified"
 
 
 def test_route_requires_authentication(client):
@@ -185,3 +194,32 @@ def test_route_controlled_errors(client, monkeypatch, venue_id, venues, failure,
     response = client.get(f"/venues/{venue_id}/availability", query_string=RANGE, headers={"Authorization": "Bearer token"})
     assert response.status_code == status
     assert "private" not in response.get_data(as_text=True)
+
+
+@pytest.mark.parametrize("matched", [True, False])
+def test_legacy_grouping_retains_details_and_genuine_operational_blocks(monkeypatch, matched):
+    old = {**block(RANGE["start_at"], RANGE["end_at"]), "block_reason":"Approved Booking: Workshop (Classroom)"}
+    operational = {**old, "block_id":OTHER_ID, "block_reason":"Maintenance"}
+    booking = {"id":"66666666-6666-6666-6666-666666666666", "venue_id":VENUE_ID,
+               "type":"confirmed_booking", "reason":"Confirmed booking", **RANGE,
+               "legacy_blocks":[{"id":old["block_id"],"reason":old["block_reason"],**RANGE}] if matched else []}
+    client = ReadClient([old,operational]); original = client.rpc
+    client.rpc = lambda name, params: (SimpleNamespace(execute=lambda: SimpleNamespace(data=[booking]))
+                                     if name == "get_venue_reservations" else original(name, params))
+    monkeypatch.setattr(availability.config,"get_user_client",lambda _:client)
+    result = availability.get_venue_availability("token",request())
+    assert result.verification_status == "partial"
+    assert len(result.items) == (2 if matched else 3)
+    assert any(item.reason == "Maintenance" for item in result.items)
+    if matched:
+        assert str(next(item for item in result.items if item.type == "confirmed_booking").legacy_blocks[0].id) == old["block_id"]
+    assert len(client.records["venue_blocks"]) == 2
+
+
+
+def test_missing_calendar_buffers_cannot_be_verified(monkeypatch):
+    client = ReadClient(venues=[{"id":VENUE_ID,"name":"Hall"}])
+    monkeypatch.setattr(availability.config,"get_user_client",lambda _:client)
+    result = availability.get_venue_availability("token",request())
+    assert result.verification_status == "partial"
+    assert result.sources.venue_buffers == "unavailable"

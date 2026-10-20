@@ -125,7 +125,7 @@ test('returning to results rechecks availability after validating the assigned e
     calls.push(payload); return { venues: [], warnings: [] }
   }, options)
   await page.load()
-  assert.deepEqual(calls, ['event', { expected_attendance: 120, location: 'West' }])
+  assert.deepEqual(calls, ['event', { expected_attendance: 120, location: 'West', event_id: 'event-1' }])
   assert.equal(page.states[1].phase, 'success')
   const failed = pageHarness(searchHelpers.INITIAL_VENUE_SEARCH, undefined, () => assert.fail('failed event must not resume search'), {
     ...options, getEvent: async () => { throw new Error('Not assigned') },

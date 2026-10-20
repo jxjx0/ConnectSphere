@@ -36,6 +36,9 @@ def catalogue(venue_payload):
 @pytest.fixture
 def database(monkeypatch, catalogue):
     client = Mock()
+    client.rpc.side_effect = lambda name, params: (
+        blocks.select().in_().lt().gt() if name == "get_venue_operational_blocks"
+        else SimpleNamespace(execute=lambda: SimpleNamespace(data=[])))
     venues, blocks = Mock(), Mock()
     venues.select.return_value.order.return_value.execute.return_value = SimpleNamespace(data=catalogue)
     blocks.select.return_value.in_.return_value.lt.return_value.gt.return_value.execute.return_value = SimpleNamespace(data=[])
@@ -232,7 +235,7 @@ def test_all_optional_filter_combinations(database, timed, attendance, layout):
     assert venue["selected_layout"] == ("Theatre" if layout else None)
     assert venue["layout_capacity"] == (120 if layout else None)
     assert venue["availability_status"] == ("unverified" if timed else "not_checked")
-    assert database[0].table.call_count == (2 if timed else 1)
+    assert database[0].table.call_count == 1
     if not timed:
         assert result["warnings"] == []
         assert venue["requested_start"] is None
@@ -278,15 +281,15 @@ def test_untimed_search_never_reads_occupancy_or_durations(database, catalogue, 
     assert database[0].table.call_count == 1
 
 
-def test_valid_search_is_explicitly_unverified_without_dependencies(database, search_request):
+def test_search_is_unverified_when_venue_buffer_configuration_is_missing(database, search_request):
     result = venue_search_service.search_venues("caller-token", search_request)
     database[3].assert_called_once_with("caller-token")
     assert result["venues"][0]["name"] == "Community Hall"
     assert result["venues"][0]["layout_capacity"] == 120
     assert result["venues"][0]["availability_status"] == "unverified"
     assert result["venues"][0]["effective_start"] is None
-    assert len(result["warnings"]) == 2
-    assert database[0].table.call_args_list == [(("venues",),), (("venue_blocks",),)]
+    assert len(result["warnings"]) == 1
+    assert database[0].table.call_args_list == [(("venues",),)]
 
 
 @pytest.mark.parametrize("layout_capacity,overall_capacity,layout,expected", [
@@ -470,8 +473,8 @@ def test_search_consumes_venue_contract_buffers_and_exact_touching(database, cat
         venue = result["venues"][0]
         assert venue["effective_start"] == "2026-11-07T09:30:00+08:00"
         assert venue["effective_end"] == "2026-11-07T12:45:00+08:00"
-        assert venue["availability_status"] == "unverified"
-        assert len(result["warnings"]) == 1  # Booking integration is still unavailable.
+        assert venue["availability_status"] == "available"
+        assert result["warnings"] == []
 
 
 def test_verified_adapter_contract_can_be_plugged_in(database, catalogue, search_request, monkeypatch):

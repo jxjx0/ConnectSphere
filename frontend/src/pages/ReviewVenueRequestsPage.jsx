@@ -21,16 +21,30 @@ export function validateBookingRequest(booking) {
     const venue = booking?.venues
     if (!venue) return null
 
-    // 1. Operating Hours Validation (UTC/ISO HH:mm Safe)
+    // Venue hours are Singapore wall-clock times; stored booking timestamps are UTC.
     const operatingHours = venue.operating_hours
     if (operatingHours && typeof operatingHours === 'object') {
         const { open, close } = operatingHours
-        if (open && close && booking.start_at && booking.end_at) {
-            const startHHMM = new Date(booking.start_at).toISOString().substring(11, 16)
-            const endHHMM = new Date(booking.end_at).toISOString().substring(11, 16)
-
-            if (startHHMM < open || endHHMM > close) {
-                return `Requested period (${startHHMM} – ${endHHMM}) falls outside venue operating hours (${open} – ${close}).`
+        const validTime = value => typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value)
+        // Match the backend: unreadable stored hours do not impose an invented restriction.
+        if (validTime(open) && validTime(close) && open < close && booking.start_at && booking.end_at) {
+            const setup = Math.max(venue.setup_time_minutes ?? 0, booking.setup_buffer_minutes ?? 0)
+            const turnaround = Math.max(venue.turnaround_time_minutes ?? 0, booking.teardown_buffer_minutes ?? 0)
+            // Current buffers are a floor; keep any larger stored reservation, as approval does.
+            const start = Math.min(Date.parse(booking.start_at) - setup * 60000,
+                booking.effective_start_at ? Date.parse(booking.effective_start_at) : Infinity)
+            const end = Math.max(Date.parse(booking.end_at) + turnaround * 60000,
+                booking.effective_end_at ? Date.parse(booking.effective_end_at) : -Infinity)
+            if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) {
+                return 'Unable to verify the occupied booking period. Please refresh and check the booking.'
+            }
+            const singaporeStart = new Date(start + 8 * 3600000).toISOString()
+            const singaporeEnd = new Date(end + 8 * 3600000).toISOString()
+            const date = singaporeStart.slice(0, 10)
+            const opensAt = Date.parse(`${date}T${open}:00+08:00`)
+            const closesAt = Date.parse(`${date}T${close}:00+08:00`)
+            if (start < opensAt || end > closesAt) {
+                return `Occupied period (${singaporeStart.slice(11, 16)} – ${singaporeEnd.slice(11, 16)} Singapore time), including setup and turnaround, falls outside venue operating hours (${open} – ${close}).`
             }
         }
     }

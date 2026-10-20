@@ -415,6 +415,9 @@ def test_saved_block_is_consumed_by_timed_search(monkeypatch, venue_payload, sea
             assert name in {"venues", "venue_blocks"}
             return Query(name)
 
+        def rpc(self, name, params):
+            return SimpleNamespace(execute=lambda: SimpleNamespace(data=stored if name == "get_venue_operational_blocks" else []))
+
     monkeypatch.setattr("config.get_user_client", lambda token: Client())
     request = VenueBlockCreateRequest(start_at="2026-11-07T09:00:00+08:00", end_at="2026-11-07T10:00:00+08:00", block_reason="Maintenance")
     venue_block_service.create_venue_block_outcome("token", "hall", request, VENUE_STAFF_PROFILE.id)

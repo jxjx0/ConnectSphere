@@ -1,5 +1,7 @@
 """Venue Staff reviewing booking requests: validation, calendar locking and notifications."""
 
+from types import SimpleNamespace
+
 import pytest
 from postgrest import APIError as PostgrestAPIError
 
@@ -24,6 +26,7 @@ def pending_booking(**overrides):
         "effective_end_at": "2026-10-22T04:45:00+00:00",
         "venues": {
             "name": "Hall",
+            "setup_time_minutes": 30, "turnaround_time_minutes": 45,
             "layouts": [{"name": "Banquet", "capacity": 100}],
             "operating_hours": {"open": "08:00", "close": "22:00"},
         },
@@ -48,6 +51,13 @@ def database(monkeypatch, notifications):
         ("venue_blocks", "select"): [],
         ("venue_blocks", "insert"): lambda query: [{"block_id": "blk-1", **query.payload}],
     })
+    database.rpc_calls = []
+
+    def rpc(name, params):
+        database.rpc_calls.append((name, params))
+        return SimpleNamespace(execute=lambda: SimpleNamespace(data=[]))
+
+    database.client.rpc = rpc
     monkeypatch.setattr(config, "get_user_client", lambda token: database.client)
     return database
 
@@ -169,12 +179,14 @@ def test_approval_locks_the_effective_period_linked_to_the_booking(database, not
 
     (block_insert,) = database.calls_to("venue_blocks", "insert")
     assert block_insert.payload["booking_id"] == "bk-1"
+    assert block_insert.payload["source_booking_id"] == "bk-1"
     assert block_insert.payload["venue_id"] == "v-1"
     assert block_insert.payload["start_at"] == "2026-10-22T01:30:00+00:00"
     assert block_insert.payload["end_at"] == "2026-10-22T04:45:00+00:00"
     assert block_insert.payload["block_reason"].startswith("Approved Booking: Party")
     assert approved["status"] == "APPROVED"
     assert approved["reviewed_by"] == "staff-1"
+    assert database.calls.index(block_insert) < database.calls.index(database.calls_to("venue_bookings", "update")[0])
     ((args, kwargs),) = notifications
     assert args[:2] == ("coord-1", "venue_booking_approved")
 
@@ -188,3 +200,31 @@ def test_rejection_records_the_reason_and_notifies(database, notifications):
     ((args, kwargs),) = notifications
     assert args[:2] == ("coord-1", "venue_booking_rejected")
     assert "Under renovation" in kwargs["body"]
+
+
+def test_approval_recalculates_current_buffers_before_checking_hours(database):
+    booking = pending_booking()
+    booking["venues"] = {**booking["venues"], "setup_time_minutes": 150}
+    database.responses[("venue_bookings", "select")] = [booking]
+    with pytest.raises(AuthError) as caught:
+        review()
+    assert caught.value.status_code == 400
+    assert "operating hours" in caught.value.message
+    assert database.calls_to("venue_blocks", "insert") == []
+    assert database.calls_to("venue_bookings", "update") == []
+
+
+def test_approval_expands_and_persists_occupancy_without_changing_event_times(database):
+    booking = pending_booking()
+    booking["event_id"] = "evt-1"
+    booking["venues"] = {**booking["venues"], "setup_time_minutes": 60, "turnaround_time_minutes": 90}
+    database.responses[("venue_bookings", "select")] = [booking]
+    review()
+    block, = database.calls_to("venue_blocks", "insert")
+    update, = database.calls_to("venue_bookings", "update")
+    assert block.payload["start_at"] == update.payload["effective_start_at"] == "2026-10-22T01:00:00+00:00"
+    assert block.payload["end_at"] == update.payload["effective_end_at"] == "2026-10-22T05:30:00+00:00"
+    assert update.payload["setup_buffer_minutes"] == 60
+    assert update.payload["teardown_buffer_minutes"] == 90
+    assert "start_at" not in update.payload and "end_at" not in update.payload
+    assert database.rpc_calls[0][1]["p_exclude_event_id"] == "evt-1"
