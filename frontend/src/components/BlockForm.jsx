@@ -170,7 +170,7 @@ export default function BlockForm({ venue, onClose, onCreated }) {
         <header className="venue-block-dialog__header">
           <h2 className="venue-block-dialog__title" id="blockVenueTitle">Block / Tentative Hold</h2>
         </header>
-        <p><strong>Venue:</strong> {venue.name}</p>
+        <p><strong>Selected venue:</strong> {venue.name}</p>
 
         <fieldset className="venue-block-dialog__types" disabled={submitting}>
           <legend>Type</legend>
@@ -186,12 +186,13 @@ export default function BlockForm({ venue, onClose, onCreated }) {
           </div>
         </fieldset>
         {isHold && <div className="field">
-          <label htmlFor="holdEvent">Event</label>
-          <select id="holdEvent" required disabled={submitting || !events} value={eventId}
+          <label htmlFor="holdEvent">Hold this venue for which event?</label>
+          <select id="holdEvent" aria-describedby="holdEventHint" required disabled={submitting || !events} value={eventId}
             onChange={event => setEventId(event.target.value)}>
             <option value="">{events ? 'Select an event' : 'Loading events…'}</option>
             {events?.map(event => <option key={event.id} value={event.id}>{event.name}</option>)}
           </select>
+          <p id="holdEventHint" className="field__hint">Choose the event that will use this venue. Its Coordinator will be notified.</p>
           {events?.length === 0 && <p className="note">No upcoming events with an assigned Coordinator.</p>}
           {eventsError && <p role="alert" className="field__error">{eventsError}</p>}
         </div>}

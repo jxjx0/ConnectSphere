@@ -253,7 +253,7 @@ test('modal has an accessible title, two visible type choices and five operation
   assert.equal(dialog.props['aria-labelledby'], 'blockVenueTitle')
   const html = page.html()
   assert.match(html, /id="blockVenueTitle">Block \/ Tentative Hold/)
-  assert.match(html, /<strong>Venue:<\/strong> Grand Hall/)
+  assert.match(html, /<strong>Selected venue:<\/strong> Grand Hall/)
   assert.ok(!html.includes('Venue ID'))
   assert.ok(!html.includes('value="hall"'))
   assert.ok(!html.includes('value="Grand Hall"'))
