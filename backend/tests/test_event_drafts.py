@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
+from postgrest import APIError as PostgrestAPIError
 from pydantic import ValidationError
 
 import config
@@ -10,6 +11,7 @@ from models.event import Event, EventDraftRequest, EventStatus, EventSubmitReque
 from models.profile import Profile, Role
 from services import auth_service, event_service
 from services.auth_service import AuthError
+from fake_supabase import FakeDatabase
 
 DRAFT_ID = "44444444-4444-4444-4444-444444444444"
 
@@ -35,6 +37,25 @@ def _in_days(days: int, hours: int = 0) -> str:
 
 
 def complete_event() -> dict:
+    """A request body for submitting a draft: the event and its sessions."""
+    return {
+        "name": "Annual Client Summit",
+        "description": "A full-day summit for our regional clients.",
+        "purpose": "Client relationship building",
+        "category": "conference",
+        "sessions": [
+            {
+                "name": "Main programme",
+                "start_time": _in_days(30),
+                "end_time": _in_days(30, hours=8),
+                "expected_attendance": 120,
+            }
+        ],
+    }
+
+
+def complete_event_row() -> dict:
+    """A submitted events row; the database fills the times from the sessions."""
     return {
         "name": "Annual Client Summit",
         "description": "A full-day summit for our regional clients.",
@@ -58,7 +79,7 @@ UNDER_REVIEW_ROW = {
     "id": DRAFT_ID,
     "organiser_id": ORGANISER.id,
     "status": "under_review",
-    **complete_event(),
+    **complete_event_row(),
 }
 
 
@@ -158,8 +179,17 @@ def test_creating_a_draft_sets_the_organiser_and_status_itself(monkeypatch):
     assert inserted["status"] == "draft"
 
 
-def test_submitting_changes_only_my_draft_to_under_review(monkeypatch):
-    calls = fake_events_table(monkeypatch, [UNDER_REVIEW_ROW])
+def test_submitting_saves_the_sessions_then_changes_only_my_draft(monkeypatch):
+    database = FakeDatabase({
+        ("rpc:replace_draft_sessions", "rpc"): lambda query: [
+            {"id": "session-1", "event_id": DRAFT_ID, **session}
+            for session in query.payload["p_sessions"]
+        ],
+        ("events", "update"): [UNDER_REVIEW_ROW],
+    })
+    monkeypatch.setattr(
+        config, "get_user_client", lambda access_token: database.client
+    )
 
     event = event_service.submit_draft(
         "organiser-token",
@@ -168,10 +198,40 @@ def test_submitting_changes_only_my_draft_to_under_review(monkeypatch):
         EventSubmitRequest(**complete_event()),
     )
 
-    assert call_named(calls, "update")[1]["status"] == "under_review"
-    assert ("eq", "organiser_id", ORGANISER.id) in calls
-    assert ("eq", "status", "draft") in calls
+    saved, update = database.calls
+    assert (saved.table, saved.payload["p_event_id"]) == (
+        "rpc:replace_draft_sessions",
+        DRAFT_ID,
+    )
+    assert update.payload["status"] == "under_review"
+    assert "sessions" not in update.payload
+    assert ("eq", "organiser_id", ORGANISER.id) in update.filters
+    assert ("eq", "status", "draft") in update.filters
     assert event.status is EventStatus.UNDER_REVIEW
+    assert [session.name for session in event.sessions] == ["Main programme"]
+
+
+def test_sessions_for_someone_elses_draft_are_not_found(monkeypatch):
+    """Row-level security refuses the sessions; answer 404 like any missing draft."""
+    database = FakeDatabase({
+        ("rpc:replace_draft_sessions", "rpc"): PostgrestAPIError(
+            {"message": "new row violates row-level security", "code": "42501"}
+        ),
+    })
+    monkeypatch.setattr(
+        config, "get_user_client", lambda access_token: database.client
+    )
+
+    with pytest.raises(AuthError) as caught:
+        event_service.submit_draft(
+            "organiser-token",
+            ORGANISER.id,
+            DRAFT_ID,
+            EventSubmitRequest(**complete_event()),
+        )
+
+    assert caught.value.status_code == 404
+    assert database.calls_to("events", "update") == []
 
 
 def test_deleting_touches_only_my_draft(monkeypatch):

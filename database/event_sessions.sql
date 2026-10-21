@@ -122,6 +122,35 @@ from public.events;
 -- Follow-up (applied separately): the trigger function is not an API call.
 revoke execute on function public.sync_event_from_sessions() from public, anon, authenticated;
 
+-- T7-273: replace all sessions of one of the caller's drafts, in one
+-- transaction. SECURITY INVOKER: the event_sessions policies still apply,
+-- so this only works on the signed-in Organiser's own draft.
+create or replace function public.replace_draft_sessions(p_event_id uuid, p_sessions jsonb)
+returns setof public.event_sessions
+language plpgsql
+security invoker
+set search_path to ''
+as $$
+begin
+    delete from public.event_sessions where event_id = p_event_id;
+    return query
+    insert into public.event_sessions (
+        event_id, name, start_time, end_time, expected_attendance,
+        location_preference, layout_preference, equipment_requirements)
+    select p_event_id, s.name, s.start_time, s.end_time, s.expected_attendance,
+           s.location_preference, s.layout_preference, s.equipment_requirements
+    from jsonb_to_recordset(p_sessions) as s(
+        name text, start_time timestamptz, end_time timestamptz,
+        expected_attendance integer, location_preference text,
+        layout_preference text, equipment_requirements text)
+    returning *;
+end;
+$$;
+
+revoke execute on function public.replace_draft_sessions(uuid, jsonb) from public, anon;
+grant execute on function public.replace_draft_sessions(uuid, jsonb) to authenticated;
+
 -- Undo (only if this migration must be reversed):
+-- drop function public.replace_draft_sessions(uuid, jsonb);
 -- drop table public.event_sessions;
 -- drop function public.sync_event_from_sessions();
