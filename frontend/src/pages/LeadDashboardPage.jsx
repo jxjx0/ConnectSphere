@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import AppShell from '../components/AppShell'
+import { formatSessionSummary } from '../eventDisplay'
 import {
   getLeadCoordinatorEvents,
   getCoordinatorsList,
@@ -410,9 +411,9 @@ export default function LeadDashboardPage() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Expected Attendance</label>
+                  <label className="form-label">Sessions and attendance</label>
                   <p className="form-input" style={{ background: '#f5f5f5' }}>
-                    {selectedEvent.expected_attendance ?? 0}
+                    {formatSessionSummary(selectedEvent)}
                   </p>
                 </div>
 

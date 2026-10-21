@@ -20,6 +20,9 @@ def get_lead_coordinator_events(access_token: str):
                     id,
                     full_name
                 ),
+                sessions:event_sessions (
+                    id
+                ),
                 venue_bookings (
                     venue_id,
                     venue:venues (

@@ -18,6 +18,18 @@ test('an event shows its saved sessions', () => {
   assert.deepEqual(sessionsOf({ ...EVENT, sessions }), sessions)
 })
 
+test('sessions are shown earliest first, unscheduled ones last', () => {
+  const sessions = [
+    { id: 's1', name: 'Later', start_time: '2026-12-07T06:00:00Z' },
+    { id: 's2', name: 'Unscheduled', start_time: null },
+    { id: 's3', name: 'Earlier', start_time: '2026-12-07T01:00:00Z' },
+  ]
+  assert.deepEqual(
+    sessionsOf({ ...EVENT, sessions }).map((session) => session.name),
+    ['Earlier', 'Later', 'Unscheduled'],
+  )
+})
+
 test('an event without sessions shows its own details as one session', () => {
   const [session] = sessionsOf({ ...EVENT, sessions: [] })
   assert.equal(session.name, 'Main session')

@@ -12,11 +12,13 @@ import {
 
 } from '../api/events'
 import AppShell from '../components/AppShell'
+import SessionList from '../components/SessionList'
 import { useAuth } from '../context/AuthContext'
 import { categoryLabel } from '../eventCategories'
 import {
   formatDateRange,
   formatDateTime,
+  formatSessionSummary,
   optional,
   readableStatus,
 } from '../eventDisplay'
@@ -275,7 +277,7 @@ export default function EventReviewDetailPage() {
             <span className="record-head__dot" aria-hidden="true">·</span>
             {formatDateRange(event.start_time, event.end_time)}
             <span className="record-head__dot" aria-hidden="true">·</span>
-            {event.expected_attendance} expected
+            {formatSessionSummary(event)}
             <span className="record-head__dot" aria-hidden="true">·</span>
             <span className="tag">{readableStatus(event.status)}</span>
           </p>
@@ -532,14 +534,13 @@ export default function EventReviewDetailPage() {
             <Answer label="Purpose" value={event.purpose} />
             <Answer label="Description" value={event.description} />
             <Answer label="Category" value={categoryLabel(event.category, event.category_other)} />
-            <Answer label="Preferred dates" value={formatDateRange(event.start_time, event.end_time)} />
-            <Answer label="Estimated attendance" value={`${event.expected_attendance} people`} />
-            <Answer label="Preferred location" value={event.location_preference} />
-            <Answer label="Room layout" value={event.layout_preference} />
-            <Answer label="Equipment needs" value={event.equipment_requirements} />
             <Answer label="Accessibility needs" value={event.accessibility_requirements} />
           </dl>
         </section>
+
+        {/* Time, attendance, location, layout and equipment belong to each
+            session (T7-277). */}
+        <SessionList event={event} />
 
         {/* Shown while the change is pending, including while a clarification
             is open, so the Coordinator can see what they asked about. */}

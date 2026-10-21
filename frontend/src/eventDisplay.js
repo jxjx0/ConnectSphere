@@ -44,11 +44,18 @@ export function formatDateRange(start, end) {
   return `${formatDateTime(start)} – ${formatDateTime(end)}`
 }
 
-// An event's sessions, as saved. Events created before sessions existed
-// (or by older code) have none; their own time and needs are shown as a
-// single session so the page never comes up blank.
+// An event's sessions, as saved, earliest first (unscheduled ones last).
+// Events created before sessions existed (or by older code) have none;
+// their own time and needs are shown as a single session so the page never
+// comes up blank.
 export function sessionsOf(event) {
-  if (event.sessions?.length) return event.sessions
+  if (event.sessions?.length) {
+    return [...event.sessions].sort((first, second) => {
+      if (!first.start_time) return second.start_time ? 1 : 0
+      if (!second.start_time) return -1
+      return new Date(first.start_time) - new Date(second.start_time)
+    })
+  }
   return [
     {
       id: `${event.id}-main`,

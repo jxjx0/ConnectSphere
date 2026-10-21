@@ -24,7 +24,9 @@ def get_unassigned_events_queue(access_token: str = None):
                 "id, name, description, purpose, category, "
                 "start_time, end_time, expected_attendance, "
                 "location_preference, layout_preference, accessibility_requirements, "
-                "equipment_requirements, status, coordinator_id, created_at"
+                "equipment_requirements, status, coordinator_id, created_at, "
+                # Only the ids: the queue shows how many sessions there are.
+                "sessions:event_sessions(id)"
             )
             .is_("coordinator_id", "null")
             .neq("status", "draft")

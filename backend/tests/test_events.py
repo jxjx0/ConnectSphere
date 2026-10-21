@@ -773,6 +773,46 @@ def test_coordinator_list_includes_assigned_events_of_every_status(monkeypatch):
     assert events[1].equipment_requests == [{"status": "Approved"}]
 
 
+def test_coordinator_list_carries_each_events_session_count(monkeypatch):
+    assigned = EVENT_RESPONSE.model_dump(mode="json")
+    assigned["sessions"] = [{"id": "s1"}, {"id": "s2"}]
+    fake_client(monkeypatch, {"events": [assigned]}, [])
+
+    [event] = event_service.list_assigned_events(
+        "coordinator-token", COORDINATOR_PROFILE.id
+    )
+
+    assert len(event.sessions) == 2
+    assert event.expected_attendance == 120
+
+
+def test_coordinator_detail_includes_the_events_sessions(monkeypatch):
+    assigned = EVENT_RESPONSE.model_dump(mode="json")
+    assigned["coordinator_id"] = COORDINATOR_PROFILE.id
+    fake_client(
+        monkeypatch,
+        {
+            "events": [assigned],
+            "event_sessions": [session_row(EVENT_RESPONSE.id, "Breakout A")],
+        },
+        [],
+    )
+
+    event = event_service.get_assigned_event(
+        "coordinator-token", COORDINATOR_PROFILE.id, EVENT_RESPONSE.id
+    )
+
+    assert [session.name for session in event.sessions] == ["Breakout A"]
+
+
+def test_lead_overview_keeps_each_events_sessions():
+    [event] = Event.format_lead_overview(
+        [{"id": "event-1", "status": "planning", "sessions": [{"id": "s1"}]}]
+    )
+
+    assert event["sessions"] == [{"id": "s1"}]
+
+
 def test_coordinator_detail_filters_by_id_and_assignment(monkeypatch):
     calls = []
     assigned = EVENT_RESPONSE.model_dump(mode="json")

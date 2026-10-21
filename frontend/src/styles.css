@@ -1338,6 +1338,9 @@ a:hover {
   font-size: 0.75rem;
   font-weight: 500;
   color: var(--ink-muted);
+  /* A status label stays on one line; in a narrow table column it would
+     otherwise wrap and spill outside its rounded border. */
+  white-space: nowrap;
 }
 
 .form-card {

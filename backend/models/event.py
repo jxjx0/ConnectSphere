@@ -506,23 +506,30 @@ class Event(BaseModel):
                 "coordinator_id": evt.get("coordinator_id"),
                 "coordinator_name": coordinator.get("full_name", "Unassigned"),
                 "expected_attendance": evt.get("expected_attendance", 0),
+                "sessions": evt.get("sessions") or [],
             })
 
         return formatted_events
 
 
 class EventReviewSummary(BaseModel):
-    """The fields needed to render the Coordinator's review list."""
+    """The fields needed to render the Coordinator's review list.
+
+    sessions holds only each session's id: the list shows how many there
+    are, not their details.
+    """
 
     id: str
     name: str
     start_time: datetime
     end_time: datetime
+    expected_attendance: int | None = None
     status: EventStatus
     safety_status: str = "not_requested"
     equipment_requirements: str | None = None
     venue_bookings: list[dict] = Field(default_factory=list)
     equipment_requests: list[dict] = Field(default_factory=list)
+    sessions: list[dict] = Field(default_factory=list)
 
 
 class EventOrganiser(BaseModel):

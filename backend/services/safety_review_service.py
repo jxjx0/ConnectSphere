@@ -38,7 +38,7 @@ def get_safety_review_queue(access_token: str) -> list[dict]:
 
         response = (
             client.table("events")
-            .select("*, coordinator:coordinator_id!left(id, full_name, role)")
+            .select("*, coordinator:coordinator_id!left(id, full_name, role), sessions:event_sessions(id)")
             .eq("status", "awaiting_safety_check")  # 👈 Updated to check event status
             .order("updated_at", desc=False)         # 👈 FIFO queue based on when it reached this status
             .execute()
@@ -58,7 +58,7 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
         # 1. Fetch Event with Left-Joined Coordinator
         event_res = (
             client.table("events")
-            .select("*, coordinator:coordinator_id!left(id, full_name, role, contact_number)")
+            .select("*, coordinator:coordinator_id!left(id, full_name, role, contact_number), sessions:event_sessions(*)")
             .eq("id", event_id)
             .execute()
         )

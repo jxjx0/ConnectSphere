@@ -594,7 +594,7 @@ def list_assigned_events(
     try:
         result = (
             client.table("events")
-            .select("id, name, start_time, end_time, status, safety_status, equipment_requirements, venue_bookings(status), equipment_requests(status)")
+            .select("id, name, start_time, end_time, expected_attendance, status, safety_status, equipment_requirements, venue_bookings(status), equipment_requests(status), sessions:event_sessions(id)")
             .eq("coordinator_id", coordinator_id)
             .neq("status", EventStatus.DRAFT.value)
             .order("start_time")
@@ -625,7 +625,8 @@ def get_assigned_event(
     if not result.data:
         raise AuthError("Event request was not found.", status_code=404)
     event = Event(**result.data[0])
-    return _with_change_request(client, [event])[0]
+    event = _with_change_request(client, [event])[0]
+    return _with_sessions(client, [event])[0]
 
 
 def review_assigned_change_request(

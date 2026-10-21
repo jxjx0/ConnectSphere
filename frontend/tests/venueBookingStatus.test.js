@@ -104,6 +104,7 @@ test('Coordinator event page shows stored affected status and retains other appr
     '../eventCategories': categories,
     '../context/AuthContext': { useAuth: () => ({ token: 'token' }) },
     '../components/AppShell': { default: ({ children }) => React.createElement('main', null, children), __esModule: true },
+    '../components/SessionList': { default: () => null, __esModule: true },
     '../api/events': {
       getAssignedEventRequest: async () => ({ event, organiser: null }),
       getEventActivityLogs: async () => ({ logs: [] }),
@@ -157,6 +158,7 @@ for (const status of ['under_review', 'change_requested', 'confirmed', 'rejected
         '../eventCategories': categories,
         '../context/AuthContext': { useAuth: () => ({ token: 'token' }) },
         '../components/AppShell': { default: ({ children }) => React.createElement('main', null, children), __esModule: true },
+    '../components/SessionList': { default: () => null, __esModule: true },
         '../api/events': {
           getAssignedEventRequest: async () => ({ event: { ...event, status }, organiser: null }),
           getAssignedEventClarifications: async () => ({ clarifications: [] }),
@@ -187,6 +189,7 @@ async function renderCoordinatorPage(pageEvent, safetyDecision, bookings = []) {
     '../eventCategories': categories,
     '../context/AuthContext': { useAuth: () => ({ token: 'token' }) },
     '../components/AppShell': { default: ({ children }) => React.createElement('main', null, children), __esModule: true },
+    '../components/SessionList': { default: () => null, __esModule: true },
     '../api/events': {
       getAssignedEventRequest: async () => ({ event: pageEvent, organiser: null, safety_decision: safetyDecision }),
       getEventActivityLogs: async () => ({ logs: [] }),
