@@ -299,8 +299,11 @@ def test_opening_a_draft_returns_its_sessions_in_time_order(monkeypatch):
     draft = event_service.get_my_draft("organiser-token", ORGANISER.id, DRAFT_ID)
 
     read = database.calls_to("event_sessions", "select")[0]
-    assert ("eq", "event_id", DRAFT_ID) in read.filters
-    assert read.filters[1:] == [("order", "start_time"), ("order", "created_at")]
+    assert read.filters == [
+        ("in_", "event_id", [DRAFT_ID]),
+        ("order", "start_time"),
+        ("order", "created_at"),
+    ]
     assert [session.name for session in draft.sessions] == ["Morning"]
 
 

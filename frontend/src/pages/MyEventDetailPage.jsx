@@ -7,12 +7,14 @@ import {
   respondToEventClarification,
 } from '../api/events'
 import AppShell from '../components/AppShell'
+import SessionList from '../components/SessionList'
 import { useAuth } from '../context/AuthContext'
 import { categoryLabel } from '../eventCategories'
 import {
   CHANGEABLE_STATUSES,
   formatDateRange,
   formatDateTime,
+  formatSessionSummary,
   optional,
   progressFor,
   readableStatus,
@@ -114,7 +116,7 @@ export default function MyEventDetailPage() {
             <span className="record-head__dot" aria-hidden="true">
               ·
             </span>
-            {event.expected_attendance} expected
+            {formatSessionSummary(event)}
           </p>
         </header>
 
@@ -211,28 +213,17 @@ export default function MyEventDetailPage() {
           <dl className="answers">
             <Answer label="Purpose" value={event.purpose} wide />
             <Answer label="Description" value={event.description} wide />
-            <div className="answers--paired">
-              <Answer
-                label="Preferred location"
-                value={event.location_preference}
-              />
-              <Answer
-                label="Preferred layout"
-                value={event.layout_preference}
-              />
-            </div>
             <Answer
               label="Accessibility requirements"
               value={event.accessibility_requirements}
               wide
             />
-            <Answer
-              label="Equipment requirements"
-              value={event.equipment_requirements}
-              wide
-            />
           </dl>
         </section>
+
+        {/* Time, attendance, location, layout and equipment belong to
+            each session (T7-276). */}
+        <SessionList event={event} />
 
         <section className="stack stack--tight">
           {event.change_request && (

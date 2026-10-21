@@ -44,6 +44,36 @@ export function formatDateRange(start, end) {
   return `${formatDateTime(start)} – ${formatDateTime(end)}`
 }
 
+// An event's sessions, as saved. Events created before sessions existed
+// (or by older code) have none; their own time and needs are shown as a
+// single session so the page never comes up blank.
+export function sessionsOf(event) {
+  if (event.sessions?.length) return event.sessions
+  return [
+    {
+      id: `${event.id}-main`,
+      name: 'Main session',
+      start_time: event.start_time,
+      end_time: event.end_time,
+      expected_attendance: event.expected_attendance,
+      location_preference: event.location_preference,
+      layout_preference: event.layout_preference,
+      equipment_requirements: event.equipment_requirements,
+    },
+  ]
+}
+
+// "4 sessions · up to 300 attendees". The event's expected_attendance is
+// kept by the database as its largest session's attendance.
+export function formatSessionSummary(event) {
+  const count = sessionsOf(event).length
+  const sessions = count === 1 ? '1 session' : `${count} sessions`
+  const attendees = count === 1
+    ? `${event.expected_attendance} attendees`
+    : `up to ${event.expected_attendance} attendees`
+  return `${sessions} · ${attendees}`
+}
+
 function formatDate(date) {
   return `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`
 }

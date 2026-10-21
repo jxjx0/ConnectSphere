@@ -4,7 +4,11 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { getMyDrafts, getMyEvents } from '../api/events'
 import AppShell from '../components/AppShell'
 import { useAuth } from '../context/AuthContext'
-import { formatDateTime } from '../eventDisplay'
+import {
+  formatDateRange,
+  formatDateTime,
+  formatSessionSummary,
+} from '../eventDisplay'
 import {
   ORGANISER_EVENT_TABS,
   organiserEventStatusLabel,
@@ -111,7 +115,7 @@ export default function MyEventsPage() {
                       <span className="choice__description">
                         {isDraft
                           ? `Last edited ${formatDateTime(item.updated_at)}`
-                          : <>{formatDateTime(item.start_time)}{' · '}<span className="tag">{organiserEventStatusLabel(item.status, tab.id)}</span></>}
+                          : <>{formatDateRange(item.start_time, item.end_time)}{' · '}{formatSessionSummary(item)}{' · '}<span className="tag">{organiserEventStatusLabel(item.status, tab.id)}</span></>}
                       </span>
                     </span>
                     <span className="choice__arrow" aria-hidden="true">→</span>

@@ -235,7 +235,7 @@ def list_my_events(access_token: str, organiser_id: str) -> list[Event]:
         raise _database_error(error) from error
 
     events = [Event(**event) for event in result.data]
-    return _with_coordinator_names(client, events)
+    return _with_sessions(client, _with_coordinator_names(client, events))
 
 
 def _with_coordinator_names(client, events: list[Event]) -> list[Event]:
@@ -297,7 +297,8 @@ def get_my_event(access_token: str, organiser_id: str, event_id: str) -> Event:
     if not result.data:
         raise AuthError("Event request was not found.", status_code=404)
     event = _with_coordinator_names(client, [Event(**result.data[0])])[0]
-    return _with_change_request(client, [event])[0]
+    event = _with_change_request(client, [event])[0]
+    return _with_sessions(client, [event])[0]
 
 
 def _with_change_request(client, events: list[Event]) -> list[Event]:
@@ -457,19 +458,25 @@ def get_my_draft(access_token: str, organiser_id: str, draft_id: str) -> Event:
 
     if not result.data:
         raise AuthError(DRAFT_NOT_FOUND, status_code=404)
-    draft = Event(**result.data[0])
-    return draft.model_copy(
-        update={"sessions": _read_sessions(client, draft.id)}
-    )
+    return _with_sessions(client, [Event(**result.data[0])])[0]
 
 
-def _read_sessions(client, event_id: str) -> list[EventSession]:
-    """Return an event's sessions, earliest first; unscheduled ones last."""
+def _with_sessions(client, events: list[Event]) -> list[Event]:
+    """Attach each event's sessions, earliest first; unscheduled ones last.
+
+    One query for the whole list, so a page of events costs one extra read
+    rather than one per event. Row-level security on event_sessions follows
+    the events rules, so a caller only ever gets sessions of events they can
+    already see.
+    """
+    if not events:
+        return events
+
     try:
         result = (
             client.table("event_sessions")
             .select("*")
-            .eq("event_id", event_id)
+            .in_("event_id", [event.id for event in events])
             .order("start_time")
             .order("created_at")
             .execute()
@@ -477,7 +484,13 @@ def _read_sessions(client, event_id: str) -> list[EventSession]:
     except PostgrestAPIError as error:
         raise _database_error(error) from error
 
-    return [EventSession(**row) for row in result.data]
+    sessions_by_event: dict[str, list[EventSession]] = {}
+    for row in result.data:
+        sessions_by_event.setdefault(row["event_id"], []).append(EventSession(**row))
+    return [
+        event.model_copy(update={"sessions": sessions_by_event.get(event.id, [])})
+        for event in events
+    ]
 
 
 def _update_my_draft(client, organiser_id: str, draft_id: str, values: dict):

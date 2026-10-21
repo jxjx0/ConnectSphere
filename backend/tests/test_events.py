@@ -521,6 +521,71 @@ def test_listing_my_events_filters_to_me_and_skips_drafts(monkeypatch):
     assert len(events) == 1
 
 
+def session_row(event_id: str, name: str) -> dict:
+    return {"id": f"{event_id}-{name}", "event_id": event_id, "name": name}
+
+
+def test_my_events_come_back_with_their_own_sessions(monkeypatch):
+    """One read for every event's sessions, then each event gets only its own."""
+    other = {**EVENT_RESPONSE.model_dump(mode="json"), "id": "other-event"}
+    calls = []
+    fake_client(
+        monkeypatch,
+        {
+            "events": [EVENT_RESPONSE.model_dump(mode="json"), other],
+            "event_sessions": [
+                session_row(EVENT_RESPONSE.id, "Main programme"),
+                session_row(EVENT_RESPONSE.id, "Breakout A"),
+                session_row("other-event", "Only session"),
+            ],
+        },
+        calls,
+    )
+
+    events = event_service.list_my_events(
+        "organiser-token", ORGANISER_PROFILE.id
+    )
+
+    assert ("in", "event_id", (EVENT_RESPONSE.id, "other-event")) in calls
+    assert [session.name for session in events[0].sessions] == [
+        "Main programme",
+        "Breakout A",
+    ]
+    assert [session.name for session in events[1].sessions] == ["Only session"]
+
+
+def test_an_event_without_sessions_has_an_empty_list(monkeypatch):
+    """Events created by older code have no sessions; that must not fail."""
+    fake_client(
+        monkeypatch,
+        {"events": [EVENT_RESPONSE.model_dump(mode="json")]},
+        [],
+    )
+
+    event = event_service.get_my_event(
+        "organiser-token", ORGANISER_PROFILE.id, EVENT_RESPONSE.id
+    )
+
+    assert event.sessions == []
+
+
+def test_opening_one_of_my_events_includes_its_sessions(monkeypatch):
+    fake_client(
+        monkeypatch,
+        {
+            "events": [EVENT_RESPONSE.model_dump(mode="json")],
+            "event_sessions": [session_row(EVENT_RESPONSE.id, "Main programme")],
+        },
+        [],
+    )
+
+    event = event_service.get_my_event(
+        "organiser-token", ORGANISER_PROFILE.id, EVENT_RESPONSE.id
+    )
+
+    assert [session.name for session in event.sessions] == ["Main programme"]
+
+
 def test_an_assigned_coordinators_name_replaces_their_id(monkeypatch):
     assigned = EVENT_RESPONSE.model_dump(mode="json")
     assigned["coordinator_id"] = COORDINATOR_PROFILE.id
