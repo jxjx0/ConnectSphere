@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { useAuth } from '../context/AuthContext'
-import { createVenueBlock } from '../api/venues'
-import { venueBlockPayload } from '../venueBlock.js'
+import { createVenueBlock, createVenueHold, getVenueHoldEvents } from '../api/venues'
+import { venueBlockPayload, venueHoldPayload } from '../venueBlock.js'
 import { formatDateRange } from '../eventDisplay.js'
 
 
@@ -36,6 +36,25 @@ export default function BlockForm({ venue, onClose, onCreated }) {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [outcome, setOutcome] = useState(null)
+  const [type, setType] = useState('operational_block')
+  const [events, setEvents] = useState(null)
+  const [eventId, setEventId] = useState('')
+  const [expiryDate, setExpiryDate] = useState('')
+  const [expiryTime, setExpiryTime] = useState('')
+  const [eventsError, setEventsError] = useState('')
+  const isHold = type === 'tentative_hold'
+
+  useEffect(() => {
+    if (!isHold) return
+    let cancelled = false
+    setEvents(null)
+    setEventsError('')
+    getVenueHoldEvents(token).then(({ events }) => {
+      if (!Array.isArray(events)) throw new Error('Unable to load events.')
+      if (!cancelled) setEvents(events)
+    }).catch(error => { if (!cancelled) setEventsError(error.message) })
+    return () => { cancelled = true }
+  }, [isHold, token])
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -44,6 +63,14 @@ export default function BlockForm({ venue, onClose, onCreated }) {
     setSubmitting(true)
 
     try {
+      if (isHold) {
+        const payload = venueHoldPayload({ startDate, startTime, endDate, endTime, eventId, expiryDate, expiryTime }, venue.setup_time_minutes)
+        const data = await createVenueHold(venue.id, payload, token)
+        if (!data?.hold?.hold_id) throw new Error('Hold creation unconfirmed. Refresh before trying again.')
+        setOutcome(data)
+        onCreated?.()
+        return
+      }
       const payload = venueBlockPayload({ startDate, startTime, endDate, endTime, reason })
       const data = await createVenueBlock(
         venue.id,
@@ -58,6 +85,18 @@ export default function BlockForm({ venue, onClose, onCreated }) {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  if (outcome?.hold) {
+    return renderModal(<section className="form stack stack--tight">
+      <h2 className="venue-block-dialog__title" id="blockVenueTitle" tabIndex={-1} autoFocus>Tentative Hold</h2>
+      <strong>{venue.name}</strong>
+      <p role="status">Hold created.</p>
+      <p>{formatDateRange(outcome.hold.start_at, outcome.hold.end_at)}</p>
+      <p className="note">Expires: {new Date(outcome.hold.expires_at).toLocaleString()}</p>
+      <p className="note">{outcome.notification_status === 'saved' ? 'Coordinator notified.' : 'Coordinator could not be notified. Please follow up.'}</p>
+      <button type="button" className="button button--secondary" onClick={onClose}>Close</button>
+    </section>)
   }
 
   if (outcome) {
@@ -129,15 +168,37 @@ export default function BlockForm({ venue, onClose, onCreated }) {
     <section className="form">
       <form className="stack stack--tight" onSubmit={handleSubmit}>
         <header className="venue-block-dialog__header">
-          <h2 className="venue-block-dialog__title" id="blockVenueTitle">Block Venue</h2>
-          <p className="field__hint">
-            Specify when and why this venue should be unavailable.
-          </p>
+          <h2 className="venue-block-dialog__title" id="blockVenueTitle">Block / Tentative Hold</h2>
         </header>
-        <p><strong>Venue:</strong> {venue.name}</p>
+        <p><strong>Selected venue:</strong> {venue.name}</p>
+
+        <fieldset className="venue-block-dialog__types" disabled={submitting}>
+          <legend>Type</legend>
+          <div className="venue-block-dialog__type-options">
+            {[
+              ['operational_block', 'Operational Unavailability'],
+              ['tentative_hold', 'Tentative Hold'],
+            ].map(([value, label]) => <label key={value} className={type === value ? 'is-selected' : ''}>
+              <input type="radio" name="venueBlockType" value={value} checked={type === value}
+                onChange={() => { setType(value); setError('') }} />
+              <span>{label}</span>
+            </label>)}
+          </div>
+        </fieldset>
+        {isHold && <div className="field">
+          <label htmlFor="holdEvent">Hold this venue for which event?</label>
+          <select id="holdEvent" aria-describedby="holdEventHint" required disabled={submitting || !events} value={eventId}
+            onChange={event => setEventId(event.target.value)}>
+            <option value="">{events ? 'Select an event' : 'Loading events…'}</option>
+            {events?.map(event => <option key={event.id} value={event.id}>{event.name}</option>)}
+          </select>
+          <p id="holdEventHint" className="field__hint">Choose the event that will use this venue. Its Coordinator will be notified.</p>
+          {events?.length === 0 && <p className="note">No upcoming events with an assigned Coordinator.</p>}
+          {eventsError && <p role="alert" className="field__error">{eventsError}</p>}
+        </div>}
 
         <div className="field">
-          <label>Blocked period</label>
+          <label>{isHold ? 'Hold period' : 'Blocked period'}</label>
 
           <div className="repeater__row repeater__row--equal">
             <div className="repeater__field">
@@ -193,7 +254,22 @@ export default function BlockForm({ venue, onClose, onCreated }) {
           </div>
         </div>
 
-        <div className="field">
+        {isHold ? <div className="field">
+          <label>Expiry</label>
+          <div className="repeater__row repeater__row--equal">
+            <div className="repeater__field">
+              <label htmlFor="holdExpiryDate">Expiry date</label>
+              <input id="holdExpiryDate" type="date" required disabled={submitting} value={expiryDate}
+                onChange={event => setExpiryDate(event.target.value)} />
+            </div>
+            <div className="repeater__field">
+              <label htmlFor="holdExpiryTime">Expiry time</label>
+              <input id="holdExpiryTime" type="time" required disabled={submitting} value={expiryTime}
+                onChange={event => setExpiryTime(event.target.value)} />
+            </div>
+          </div>
+          <p className="note">Local time. Expiry must be no later than setup begins.</p>
+        </div> : <div className="field">
           <label htmlFor="blockReason">Reason</label>
           <input
             id="blockReason"
@@ -204,7 +280,7 @@ export default function BlockForm({ venue, onClose, onCreated }) {
             placeholder="Enter reason for blocking this venue"
             required
           />
-        </div>
+        </div>}
 
         {error && (
           <p className="field__error" role="alert">
@@ -216,14 +292,15 @@ export default function BlockForm({ venue, onClose, onCreated }) {
           <button
             type="submit"
             className="button"
-            disabled={submitting}
+            disabled={submitting || (isHold && !events?.length)}
           >
-            {submitting ? 'Submitting...' : 'Block Venue'}
+            {submitting ? 'Submitting...' : isHold ? 'Create hold' : 'Block Venue'}
           </button>
 
           <button
             type="button"
             className="button button--secondary"
+            disabled={submitting}
             onClick={onClose}
           >
             Cancel

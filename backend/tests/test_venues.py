@@ -3,7 +3,7 @@
 from unittest.mock import Mock
 
 from models.profile import Profile, Role
-from models.venue import Venue, VenueCreateRequest, VenueUpdateRequest
+from models.venue import Venue, VenueCreateRequest, VenueUpdateRequest, VenueUpdateResult
 from models.venue_audit import VenueEditHistory
 from services import auth_service, venue_service
 from services.auth_service import AuthError
@@ -57,6 +57,17 @@ def authenticate_as_venue_staff(monkeypatch):
         "get_profile",
         lambda access_token, user_id: VENUE_STAFF_PROFILE,
     )
+
+
+def test_saved_venue_with_unavailable_impact_is_a_successful_update(client, monkeypatch):
+    authenticate_as_venue_staff(monkeypatch)
+    impact = {"status": "unavailable", "affected_bookings": None}
+    saved = VenueUpdateResult(**VENUE_RESPONSE.model_dump(), buffer_impact=impact)
+    monkeypatch.setattr(venue_service, "update_venue", lambda *_: saved)
+    response = client.put(f"/venues/{VENUE_RESPONSE.id}", json=VALID_VENUE,
+                          headers={"Authorization": "Bearer venue-token"})
+    assert response.status_code == 200
+    assert response.get_json() == {"venue": VENUE_RESPONSE.model_dump(mode="json"), "buffer_impact": impact}
 
 
 def test_create_venue_passes_validated_request_to_service(client, monkeypatch):

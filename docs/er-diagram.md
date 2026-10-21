@@ -7,6 +7,11 @@ erDiagram
     PROFILES ||--o{ EVENT_COORDINATOR_ASSIGNMENTS : "assigned as coordinator"
     EVENTS ||--o{ EVENT_COORDINATOR_ASSIGNMENTS : "assignment history"
     EVENTS ||--o{ VENUE_BOOKINGS : requests
+    EVENTS ||--o{ VENUE_TENTATIVE_HOLDS : "temporarily reserves"
+    VENUES ||--o{ VENUE_TENTATIVE_HOLDS : "held for"
+    PROFILES ||--o{ VENUE_TENTATIVE_HOLDS : "created by"
+    VENUE_BOOKINGS |o--o{ VENUE_TENTATIVE_HOLDS : "completes"
+    VENUE_BOOKINGS |o--o{ VENUE_BLOCKS : "reservation source"
     VENUES ||--o{ VENUE_BOOKINGS : "booked for"
     PROFILES ||--o{ VENUE_BOOKINGS : "decided by (venue staff)"
     VENUES ||--o{ VENUE_EDIT_HISTORY : "has edit history"
@@ -94,6 +99,31 @@ erDiagram
         timestamptz end_time
     }
 
+    VENUE_TENTATIVE_HOLDS {
+        uuid hold_id PK
+        uuid venue_id FK
+        uuid event_id FK
+        uuid created_by FK
+        timestamptz created_at
+        timestamptz start_at
+        timestamptz end_at
+        timestamptz expires_at
+        timestamptz released_at "nullable; active derived from expiry and release"
+        uuid completed_booking_id FK "nullable"
+        timestamptz expiry_claimed_at "notification retry lease"
+        timestamptz expiry_notified_at
+    }
+
+    VENUE_BLOCKS {
+        uuid block_id PK
+        uuid venue_id FK
+        uuid source_booking_id FK "nullable; populated for new booking reservations"
+        text block_reason
+        timestamptz start_at
+        timestamptz end_at
+        uuid block_issuer FK
+    }
+
     EQUIPMENT {
         uuid id PK
         text name
@@ -145,3 +175,12 @@ erDiagram
         timestamptz created_at
     }
 ```
+
+
+Tentative holds are deployed with the additive `database/venue_tentative_holds.sql` script.
+An active hold has no release time and `expires_at > now()`; expiry does not delete history or depend on a scheduler.
+A same-event, same-venue approval covering the full held event period records its completion.
+Booking occupancy uses current venue setup/turnaround as a minimum and retains any larger stored reservation.
+Expiry notifications remain due after a late completion; the system runner leases and acknowledges delivery through the existing notification service.
+New booking blocks carry `source_booking_id`. Uniquely fingerprinted older blocks are grouped with the booking without changing stored records;
+the calendar retains their details and marks uncertain classification. Other blocks remain visible.

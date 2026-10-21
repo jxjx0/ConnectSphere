@@ -1,12 +1,14 @@
 """Search contracts, separate from venue configuration and booking writes."""
 
 import re
+from uuid import UUID
 from datetime import date as Date, datetime, time, timedelta, timezone
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class VenueSearchRequest(BaseModel):
+    event_id: UUID | None = None
     date: Date | None = None
     end_date: Date | None = None
     start_time: str | None = None

@@ -109,9 +109,12 @@ export default function VenuePage({ createMode = false }) {
   const [blockingVenue, setBlockingVenue] = useState(null)
   const [history, setHistory] = useState([])
   const [historyError, setHistoryError] = useState('')
+  const [bufferImpact, setBufferImpact] = useState(null)
   const editableVenue = editMode && venues.some((venue) => venue.id === venueId)
 
   useEffect(() => {
+    setBufferImpact(null)
+    setSuccess('')
     if (createMode) return
 
     getVenues(token)
@@ -220,7 +223,12 @@ export default function VenuePage({ createMode = false }) {
 
     try {
       if (editMode) {
-        await updateVenue(venueId, payload, token)
+        const result = await updateVenue(venueId, payload, token)
+        if (result?.buffer_impact) {
+          setBufferImpact(result.buffer_impact)
+          setSuccess('Venue updated.')
+          return
+        }
       } else {
         await createVenue(payload, token)
       }
@@ -250,7 +258,25 @@ export default function VenuePage({ createMode = false }) {
       {editMode && loading && <p className="note">Loading venue…</p>}
       {editMode && !loading && !editableVenue && error && <p className="form-error" role="alert">{error}</p>}
 
-      {(createMode || (editableVenue && !loading)) && (
+      {bufferImpact && <section className="notice stack stack--tight" role="status">
+        <p><strong>{success}</strong></p>
+        {bufferImpact.status !== 'verified' && <p>Some bookings need manual checking. Your venue changes are saved.</p>}
+        {bufferImpact.affected_bookings && <>
+          <p>{bufferImpact.affected_bookings.length
+            ? `${bufferImpact.affected_bookings.length} booking(s) need review.` : 'No newly affected bookings.'}</p>
+          <ul>{bufferImpact.affected_bookings.map(booking => <li key={booking.booking_id}>
+            {booking.event_name || 'Venue booking'} — {formatAuditDate(booking.effective_start)}–{formatAuditDate(booking.effective_end)}
+            {booking.status_update === 'failed' || booking.status_update === 'unverified'
+              ? ' — Booking status could not be verified.' : ''}
+            {booking.status_update === 'not_updated' ? ' — Booking changed during review; check its status.' : ''}
+            {['failed', 'missing_coordinator'].includes(booking.notification_status) ? ' — Coordinator could not be notified.' : ''}
+          </li>)}</ul>
+          {bufferImpact.affected_bookings.length > 0 && bufferImpact.status === 'verified' && <p>Coordinators notified.</p>}
+        </>}
+        <Link to="/venues" className="button button--secondary">Back to Venue Catalogue</Link>
+      </section>}
+
+      {!bufferImpact && (createMode || (editableVenue && !loading)) && (
         <section className="stack stack--tight">
           <h2 className="section-title">Venue details</h2>
 
@@ -596,7 +622,7 @@ export default function VenuePage({ createMode = false }) {
                             disabled={blockingVenue !== null}
                             onClick={() => setBlockingVenue(venue)}
                           >
-                            Block
+                            Block / Tentative Hold
                           </button>
                         </div>
                       </td>

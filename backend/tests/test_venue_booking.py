@@ -2,6 +2,8 @@
 
 from datetime import datetime, timedelta, timezone
 
+from types import SimpleNamespace
+
 import pytest
 from postgrest import APIError as PostgrestAPIError
 
@@ -36,6 +38,13 @@ def database(monkeypatch):
         ("venue_blocks", "select"): [],
         ("venue_bookings", "insert"): lambda query: [{"booking_id": "bk-new", **query.payload}],
     })
+    database.rpc_calls = []
+
+    def rpc(name, params):
+        database.rpc_calls.append((name, params))
+        return SimpleNamespace(execute=lambda: SimpleNamespace(data=[]))
+
+    database.client.rpc = rpc
     monkeypatch.setattr(config, "get_user_client", lambda token: database.client)
     return database
 
@@ -207,3 +216,37 @@ def test_schedule_conflict_query_uses_half_open_overlap(database):
         ("lt", "start_at", "2026-10-22T04:45:00+00:00"),
         ("gt", "end_at", "2026-10-22T01:30:00+00:00"),
     ]
+
+
+@pytest.mark.parametrize("own_hold", [True, False])
+def test_creation_excludes_only_the_linked_events_hold(database, own_hold):
+    request = VenueBookingCreateRequest(
+        event_id="evt-1", room_layout="Banquet",
+        start_at="2099-11-07T10:00:00+08:00", end_at="2099-11-07T12:00:00+08:00",
+    )
+    calls = []
+
+    def rpc(name, params):
+        calls.append((name, params))
+        assert name == "get_venue_reservations"
+        assert params["p_exclude_event_id"] == request.event_id
+        assert params["p_holds_only"] is True
+        rows = [] if own_hold else [{
+            "id": "00000000-0000-0000-0000-000000000041", "venue_id": "v-1",
+            "type": "tentative_hold", "reason": "Tentative hold",
+            "start_at": "2099-11-07T09:30:00+08:00", "end_at": "2099-11-07T12:45:00+08:00",
+            "expires_at": "2099-11-06T12:00:00+08:00",
+        }]
+        return SimpleNamespace(execute=lambda: SimpleNamespace(data=rows))
+
+    database.client.rpc = rpc
+    if own_hold:
+        result = venue_booking_service.create_venue_booking("token", "v-1", request, "coord-1")
+        assert result["status"] == "PENDING_VENUE_APPROVAL"
+    else:
+        with pytest.raises(AuthError) as caught:
+            venue_booking_service.create_venue_booking("token", "v-1", request, "coord-1")
+        assert caught.value.status_code == 409
+        assert database.calls_to("venue_bookings", "insert") == []
+    assert len(calls) == 1
+    assert not any(call.table == "venue_tentative_holds" for call in database.calls)

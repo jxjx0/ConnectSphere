@@ -726,6 +726,13 @@ a:hover {
   background: rgb(0 0 0 / 45%);
 }
 
+.venue-block-dialog__types { border: 0; padding: 0; margin: 0; min-width: 0; }
+.venue-block-dialog__types legend { margin-bottom: var(--space-2); font-weight: 600; }
+.venue-block-dialog__type-options { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.venue-block-dialog__type-options label { display: flex; align-items: center; gap: var(--space-2); flex: 1 1 11rem; padding: var(--space-3); border: 1px solid var(--rule-strong); cursor: pointer; }
+.venue-block-dialog__type-options label.is-selected { border-color: var(--accent); background: var(--accent-faint); }
+.venue-block-dialog__type-options input[type="radio"] { width: 1rem; height: 1rem; min-height: 0; padding: 0; margin: 0; flex: 0 0 auto; accent-color: var(--accent); }
+
 .venue-block-dialog__header {
   display: flex;
   flex-direction: column;
@@ -815,6 +822,8 @@ a:hover {
 .venue-calendar__legend { display: inline-flex; align-items: center; gap: var(--space-2); }
 .venue-calendar__legend::before { content: ''; width: 0.75rem; height: 0.75rem; border: 1px solid var(--danger); background: color-mix(in srgb, var(--danger) 9%, var(--bg)); }
 .venue-calendar__legend--closed::before { border-color: var(--rule-strong); background: color-mix(in srgb, var(--rule-strong) 35%, var(--surface)); }
+.venue-calendar__time-block--tentative_hold, .venue-calendar__legend--hold::before { border-color: var(--accent); border-style: dashed; background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.venue-calendar__time-block--confirmed_booking, .venue-calendar__legend--booking::before { border-color: var(--ink-muted); background: var(--sunken); }
 .venue-calendar__time-detail { width: 100%; padding: var(--space-4); border: 1px solid var(--rule-strong); background: var(--surface); overflow-wrap: anywhere; }
 .venue-calendar__time-detail p { margin-top: var(--space-2); }
 .venue-calendar__list > summary { cursor: pointer; margin-bottom: var(--space-3); }

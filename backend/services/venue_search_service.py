@@ -1,6 +1,7 @@
 """Venue suitability and availability reads; no booking or block mutations."""
 
 from postgrest import APIError as PostgrestAPIError
+from httpx import HTTPError
 from pydantic import ValidationError
 
 import config
@@ -42,7 +43,7 @@ def search_venues(access_token: str, request: VenueSearchRequest) -> dict:
         return _search(client, records, request)
     except PostgrestAPIError as error:
         raise _database_error(error) from error
-    except (ValidationError, ValueError, KeyError, TypeError, OverflowError) as error:
+    except (HTTPError, ValidationError, ValueError, KeyError, TypeError, OverflowError) as error:
         raise AuthError("Unable to verify venue availability data.", status_code=502) from error
 
 
@@ -95,20 +96,22 @@ def _search(client, records, request):
         }
 
     venue_ids = [venue.id for venue, *_ in candidates]
-    blocks = (
-        client.table("venue_blocks").select("venue_id, start_at, end_at")
-        .in_("venue_id", venue_ids)
-        .lt("start_at", max(item[4] for item in candidates).isoformat())
-        .gt("end_at", min(item[3] for item in candidates).isoformat())
-        .execute().data
-    )
+    blocks = client.rpc("get_venue_operational_blocks", {
+        "p_venue_ids": venue_ids,
+        "p_start_at": min(item[3] for item in candidates).isoformat(),
+        "p_end_at": max(item[4] for item in candidates).isoformat(),
+    }).execute().data
+    if not isinstance(blocks, list):
+        raise ValueError("block data must be a complete list")
     blocks_by_venue = {venue_id: [] for venue_id in venue_ids}
     for block in blocks:
         blocks_by_venue[block["venue_id"]].append(OccupiedPeriod(**block))
 
     warnings = []
     try:
-        occupancy = availability.load_booking_occupancy(client, venue_ids)
+        occupancy = (availability.load_booking_occupancy(client, venue_ids)
+                     if request.event_id is None else availability.load_booking_occupancy(
+                         client, venue_ids, exclude_event_id=str(request.event_id)))
         if set(venue_ids) - occupancy.keys():
             raise availability.BookingOccupancyUnavailable(
                 "Booking and tentative hold availability is incomplete."

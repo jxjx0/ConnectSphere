@@ -37,6 +37,14 @@ export function getVenues(token) {
   return request('/venues', { token })
 }
 
+export function getVenueHoldEvents(token) {
+  return request('/venues/holds/events', { token })
+}
+
+export function createVenueHold(venueId, hold, token) {
+  return request(`/venues/${encodeURIComponent(venueId)}/holds`, { method: 'POST', body: hold, token })
+}
+
 export function getVenueAvailability(venueId, range, token) {
   const query = new URLSearchParams(range)
   return request(`/venues/${encodeURIComponent(venueId)}/availability?${query}`, { token })

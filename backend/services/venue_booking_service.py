@@ -1,6 +1,7 @@
 """Venue booking persistence, review workflow, and block synchronization."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
+from httpx import HTTPError
 from postgrest import APIError as PostgrestAPIError
 
 import config
@@ -8,6 +9,56 @@ from models.venue_booking import VenueBookingCreateRequest, VenueBookingReviewRe
 from services import venue_availability_service as availability
 from services.auth_service import AuthError
 from services.notification_service import notify
+from services.venue_availability_service import read_reservations, venue_buffers, effective_period
+from models.venue_search import OccupiedPeriod
+
+
+def get_event_booking_context(access_token, event_id):
+    """Use existing booking RLS and current-assignee hold RLS for event context."""
+    client = config.get_user_client(access_token)
+    try:
+        bookings = (client.table("venue_bookings").select("*, venues(name)")
+                    .eq("event_id", event_id).order("created_at", desc=True).execute().data)
+        holds = (client.table("venue_tentative_holds").select("hold_id")
+                 .eq("event_id", event_id).is_("released_at", "null")
+                 .gt("expires_at", datetime.now(timezone.utc).isoformat()).limit(1).execute().data)
+        if not isinstance(bookings, list) or not isinstance(holds, list):
+            raise ValueError("incomplete venue context")
+        return {"bookings": bookings, "has_active_venue_hold": bool(holds)}
+    except (PostgrestAPIError, HTTPError, ValueError) as error:
+        raise AuthError("Unable to load this event's venue arrangements.", status_code=502) from error
+
+
+def _venue_configuration(client, venue_id):
+    venues = (client.table("venues").select("setup_time_minutes, turnaround_time_minutes, operating_hours")
+              .eq("id", venue_id).execute().data)
+    if not venues:
+        raise AuthError("Venue was not found.", status_code=404)
+    return venues[0]
+
+
+def _booking_occupancy(booking):
+    """Current venue buffers are a floor; preserve any larger legacy reservation."""
+    try:
+        buffers = venue_buffers(booking.get("venues") or {})
+        if buffers is None:
+            raise ValueError("missing venue buffers")
+        setup = max(buffers[0], booking.get("setup_buffer_minutes") or 0)
+        turnaround = max(buffers[1], booking.get("teardown_buffer_minutes") or 0)
+        def timestamp(value):
+            parsed = value if isinstance(value, datetime) else datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if parsed.utcoffset() is None:
+                raise ValueError("missing timezone")
+            return parsed
+        start, end = effective_period(timestamp(booking["start_at"]), timestamp(booking["end_at"]), setup, turnaround)
+        if booking.get("effective_start_at"):
+            start = min(start, timestamp(booking["effective_start_at"]))
+        if booking.get("effective_end_at"):
+            end = max(end, timestamp(booking["effective_end_at"]))
+        return {"setup_buffer_minutes": setup, "teardown_buffer_minutes": turnaround,
+                "effective_start_at": start, "effective_end_at": end}
+    except (ValueError, TypeError, KeyError, OverflowError) as error:
+        raise AuthError("Unable to verify venue buffers. Check the venue configuration.", status_code=502) from error
 
 # Requests that still hold, or may soon hold, the venue for their event.
 LIVE_BOOKING_STATUSES = ("PENDING_VENUE_APPROVAL", "APPROVED")
@@ -36,8 +87,8 @@ def get_pending_venue_bookings(access_token: str, venue_id: str | None = None) -
     return result.data or []
 
 
-def check_schedule_conflict_details(client, venue_id: str, effective_start: str, effective_end: str) -> list[dict]:
-    """Check for overlaps against existing operational blocks in venue_blocks."""
+def check_schedule_conflict_details(client, venue_id: str, effective_start: str, effective_end: str, event_id=None) -> list[dict]:
+    """Check recorded blocks and other events' active tentative holds."""
     blocks = (
         client.table("venue_blocks")
         .select("block_id, start_at, end_at, block_reason")
@@ -47,7 +98,13 @@ def check_schedule_conflict_details(client, venue_id: str, effective_start: str,
         .execute()
         .data
     )
-    return blocks or []
+    # The corresponding event can convert its own hold into a booking; other
+    # events' active holds still reserve their effective periods.
+    from services.venue_availability_service import overlaps
+    period = OccupiedPeriod(start_at=effective_start, end_at=effective_end)
+    holds = read_reservations(client, [venue_id], exclude_event_id=event_id, holds_only=True)
+    return (blocks or []) + [{**item.model_dump(mode="json"), "block_reason": "Tentative hold"} for item in holds
+                            if overlaps(period.start_at, period.end_at, item)]
 
 
 def check_duplicate_event_booking(client, venue_id: str, event_id: str) -> None:
@@ -127,10 +184,13 @@ def review_venue_booking(
                 status_code=400,
             )
 
+        occupancy = _booking_occupancy(booking)
+        occupied = {key: value.isoformat() if isinstance(value, datetime) else value
+                    for key, value in occupancy.items()}
         operating_hours = venue.get("operating_hours")
         if not availability.booking_within_operating_hours(
-            datetime.fromisoformat(booking["effective_start_at"]),
-            datetime.fromisoformat(booking["effective_end_at"]),
+            occupancy["effective_start_at"],
+            occupancy["effective_end_at"],
             operating_hours,
         ):
             raise AuthError(
@@ -140,7 +200,7 @@ def review_venue_booking(
             )
 
         conflicts = check_schedule_conflict_details(
-            client, booking["venue_id"], booking["effective_start_at"], booking["effective_end_at"]
+            client, booking["venue_id"], occupied["effective_start_at"], occupied["effective_end_at"], booking.get("event_id")
         )
         if conflicts:
             conflict = conflicts[0]
@@ -151,10 +211,11 @@ def review_venue_booking(
             )
 
         block_data = {
+            "source_booking_id": booking_id,
             "venue_id": booking["venue_id"],
             "booking_id": booking["booking_id"],
-            "start_at": booking["effective_start_at"],
-            "end_at": booking["effective_end_at"],
+            "start_at": occupied["effective_start_at"],
+            "end_at": occupied["effective_end_at"],
             "block_reason": f"Approved Booking: {event.get('name', 'Event')} ({requested_layout})",
             "block_issuer": reviewer_id,
         }
@@ -168,7 +229,7 @@ def review_venue_booking(
 
         update_res = (
             client.table("venue_bookings")
-            .update({"status": "APPROVED", "reviewed_by": reviewer_id})
+            .update({"status": "APPROVED", "reviewed_by": reviewer_id, **occupied})
             .eq("booking_id", booking_id)
             .execute()
         )
@@ -220,22 +281,18 @@ def create_venue_booking(
     """Submit a venue booking request with operating hours & buffer validation."""
     client = config.get_user_client(access_token)
 
-    venue_res = (
-        client.table("venues")
-        .select("setup_time_minutes, turnaround_time_minutes, operating_hours")
-        .eq("id", venue_id)
-        .execute()
-    )
-    if not venue_res.data:
-        raise AuthError("Venue not found.", status_code=404)
-
-    venue_info = venue_res.data[0]
-    setup_mins = venue_info.get("setup_time_minutes") or 0
-    turnaround_mins = venue_info.get("turnaround_time_minutes") or 0
+    try:
+        venue_info = _venue_configuration(client, venue_id)
+        occupancy = _booking_occupancy({
+            "start_at": request.start_at, "end_at": request.end_at, "venues": venue_info,
+        })
+    except PostgrestAPIError as error:
+        raise AuthError("Unable to verify venue buffers.", status_code=502) from error
+    setup_mins = occupancy["setup_buffer_minutes"]
+    turnaround_mins = occupancy["teardown_buffer_minutes"]
     operating_hours = venue_info.get("operating_hours")
-
-    effective_start = request.start_at - timedelta(minutes=setup_mins)
-    effective_end = request.end_at + timedelta(minutes=turnaround_mins)
+    effective_start = occupancy["effective_start_at"]
+    effective_end = occupancy["effective_end_at"]
 
     if not availability.booking_within_operating_hours(effective_start, effective_end, operating_hours):
         raise AuthError(
@@ -251,7 +308,7 @@ def create_venue_booking(
     effective_end_iso = effective_end.isoformat()
 
     try:
-        if check_schedule_conflict_details(client, venue_id, effective_start_iso, effective_end_iso):
+        if check_schedule_conflict_details(client, venue_id, effective_start_iso, effective_end_iso, request.event_id):
             raise AuthError(
                 "The requested venue is unavailable during the selected time slot (including buffers).",
                 status_code=409,
