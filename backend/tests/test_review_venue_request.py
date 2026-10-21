@@ -125,6 +125,32 @@ def test_approval_needs_layout_capacity_for_the_attendance(database):
     assert database.calls_to("venue_blocks", "insert") == []
 
 
+def test_approval_checks_capacity_against_the_bookings_own_session(database):
+    """A breakout room for a 50-person session is fine in a 300-person event."""
+    database.responses[("venue_bookings", "select")] = [
+        pending_booking(
+            events={"name": "Party", "expected_attendance": 300},
+            session={"name": "Breakout A", "expected_attendance": 50},
+        ),
+    ]
+
+    review()
+
+    assert len(database.calls_to("venue_blocks", "insert")) == 1
+
+
+def test_a_session_too_big_for_the_layout_is_refused(database):
+    database.responses[("venue_bookings", "select")] = [
+        pending_booking(session={"name": "Main programme", "expected_attendance": 150}),
+    ]
+
+    with pytest.raises(AuthError) as caught:
+        review()
+
+    assert "Expected attendance (150) exceeds capacity" in caught.value.message
+    assert database.calls_to("venue_blocks", "insert") == []
+
+
 def test_approval_refuses_buffers_outside_operating_hours(database):
     # 08:00-10:00 Singapore with 30 minutes of setup starts at 07:30, before opening.
     database.responses[("venue_bookings", "select")] = [pending_booking(

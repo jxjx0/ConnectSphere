@@ -21,9 +21,20 @@ VENUE = {
 }
 
 
+# The session the default booking is for: 22 Oct, 10:00-12:00 Singapore.
+SESSION = {
+    "id": "ses-1",
+    "event_id": "evt-1",
+    "name": "Main programme",
+    "start_time": "2026-10-22T10:00:00+08:00",
+    "end_time": "2026-10-22T12:00:00+08:00",
+}
+
+
 def booking_request(start_hour=10, end_hour=12, event_id="evt-1", day=22):
     return VenueBookingCreateRequest(
         event_id=event_id,
+        session_id="ses-1" if event_id else None,
         room_layout="Banquet",
         start_at=datetime(2026, 10, day, start_hour, 0, tzinfo=SGT),
         end_at=datetime(2026, 10, day, end_hour, 0, tzinfo=SGT),
@@ -34,6 +45,8 @@ def booking_request(start_hour=10, end_hour=12, event_id="evt-1", day=22):
 def database(monkeypatch):
     database = FakeDatabase({
         ("venues", "select"): [VENUE],
+        ("events", "select"): [{"status": "planning"}],
+        ("event_sessions", "select"): [SESSION],
         ("venue_bookings", "select"): [],
         ("venue_blocks", "select"): [],
         ("venue_bookings", "insert"): lambda query: [{"booking_id": "bk-new", **query.payload}],
@@ -78,7 +91,7 @@ def test_clash_check_covers_the_effective_period(database):
     (datetime(2026, 10, 22, 21, 0, tzinfo=SGT), datetime(2026, 10, 23, 1, 0, tzinfo=SGT)),
 ])
 def test_requests_outside_operating_hours_are_refused(database, start, end):
-    request = VenueBookingCreateRequest(event_id="evt-1", room_layout="Banquet", start_at=start, end_at=end)
+    request = VenueBookingCreateRequest(event_id="evt-1", session_id="ses-1", room_layout="Banquet", start_at=start, end_at=end)
 
     with pytest.raises(AuthError) as caught:
         venue_booking_service.create_venue_booking("token", "v-1", request, "coord-1")
@@ -91,7 +104,7 @@ def test_requests_outside_operating_hours_are_refused(database, start, end):
 def test_operating_hours_are_singapore_time_not_utc(database):
     # 10:00-12:00 Singapore is 02:00-04:00 UTC, which a UTC comparison would wrongly refuse.
     request = VenueBookingCreateRequest(
-        event_id="evt-1", room_layout="Banquet",
+        event_id="evt-1", session_id="ses-1", room_layout="Banquet",
         start_at=datetime(2026, 10, 22, 2, 0, tzinfo=timezone.utc),
         end_at=datetime(2026, 10, 22, 4, 0, tzinfo=timezone.utc),
     )
@@ -103,6 +116,11 @@ def test_operating_hours_are_singapore_time_not_utc(database):
 
 def test_unreadable_stored_hours_do_not_block_a_request(database):
     database.responses[("venues", "select")] = [{**VENUE, "operating_hours": None}]
+    database.responses[("event_sessions", "select")] = [{
+        **SESSION,
+        "start_time": "2026-10-22T22:00:00+08:00",
+        "end_time": "2026-10-22T23:00:00+08:00",
+    }]
 
     venue_booking_service.create_venue_booking("token", "v-1", booking_request(22, 23), "coord-1")
 
@@ -119,24 +137,108 @@ def test_unknown_venue_is_not_found(database):
 
 
 @pytest.mark.parametrize("status", ["PENDING_VENUE_APPROVAL", "APPROVED"])
-def test_a_live_request_for_the_same_venue_and_event_is_a_duplicate(database, status):
+def test_a_session_with_a_live_request_cannot_get_a_second_one(database, status):
+    """One venue per session (scope doc section 9.1)."""
     database.responses[("venue_bookings", "select")] = [{"booking_id": "bk-old", "status": status}]
 
     with pytest.raises(AuthError) as caught:
         venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
 
     assert caught.value.status_code == 409
-    assert "already been submitted" in caught.value.message
+    assert "already has a venue booking request" in caught.value.message
     assert database.calls_to("venue_bookings", "insert") == []
 
 
-def test_only_live_requests_count_as_duplicates(database):
+def test_only_live_requests_for_the_same_session_count_as_duplicates(database):
+    """Per session, not per venue: one venue may serve several sessions (W9)."""
     venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
 
     (duplicate_query,) = database.calls_to("venue_bookings", "select")
-    assert ("eq", "venue_id", "v-1") in duplicate_query.filters
-    assert ("eq", "event_id", "evt-1") in duplicate_query.filters
+    assert ("eq", "session_id", "ses-1") in duplicate_query.filters
+    assert ("eq", "venue_id", "v-1") not in duplicate_query.filters
     assert ("in_", "status", ["PENDING_VENUE_APPROVAL", "APPROVED"]) in duplicate_query.filters
+
+
+def test_the_booking_records_its_session(database):
+    booking = venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
+
+    assert booking["session_id"] == "ses-1"
+
+
+def test_a_booking_for_an_event_must_name_its_session():
+    with pytest.raises(ValueError) as caught:
+        VenueBookingCreateRequest(
+            event_id="evt-1", room_layout="Banquet",
+            start_at="2026-10-22T10:00:00+08:00", end_at="2026-10-22T12:00:00+08:00",
+        )
+
+    assert "choose which session" in str(caught.value)
+
+
+@pytest.mark.parametrize("status", ["under_review", "draft", "rejected", "completed"])
+def test_venues_are_requested_only_after_approval(database, status):
+    """An Under review event may be held, but not booked, until approved."""
+    database.responses[("events", "select")] = [{"status": status}]
+
+    with pytest.raises(AuthError) as caught:
+        venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
+
+    assert caught.value.status_code == 409
+    assert "Approve this event request" in caught.value.message
+    assert database.calls_to("venue_bookings", "insert") == []
+
+
+@pytest.mark.parametrize("status", ["planning", "change_requested", "confirmed"])
+def test_approved_events_can_request_venues(database, status):
+    database.responses[("events", "select")] = [{"status": status}]
+
+    venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
+
+    assert len(database.calls_to("venue_bookings", "insert")) == 1
+
+
+def test_an_event_that_is_not_assigned_to_me_is_not_found(database):
+    database.responses[("events", "select")] = []
+
+    with pytest.raises(AuthError) as caught:
+        venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
+
+    assert caught.value.status_code == 404
+
+
+def test_a_session_from_another_event_is_refused(database):
+    database.responses[("event_sessions", "select")] = [{**SESSION, "event_id": "other-event"}]
+
+    with pytest.raises(AuthError) as caught:
+        venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
+
+    assert caught.value.status_code == 400
+    assert "does not belong to this event" in caught.value.message
+    assert database.calls_to("venue_bookings", "insert") == []
+
+
+@pytest.mark.parametrize("start_hour, end_hour", [(11, 12), (10, 11), (11, 11)])
+def test_a_booking_must_cover_the_whole_session(database, start_hour, end_hour):
+    request = booking_request()
+    request = request.model_copy(update={
+        "start_at": datetime(2026, 10, 22, start_hour, 0, tzinfo=SGT),
+        "end_at": datetime(2026, 10, 22, end_hour, 30, tzinfo=SGT) if end_hour == 11 else request.end_at,
+    })
+
+    with pytest.raises(AuthError) as caught:
+        venue_booking_service.create_venue_booking("token", "v-1", request, "coord-1")
+
+    assert caught.value.status_code == 400
+    assert "must cover the whole of Main programme" in caught.value.message
+    assert "22 Oct 2026, 10:00 – 22 Oct 2026, 12:00" in caught.value.message
+
+
+def test_a_booking_may_start_earlier_and_end_later_than_its_session(database):
+    venue_booking_service.create_venue_booking(
+        "token", "v-1", booking_request(start_hour=9, end_hour=13), "coord-1"
+    )
+
+    assert len(database.calls_to("venue_bookings", "insert")) == 1
 
 
 @pytest.mark.parametrize("settled_status", [
@@ -160,6 +262,7 @@ def test_requests_without_an_event_skip_the_duplicate_check(database):
     venue_booking_service.create_venue_booking("token", "v-1", booking_request(event_id=None), "coord-1")
 
     assert database.calls_to("venue_bookings", "select") == []
+    assert database.calls_to("event_sessions", "select") == []
 
 
 def test_a_clashing_block_refuses_the_request(database):
@@ -221,9 +324,14 @@ def test_schedule_conflict_query_uses_half_open_overlap(database):
 @pytest.mark.parametrize("own_hold", [True, False])
 def test_creation_excludes_only_the_linked_events_hold(database, own_hold):
     request = VenueBookingCreateRequest(
-        event_id="evt-1", room_layout="Banquet",
+        event_id="evt-1", session_id="ses-1", room_layout="Banquet",
         start_at="2099-11-07T10:00:00+08:00", end_at="2099-11-07T12:00:00+08:00",
     )
+    database.responses[("event_sessions", "select")] = [{
+        **SESSION,
+        "start_time": "2099-11-07T10:00:00+08:00",
+        "end_time": "2099-11-07T12:00:00+08:00",
+    }]
     calls = []
 
     def rpc(name, params):
