@@ -10,6 +10,7 @@ import * as jsxRuntime from 'react/jsx-runtime'
 import * as searchHelpers from '../src/venueSearch.js'
 import * as eventDisplay from '../src/eventDisplay.js'
 import * as eventCategories from '../src/eventCategories.js'
+import * as equipmentEligibility from '../src/equipmentRequestEligibility.js'
 
 
 const source = await readFile(new URL('../src/pages/VenueSearchPage.jsx', import.meta.url), 'utf8')
@@ -327,6 +328,8 @@ test('event details offer contextual Find Venue only in Planning', async () => {
       '../context/AuthContext': { useAuth: () => ({ token: 'token' }) },
       '../eventCategories': eventCategories,
       '../eventDisplay': eventDisplay,
+      '../equipmentRequestEligibility': equipmentEligibility,
+      '../components/EquipmentRequestCard': { __esModule: true, default: () => null },
     }
     new Function('require', 'module', 'exports', compiled.code)((name) => imports[name], module, module.exports)
     const html = renderToStaticMarkup(React.createElement(module.exports.default))

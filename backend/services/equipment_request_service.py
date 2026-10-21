@@ -9,6 +9,7 @@ from services.auth_service import AuthError
 _REQUEST_SELECT = (
     "*, "
     "event:events(id,name,start_time,end_time), "
+    "session:event_sessions(id,name,start_time,end_time,equipment_requirements), "
     "items:equipment_request_items("
     "id,equipment_id,quantity,equipment:equipment(id,name,type)), "
     "equipment_bookings(id,equipment_id,start_at,end_at,"
@@ -52,6 +53,7 @@ def submit_equipment_request(
             "submit_equipment_request",
             {
                 "p_event_id": str(equipment_request.event_id),
+                "p_session_id": str(equipment_request.session_id),
                 "p_request_details": equipment_request.request_details,
                 "p_items": [
                     item.model_dump(mode="json")
@@ -62,7 +64,7 @@ def submit_equipment_request(
     except PostgrestAPIError as error:
         if error.code == "P0001":
             raise AuthError(
-                "An equipment request has already been submitted for this event.",
+                "An equipment request has already been submitted for this session.",
                 status_code=409,
             ) from error
         raise _database_error(error) from error
@@ -76,6 +78,7 @@ def submit_equipment_request(
     return {
         "id": str(request_id),
         "event_id": str(equipment_request.event_id),
+        "session_id": str(equipment_request.session_id),
         "coordinator_id": coordinator_id,
         "request_details": equipment_request.request_details,
         "status": "Pending Technical Approval",

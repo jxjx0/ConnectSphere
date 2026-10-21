@@ -173,24 +173,30 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
         try:
             equip_res = (
                 client.table("equipment_requests")
-                .select("id, status, created_at")
+                .select("id, status, created_at, session_id")
                 .eq("event_id", event_id)
                 .eq("status", "Approved")
                 .execute()
             )
             if equip_res.data:
-                request_ids = [
-                    req["id"] for req in equip_res.data
+                # Each request is for one session (T7-279), so each item
+                # carries its request's session_id for the page to group by.
+                session_by_request = {
+                    req["id"]: req.get("session_id") for req in equip_res.data
                     if isinstance(req, dict) and req.get("id")
-                ]
-                if request_ids:
+                }
+                if session_by_request:
                     items_res = (
                         client.table("equipment_request_items")
-                        .select("quantity, equipment:equipment_id(name, type, maintenance_status)")
-                        .in_("request_id", request_ids)
+                        .select("request_id, quantity, equipment:equipment_id(name, type, maintenance_status)")
+                        .in_("request_id", list(session_by_request))
                         .execute()
                     )
-                    equipment_items = items_res.data or []
+                    equipment_items = [
+                        {**item, "session_id": session_by_request.get(item.get("request_id"))}
+                        for item in (items_res.data or [])
+                        if isinstance(item, dict)
+                    ]
         except Exception as exc:
             logger.warning(f"Could not load equipment items for event {event_id}: {exc}")
 
@@ -289,12 +295,34 @@ def _safety_check_blockers(client, event: dict) -> list[str]:
 
     equipment_requests = (
         client.table("equipment_requests")
-        .select("status")
+        .select("status, session_id")
         .eq("event_id", event["id"])
         .execute()
     ).data or []
     if any(request.get("status") == "Pending Technical Approval" for request in equipment_requests):
         blockers.append("pending equipment requests must be reviewed first")
+    else:
+        # Every session that lists equipment needs its own request (scope
+        # doc 9.1). Sessions that need none count as done.
+        sessions = (
+            client.table("event_sessions")
+            .select("id, name, equipment_requirements")
+            .eq("event_id", event["id"])
+            .execute()
+        ).data or []
+        requested_sessions = {request.get("session_id") for request in equipment_requests}
+        missing = [
+            session.get("name") or "a session" for session in sessions
+            if (session.get("equipment_requirements") or "").strip()
+            and session.get("id") not in requested_sessions
+        ]
+        if missing:
+            blockers.append(
+                "every session that needs equipment needs an equipment request ("
+                + ", ".join(missing)
+                + (" has" if len(missing) == 1 else " have")
+                + " none)"
+            )
 
     return blockers
 

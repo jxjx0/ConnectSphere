@@ -7,6 +7,7 @@ import { transformWithEsbuild } from 'vite'
 import * as jsxRuntime from 'react/jsx-runtime'
 import * as display from '../src/eventDisplay.js'
 import * as categories from '../src/eventCategories.js'
+import * as eligibility from '../src/equipmentRequestEligibility.js'
 
 async function compile(path, imports = {}) {
   const source = await readFile(new URL(path, import.meta.url), 'utf8')
@@ -19,9 +20,14 @@ async function compile(path, imports = {}) {
   }, module, module.exports)
   return module.exports.default
 }
+const equipmentCard = () => compile('../src/components/EquipmentRequestCard.jsx', {
+  './VenueBookingCard.module.css': { default: {}, __esModule: true },
+})
 const link = ({ to, children, ...props }) => React.createElement('a', { ...props, href: to }, children)
 const event = { id: 'event-1', name: 'Workshop', category: 'workshop', status: 'planning',
-  start_time: '2099-11-07T10:00:00Z', end_time: '2099-11-07T12:00:00Z', expected_attendance: 40 }
+  start_time: '2099-11-07T10:00:00Z', end_time: '2099-11-07T12:00:00Z', expected_attendance: 40,
+  sessions: [{ id: 'session-1', name: 'Main session', start_time: '2099-11-07T10:00:00Z',
+    end_time: '2099-11-07T12:00:00Z', expected_attendance: 40 }] }
 const affected = { booking_id: 'booking-1', status: 'AFFECTED_BY_UNAVAILABILITY', venues: { name: 'Hall' },
   start_at: event.start_time, end_at: event.end_time, created_at: event.start_time, room_layout: 'Classroom' }
 
@@ -90,6 +96,7 @@ test('Coordinator event page shows stored affected status and retains other appr
   const snapshot = JSON.stringify({ event, bookings })
   const equipmentRequest = {
     event_id: event.id,
+    session_id: 'session-1',
     status: 'Pending Technical Approval',
     request_details: 'Two projectors and a wireless microphone',
   }
@@ -112,6 +119,8 @@ test('Coordinator event page shows stored affected status and retains other appr
     },
     '../api/venues': { getVenueBookingsForEvent: async () => ({ bookings }) },
     '../api/equipmentRequests': { getEventEquipmentRequests: async () => ({ requests }) },
+    '../equipmentRequestEligibility': eligibility,
+    '../components/EquipmentRequestCard': { default: await equipmentCard(), __esModule: true },
   })
   Page()
   effects.forEach(fn => fn())
@@ -122,11 +131,11 @@ test('Coordinator event page shows stored affected status and retains other appr
   assert.match(markup, /Originally approved/)
   assert.match(markup, /Other Hall/)
   assert.match(markup, />APPROVED<\/span>/)
-  assert.doesNotMatch(markup, /href="\/equipment-requests\?eventId=event-1"/)
+  assert.doesNotMatch(markup, /Request Equipment|Request equipment for this session/)
   assert.match(markup, /Two projectors and a wireless microphone/)
-  assert.match(markup, /Needed for:/)
-  assert.ok(markup.indexOf('Venue Booking Requests') < markup.indexOf('Equipment request'))
-  assert.ok(markup.indexOf('Equipment request') < markup.indexOf('Organiser'))
+  assert.match(markup, /Needed For:/)
+  assert.ok(markup.indexOf('Venue Booking Requests') < markup.indexOf('Equipment requests'))
+  assert.ok(markup.indexOf('Equipment requests') < markup.indexOf('Organiser'))
   assert.equal(JSON.stringify({ event, bookings }), snapshot)
 
   requests = []
@@ -140,6 +149,7 @@ test('Coordinator event page shows stored affected status and retains other appr
   const requestMarkup = renderToStaticMarkup(Page())
   assert.match(requestMarkup, /href="\/equipment-requests\?eventId=event-1"/)
   assert.match(requestMarkup, /Request Equipment/)
+  assert.match(requestMarkup, /href="\/equipment-requests\?eventId=event-1&amp;sessionId=session-1"/)
 })
 
 
@@ -165,6 +175,8 @@ for (const status of ['under_review', 'change_requested', 'confirmed', 'rejected
         },
         '../api/venues': { getVenueBookingsForEvent: async () => ({ bookings: [], has_active_venue_hold: activeHold }) },
         '../api/equipmentRequests': { getEventEquipmentRequests: async () => ({ requests: [] }) },
+        '../equipmentRequestEligibility': eligibility,
+    '../components/EquipmentRequestCard': { default: await equipmentCard(), __esModule: true },
       })
       Page(); effects.forEach(fn => fn())
       await new Promise(resolve => setImmediate(resolve)); index = 0
@@ -199,6 +211,8 @@ async function renderCoordinatorPage(pageEvent, safetyDecision, bookings = []) {
     },
     '../api/venues': { getVenueBookingsForEvent: async () => ({ bookings }) },
     '../api/equipmentRequests': { getEventEquipmentRequests: async () => ({ requests: [] }) },
+    '../equipmentRequestEligibility': eligibility,
+    '../components/EquipmentRequestCard': { default: await equipmentCard(), __esModule: true },
   })
   Page()
   effects.forEach(fn => fn())

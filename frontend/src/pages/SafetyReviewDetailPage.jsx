@@ -86,6 +86,28 @@ function formatOperatingHours(val) {
   return String(val)
 }
 
+// Approved equipment items, one row each: name, type, quantity and
+// whether the item is in working order.
+function EquipmentItems({ items }) {
+  if (items.length === 0) {
+    return <p className="note">No approved equipment for this session.</p>
+  }
+  return (
+    <dl className="detail-list detail-list--compact">
+      {items.map((item, index) => (
+        <div className="detail-list__row" key={`${item.request_id}-${index}`}>
+          <dt>{item.equipment?.name || 'Equipment'} × {item.quantity}</dt>
+          <dd>
+            {item.equipment?.type || 'General'}
+            {' · '}
+            {item.equipment?.maintenance_status || 'Unknown condition'}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
 export default function SafetyReviewDetailPage() {
   const { eventId } = useParams()
   const { token } = useAuth()
@@ -185,6 +207,14 @@ export default function SafetyReviewDetailPage() {
   const unlinkedBookings = hasSessions
     ? venue_bookings.filter((booking) => !sessionIds.has(booking.session_id))
     : []
+  // Approved equipment is grouped the same way: each request is for one
+  // session (T7-279).
+  const equipmentFor = (session) => equipment_items.filter(
+    (item) => !hasSessions || item.session_id === session.id,
+  )
+  const unlinkedEquipment = hasSessions
+    ? equipment_items.filter((item) => !sessionIds.has(item.session_id))
+    : []
 
   return (
     <AppShell>
@@ -247,8 +277,8 @@ export default function SafetyReviewDetailPage() {
             actually booked for it, which is what the safety check is about. */}
         <SessionList
           event={event}
-          title="Sessions and booked venues"
-          note="Each session shows what the Organiser asked for, then the venue booked for it."
+          title="Sessions and what is booked"
+          note="Each session shows what the Organiser asked for, then the venue and equipment booked for it."
           extra={(session) => (
             <>
               <h4 className="session-card__label">Booked venue</h4>
@@ -257,6 +287,8 @@ export default function SafetyReviewDetailPage() {
                 : bookingsFor(session).map((booking) => (
                   <BookedVenue key={booking.booking_id} booking={booking} />
                 ))}
+              <h4 className="session-card__label">Approved equipment</h4>
+              <EquipmentItems items={equipmentFor(session)} />
             </>
           )}
         />
@@ -271,41 +303,13 @@ export default function SafetyReviewDetailPage() {
           </section>
         )}
 
-        {/* Equipment Booked Section */}
-        <section className="stack stack--tight">
-          <h2 className="section-title">Equipment Booked</h2>
-          {equipment_items.length === 0 ? (
-            <p className="note">
-              No specific technical equipment requested ({optional(event.equipment_requirements)}).
-            </p>
-          ) : (
-            <ul className="stack stack--tight" style={{ listStyle: 'none', paddingLeft: 0, margin: 0 }}>
-              {equipment_items.map((item, idx) => (
-                <li
-                  key={idx}
-                  style={{
-                    border: '1px solid var(--rule)',
-                    borderRadius: 'var(--radius)',
-                    padding: 'var(--space-3) var(--space-4)',
-                    backgroundColor: 'var(--surface)',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <strong style={{ color: 'var(--ink)' }}>
-                      {item.equipment?.name || 'Equipment'} ({item.equipment?.type || 'General'})
-                    </strong>
-                    <span className="tag">
-                      Status: {item.equipment?.maintenance_status || 'Active'}
-                    </span>
-                  </div>
-                  <p className="note" style={{ marginTop: '0.25rem' }}>
-                    Quantity requested: <strong>{item.quantity}</strong>
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        {unlinkedEquipment.length > 0 && (
+          <section className="stack stack--tight">
+            <h2 className="section-title">Other approved equipment</h2>
+            <p className="note">Equipment requested for the whole event, not one session.</p>
+            <EquipmentItems items={unlinkedEquipment} />
+          </section>
+        )}
 
         {/* Safety Assessment & Decision Form Section */}
         <section className="stack stack--tight" style={{ marginTop: 'var(--space-6)' }}>

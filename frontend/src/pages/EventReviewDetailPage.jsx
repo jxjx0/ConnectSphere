@@ -12,6 +12,7 @@ import {
 
 } from '../api/events'
 import AppShell from '../components/AppShell'
+import EquipmentRequestCard from '../components/EquipmentRequestCard'
 import SessionList from '../components/SessionList'
 import { useAuth } from '../context/AuthContext'
 import { categoryLabel } from '../eventCategories'
@@ -21,9 +22,11 @@ import {
   formatSessionSummary,
   optional,
   readableStatus,
+  sessionsOf,
 } from '../eventDisplay'
 import { getVenueBookingsForEvent } from '../api/venues'
 import { getEventEquipmentRequests } from '../api/equipmentRequests'
+import { sessionsWithoutEquipmentRequest } from '../equipmentRequestEligibility'
 
 import { requestSafetyCheck } from '../api/events'
 
@@ -109,7 +112,7 @@ export default function EventReviewDetailPage() {
   const [showClarificationForm, setShowClarificationForm] = useState(false)
   const [loading, setLoading] = useState(true)
   const [venueBookings, setVenueBookings] = useState([])
-  const [equipmentRequest, setEquipmentRequest] = useState(null)
+  const [equipmentRequests, setEquipmentRequests] = useState([])
   const [equipmentRequestError, setEquipmentRequestError] = useState('')
 
   const [submittingSafety, setSubmittingSafety] = useState(false)
@@ -137,7 +140,7 @@ export default function EventReviewDetailPage() {
         setVenueBookings(bookingData.bookings || [])
         setHasActiveHold(bookingData.has_active_venue_hold === true)
         setVenueError(bookingData.error || '')
-        if (requestData) setEquipmentRequest(requestData.requests[0] || null)
+        if (requestData) setEquipmentRequests(requestData.requests || [])
       })
       .catch((caught) => {
         if (active) setError(caught.message)
@@ -259,9 +262,15 @@ export default function EventReviewDetailPage() {
     .filter((status) => !['CANCELLED', 'REJECTED', 'REJECTED_BY_SAFETY'].includes(status))
   const hasApprovedVenue =
     liveVenueStatuses.length > 0 && liveVenueStatuses.every((status) => status === 'APPROVED')
-  // Each event has one equipment request, so hide the link once one exists
-  // (or while we can't tell because loading it failed).
-  const canRequestEquipment = !equipmentRequest && !equipmentRequestError
+  // Each session has one equipment request, so hide the link once every
+  // session has one (or while we can't tell because loading them failed).
+  const canRequestEquipment = !equipmentRequestError
+    && sessionsWithoutEquipmentRequest(event, equipmentRequests).length > 0
+  const equipmentRequestFor = (sessionId) => (
+    equipmentRequests.find((request) => request.session_id === sessionId)
+  )
+  // Requests made before sessions existed are for the whole event.
+  const eventLevelRequests = equipmentRequests.filter((request) => !request.session_id)
 
   return (
     <AppShell>
@@ -350,7 +359,7 @@ export default function EventReviewDetailPage() {
 
               {!hasApprovedVenue && (
                 <p className="note">
-                  A safety check can be requested once every venue booking is approved (rejected or cancelled ones don't count) and no equipment request is still pending.
+                  A safety check can be requested once every session has an approved venue booking (rejected or cancelled ones don't count), every session that needs equipment has an equipment request, and no equipment request is still pending.
                 </p>
               )}
               {safetyError && <p className="form-error" role="alert">{safetyError}</p>}
@@ -465,42 +474,45 @@ export default function EventReviewDetailPage() {
         </section>
         )}
 
-        {(event.status === 'planning' || equipmentRequest || equipmentRequestError) && (
+        {(event.status === 'planning' || equipmentRequests.length > 0 || equipmentRequestError) && (
           <section className="stack stack--tight">
-            <h2 className="section-title">Equipment request</h2>
-            {equipmentRequestError && (
+            <h2 className="section-title">Equipment requests</h2>
+            {equipmentRequestError ? (
               <p className="form-error" role="alert">{equipmentRequestError}</p>
-            )}
-            {equipmentRequestError ? null : equipmentRequest ? (
-              <>
-                <p>
-                  Status: <span className="tag">{equipmentRequest.status}</span>
-                </p>
-                <p>
-                  Requested equipment: {equipmentRequest.request_details}
-                </p>
-                <p className="note">
-                  Needed for: {formatDateRange(event.start_time, event.end_time)}
-                  {' '}including venue setup and teardown.
-                </p>
-                {equipmentRequest.status === 'Pending Technical Approval' && (
-                  <p className="note">
-                    Technical Support is checking availability and allocating
-                    suitable equipment.
-                  </p>
-                )}
-                {equipmentRequest.equipment_bookings?.length > 0 && (
-                  <p className="note">
-                    Allocated: {equipmentRequest.equipment_bookings.map(
-                      (booking) => booking.equipment?.name || 'Equipment',
-                    ).join(', ')}
-                  </p>
-                )}
-              </>
             ) : (
-              <p className="note">
-                No equipment request has been submitted for this event.
-              </p>
+              <>
+                <p className="note">One request per session, for the session's own start and end.</p>
+                <ul className="stack stack--tight" style={{ listStyle: 'none', paddingLeft: 0, margin: 0 }}>
+                  {sessionsOf(event).map((session) => {
+                    const request = equipmentRequestFor(session.id)
+                    const canRequest = !request && canRequestEquipment
+                      && ['planning', 'confirmed'].includes(event.status)
+                    return (
+                      <li key={session.id}>
+                        <EquipmentRequestCard
+                          title={session.name}
+                          request={request}
+                          timing={session}
+                          needs={session.equipment_requirements}
+                          actions={canRequest && (
+                            <Link
+                              to={`/equipment-requests?eventId=${encodeURIComponent(eventId)}&sessionId=${encodeURIComponent(session.id)}`}
+                              className="button button--secondary"
+                            >
+                              Request equipment for this session
+                            </Link>
+                          )}
+                        />
+                      </li>
+                    )
+                  })}
+                  {eventLevelRequests.map((request) => (
+                    <li key={request.id}>
+                      <EquipmentRequestCard title="Whole event" request={request} timing={event} />
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
           </section>
         )}

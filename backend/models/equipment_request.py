@@ -12,7 +12,10 @@ class EquipmentRequestItemSubmit(BaseModel):
 
 
 class EquipmentRequestSubmit(BaseModel):
+    # One request per session: the equipment is booked for that session's
+    # own start and end (T7-279).
     event_id: UUID
+    session_id: UUID
     request_details: str = Field(min_length=1, max_length=2000)
     items: list[EquipmentRequestItemSubmit] = Field(default_factory=list)
 
@@ -20,7 +23,7 @@ class EquipmentRequestSubmit(BaseModel):
     def validate_request_details(self) -> "EquipmentRequestSubmit":
         self.request_details = self.request_details.strip()
         if not self.request_details:
-            raise ValueError("Describe the equipment needed for this event.")
+            raise ValueError("Describe the equipment needed for this session.")
         return self
 
     @model_validator(mode="after")

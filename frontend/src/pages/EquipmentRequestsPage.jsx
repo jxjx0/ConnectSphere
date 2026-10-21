@@ -1,31 +1,32 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import {
   getEquipmentRequests,
+  getEventEquipmentRequests,
   reviewEquipmentRequest,
   submitEquipmentRequest,
 } from '../api/equipmentRequests'
 import { getAssignedEventRequests } from '../api/events'
 import AppShell from '../components/AppShell'
+import EquipmentRequestCard from '../components/EquipmentRequestCard'
 import { useAuth } from '../context/AuthContext'
 import { formatDateRange } from '../eventDisplay'
-import { equipmentRequestEligibleEvents } from '../equipmentRequestEligibility'
-
-function equipmentLines(request) {
-  return request.items.map((item) => (
-    `${item.equipment?.name || 'Equipment'} × ${item.quantity}`
-  )).join(', ')
-}
+import {
+  equipmentRequestEligibleEvents,
+  sessionsWithoutEquipmentRequest,
+} from '../equipmentRequestEligibility'
 
 export default function EquipmentRequestsPage() {
   const { token, user } = useAuth()
   const [searchParams] = useSearchParams()
   const requestedEventId = searchParams.get('eventId') || ''
+  const requestedSessionId = searchParams.get('sessionId') || ''
   const isCoordinator = user.role === 'coordinator'
   const [events, setEvents] = useState([])
   const [requests, setRequests] = useState([])
   const [eventId, setEventId] = useState(requestedEventId)
+  const [sessionId, setSessionId] = useState('')
   const [requestDetails, setRequestDetails] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -35,9 +36,17 @@ export default function EquipmentRequestsPage() {
   const [reviewErrors, setReviewErrors] = useState({})
   const isTechSupport = user.role === 'tech_support'
 
+  // Opened from one event's page, the Coordinator sees only that event's
+  // requests; otherwise every request they can see.
+  const loadRequests = useCallback(() => (
+    isCoordinator && requestedEventId
+      ? getEventEquipmentRequests(requestedEventId, token)
+      : getEquipmentRequests(token)
+  ), [isCoordinator, requestedEventId, token])
+
   useEffect(() => {
     const loads = [
-      getEquipmentRequests(token),
+      loadRequests(),
       ...(isCoordinator ? [getAssignedEventRequests(token)] : []),
     ]
 
@@ -45,32 +54,48 @@ export default function EquipmentRequestsPage() {
       .then(([requestData, eventData]) => {
         setRequests(requestData.requests)
         if (isCoordinator) {
-          const eventsWithRequests = new Set(
-            requestData.requests.map((request) => request.event_id),
-          )
-          setEvents(
-            equipmentRequestEligibleEvents(eventData.events)
-              .filter((eventItem) => !eventsWithRequests.has(eventItem.id)),
-          )
-          const requestedEvent = eventData.events.find(
-            (eventItem) => eventItem.id === requestedEventId,
-          )
-          if (requestedEvent) {
-            setRequestDetails(requestedEvent.equipment_requirements || '')
-          }
+          setEvents(equipmentRequestEligibleEvents(eventData.events))
         }
       })
       .catch((caught) => setError(caught.message))
       .finally(() => setLoading(false))
-  }, [isCoordinator, requestedEventId, token])
+  }, [isCoordinator, loadRequests, token])
 
-  const selectedEvent = useMemo(
-    () => events.find((event) => event.id === eventId),
-    [eventId, events],
+  // Events with at least one session still without a request. Requests only
+  // holds one event's requests when the page is opened for that event, which
+  // is then the only event that matters.
+  const openEvents = useMemo(
+    () => events.filter((eventItem) => (
+      sessionsWithoutEquipmentRequest(eventItem, requests).length > 0
+    )),
+    [events, requests],
   )
-  const existingEventRequest = requestedEventId
-    ? requests.find((request) => request.event_id === requestedEventId)
-    : null
+  const selectedEvent = useMemo(
+    () => openEvents.find((eventItem) => eventItem.id === eventId),
+    [eventId, openEvents],
+  )
+  const openSessions = useMemo(
+    () => (selectedEvent ? sessionsWithoutEquipmentRequest(selectedEvent, requests) : []),
+    [requests, selectedEvent],
+  )
+  const selectedSession = openSessions.find((session) => session.id === sessionId)
+  const requestedEvent = events.find((eventItem) => eventItem.id === requestedEventId)
+
+  // Pick a session for the chosen event: the one asked for in the link, or
+  // the only one left. Its equipment needs fill in the description.
+  useEffect(() => {
+    if (!selectedEvent || openSessions.some((session) => session.id === sessionId)) return
+    const next = openSessions.find((session) => session.id === requestedSessionId)
+      || (openSessions.length === 1 ? openSessions[0] : null)
+    setSessionId(next?.id || '')
+    setRequestDetails(next?.equipment_requirements || '')
+  }, [openSessions, requestedSessionId, selectedEvent, sessionId])
+
+  function chooseSession(nextSessionId) {
+    setSessionId(nextSessionId)
+    const nextSession = openSessions.find((session) => session.id === nextSessionId)
+    setRequestDetails(nextSession?.equipment_requirements || '')
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -81,8 +106,12 @@ export default function EquipmentRequestsPage() {
       setError('Select an assigned event.')
       return
     }
+    if (!sessionId) {
+      setError('Select the session this equipment is for.')
+      return
+    }
     if (!requestDetails.trim()) {
-      setError('Describe the equipment needed for this event.')
+      setError('Describe the equipment needed for this session.')
       return
     }
 
@@ -90,21 +119,23 @@ export default function EquipmentRequestsPage() {
     try {
       const data = await submitEquipmentRequest({
         event_id: eventId,
+        session_id: sessionId,
         request_details: requestDetails.trim(),
         items: [],
       }, token)
       const submittedRequest = {
         ...data.request,
         event: selectedEvent,
+        session: selectedSession,
         items: [],
       }
       setRequests((current) => [submittedRequest, ...current])
-      setEvents((current) => current.filter((eventItem) => eventItem.id !== eventId))
-      if (!requestedEventId) {
-        setEventId('')
-        setRequestDetails('')
-      }
-      setSubmittedMessage('Equipment request submitted for technical approval.')
+      setSessionId('')
+      setRequestDetails('')
+      if (!requestedEventId) setEventId('')
+      setSubmittedMessage(
+        `Equipment request for ${selectedSession?.name || 'the session'} submitted for technical approval.`,
+      )
     } catch (caught) {
       setError(caught.message)
     } finally {
@@ -159,6 +190,9 @@ export default function EquipmentRequestsPage() {
       <article className="choice equipment-request-card" key={request.id}>
         <div className="equipment-request-card__body">
           <strong className="choice__title">{request.event?.name || 'Assigned event'}</strong>
+          {request.session && (
+            <span className="choice__description">Session: {request.session.name}</span>
+          )}
           <span className="choice__description">
             Organiser: {request.event?.organiser_name || 'Unknown'}
           </span>
@@ -167,7 +201,7 @@ export default function EquipmentRequestsPage() {
           </span>
 
           <div className="stack stack--tight">
-            <strong>Event time windows</strong>
+            <strong>{request.session ? 'Session time' : 'Event time windows'}</strong>
             {windows.length === 0 ? (
               <span className="choice__description">
                 No valid event or venue booking time is available for allocation.
@@ -177,11 +211,12 @@ export default function EquipmentRequestsPage() {
                 className="choice__description"
                 key={booking.booking_id || `event-${index}`}
               >
-                {booking.venue_name || 'Event schedule'}
+                {booking.venue_name || (request.session ? 'No venue booked yet' : 'Event schedule')}
                 {booking.room_layout ? ` · ${booking.room_layout}` : ''}
                 {' · '}
                 {formatDateRange(booking.start_at, booking.end_at)}
-                {booking.booking_status && booking.booking_status !== 'EVENT_SCHEDULE'
+                {booking.booking_status
+                  && !['EVENT_SCHEDULE', 'SESSION_SCHEDULE'].includes(booking.booking_status)
                   ? ` · ${booking.booking_status}`
                   : ''}
               </span>
@@ -283,45 +318,52 @@ export default function EquipmentRequestsPage() {
   return (
     <AppShell>
       <div className="content">
-        <Link to="/dashboard" className="backlink">← Dashboard</Link>
+        {isCoordinator && requestedEventId ? (
+          <Link to={`/event-reviews/${encodeURIComponent(requestedEventId)}`} className="backlink">
+            ← Back to event
+          </Link>
+        ) : (
+          <Link to="/dashboard" className="backlink">← Dashboard</Link>
+        )}
         <div className="content__header">
           <h1>{isCoordinator ? 'Equipment requests' : 'Equipment requests to review'}</h1>
           <p className="lead">
             {isCoordinator
-              ? 'Request equipment for an event assigned to you, then track its technical approval status.'
+              ? 'Request equipment for each session of an event assigned to you, then track its technical approval status.'
               : 'Review each request, book the equipment it needs, then approve or reject it.'}
           </p>
+          {isCoordinator && requestedEventId && (
+            <p className="note">
+              Showing requests for {requestedEvent?.name || 'this event'} only.
+              {' '}<Link to="/equipment-requests">See all your equipment requests</Link>
+            </p>
+          )}
         </div>
 
         {error && <p className="form-error" role="alert">{error}</p>}
         {submittedMessage && <p className="form-success" role="status">{submittedMessage}</p>}
 
-        {isCoordinator && (!requestedEventId || (selectedEvent && !existingEventRequest)) && (
+        {isCoordinator && (!requestedEventId || selectedEvent) && openEvents.length > 0 && (
           <form className="form" onSubmit={handleSubmit}>
             <section className="stack stack--tight">
               <h2 className="section-title">Request equipment</h2>
-              {requestedEventId && selectedEvent ? (
-                <p className="note">
-                  Event: {selectedEvent.name}
-                </p>
-              ) : !requestedEventId && (
+              {requestedEventId ? (
+                <p className="note">Event: {selectedEvent.name}</p>
+              ) : (
                 <div className="field">
                   <label htmlFor="event">Assigned event</label>
                   <select
                     id="event"
                     value={eventId}
                     onChange={(change) => {
-                      const nextEventId = change.target.value
-                      setEventId(nextEventId)
-                      const nextEvent = events.find(
-                        (eventItem) => eventItem.id === nextEventId,
-                      )
-                      setRequestDetails(nextEvent?.equipment_requirements || '')
+                      setEventId(change.target.value)
+                      setSessionId('')
+                      setRequestDetails('')
                     }}
                     required
                   >
                     <option value="">Choose an event…</option>
-                    {events.map((eventItem) => (
+                    {openEvents.map((eventItem) => (
                       <option key={eventItem.id} value={eventItem.id}>
                         {eventItem.name}
                       </option>
@@ -330,8 +372,30 @@ export default function EquipmentRequestsPage() {
                 </div>
               )}
               {selectedEvent && (
+                <div className="field">
+                  <label htmlFor="session">Session</label>
+                  <select
+                    id="session"
+                    value={sessionId}
+                    onChange={(change) => chooseSession(change.target.value)}
+                    required
+                  >
+                    <option value="">Choose a session…</option>
+                    {openSessions.map((session) => (
+                      <option key={session.id} value={session.id}>
+                        {session.name} · {formatDateRange(session.start_time, session.end_time)}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="field__hint">
+                    Each session gets its own request. Sessions that already
+                    have one are not listed.
+                  </p>
+                </div>
+              )}
+              {selectedSession && (
                 <p className="note" role="status">
-                  Event schedule: {formatDateRange(selectedEvent.start_time, selectedEvent.end_time)}
+                  Needed for: {formatDateRange(selectedSession.start_time, selectedSession.end_time)}
                 </p>
               )}
             </section>
@@ -351,9 +415,9 @@ export default function EquipmentRequestsPage() {
                 required
               />
               <p className="field__hint">
+                Filled in from the Organiser's equipment needs for this session.
                 Technical Support will choose suitable catalogue equipment and
-                check its availability for the event time, including venue
-                setup and teardown.
+                check its availability for the session's start and end time.
               </p>
             </section>
 
@@ -361,11 +425,7 @@ export default function EquipmentRequestsPage() {
               <button
                 type="submit"
                 className="button"
-                disabled={
-                  submitting
-                  || !selectedEvent
-                  || (Boolean(requestedEventId) && selectedEvent.id !== requestedEventId)
-                }
+                disabled={submitting || !selectedEvent || !selectedSession}
               >
                 {submitting ? 'Submitting…' : 'Request equipment'}
               </button>
@@ -373,23 +433,18 @@ export default function EquipmentRequestsPage() {
           </form>
         )}
 
-        {isCoordinator && requestedEventId && existingEventRequest && (
+        {isCoordinator && requestedEventId && !selectedEvent && (
           <p className="note">
-            This event already has an equipment request. Each event can have
-            one request.
+            {requestedEvent && requestedEvent.sessions?.length > 0
+              ? 'Every session of this event has an equipment request. Each session can have one request.'
+              : 'This event is not available for a new equipment request.'}
           </p>
         )}
 
-        {isCoordinator && requestedEventId && !selectedEvent && !existingEventRequest && !loading && (
+        {isCoordinator && openEvents.length === 0 && !requestedEventId && (
           <p className="note">
-            This event is not available for a new equipment request.
-          </p>
-        )}
-
-        {isCoordinator && events.length === 0 && !requestedEventId && (
-          <p className="note">
-            There are no eligible assigned events without an equipment request.
-            Each event can have one equipment request.
+            There are no eligible assigned events with a session still
+            needing an equipment request. Each session can have one request.
           </p>
         )}
 
@@ -404,33 +459,18 @@ export default function EquipmentRequestsPage() {
                 : 'There are no equipment requests to review.'}
             </p>
           ) : (
-            <div className="choices">
+            <div className={isTechSupport ? 'choices' : 'stack stack--tight'}>
               {requests.map((request) => (
                 isTechSupport
                   ? renderTechSupportRequest(request)
                   : (
-                    <article className="choice equipment-request-card" key={request.id}>
-                      <span className="choice__text">
-                        <span className="choice__title">
-                          {request.event?.name || 'Assigned event'}
-                        </span>
-                        <span className="choice__description">
-                          {formatDateRange(request.event?.start_time, request.event?.end_time)}
-                          {' · '}
-                          <span className="tag">{request.status}</span>
-                        </span>
-                        <span className="choice__description">
-                          {request.request_details || equipmentLines(request)}
-                        </span>
-                        <span className="choice__description">
-                          {request.equipment_bookings?.length
-                            ? `Booked equipment: ${request.equipment_bookings.map(
-                              (booking) => booking.equipment?.name || 'Equipment',
-                            ).join(', ')}`
-                            : 'No equipment has been allocated yet.'}
-                        </span>
-                      </span>
-                    </article>
+                    <EquipmentRequestCard
+                      key={request.id}
+                      title={request.session?.name || 'Whole event'}
+                      eventName={request.event?.name || 'Assigned event'}
+                      request={request}
+                      timing={request.session || request.event}
+                    />
                   )
               ))}
             </div>

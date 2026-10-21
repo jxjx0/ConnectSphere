@@ -34,6 +34,7 @@ ATTENDEE = Profile(
 
 VALID_REQUEST = {
     "event_id": "33333333-3333-3333-3333-333333333333",
+    "session_id": "77777777-7777-7777-7777-777777777777",
     "request_details": "Two projectors and a wireless microphone",
     "items": [
         {
@@ -66,6 +67,7 @@ SAVED_REQUEST = {
 
 REQUEST_SELECT = (
     "*, event:events(id,name,start_time,end_time), "
+    "session:event_sessions(id,name,start_time,end_time,equipment_requirements), "
     "items:equipment_request_items("
     "id,equipment_id,quantity,equipment:equipment(id,name,type)), "
     "equipment_bookings(id,equipment_id,start_at,end_at,equipment:equipment(id,name))"
@@ -151,6 +153,24 @@ def test_submission_requires_nonblank_request_details(
     response = client.post(
         "/equipment-requests",
         json={**VALID_REQUEST, "request_details": request_details},
+        headers={"Authorization": "Bearer coordinator-token"},
+    )
+
+    assert response.status_code == 400, response.get_json()
+    submit.assert_not_called()
+
+
+def test_submission_requires_a_session(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+    submit = Mock(side_effect=AssertionError("invalid request must not be saved"))
+    monkeypatch.setattr(
+        equipment_request_service, "submit_equipment_request", submit
+    )
+    payload = {key: value for key, value in VALID_REQUEST.items() if key != "session_id"}
+
+    response = client.post(
+        "/equipment-requests",
+        json=payload,
         headers={"Authorization": "Bearer coordinator-token"},
     )
 
@@ -409,6 +429,7 @@ def test_service_returns_submit_result_without_a_post_save_read(
         "submit_equipment_request",
         {
             "p_event_id": VALID_REQUEST["event_id"],
+            "p_session_id": VALID_REQUEST["session_id"],
             "p_request_details": VALID_REQUEST["request_details"],
             "p_items": VALID_REQUEST["items"],
         },
@@ -417,6 +438,7 @@ def test_service_returns_submit_result_without_a_post_save_read(
     assert result == {
         "id": SAVED_REQUEST["id"],
         "event_id": VALID_REQUEST["event_id"],
+        "session_id": VALID_REQUEST["session_id"],
         "coordinator_id": COORDINATOR.id,
         "request_details": VALID_REQUEST["request_details"],
         "status": "Pending Technical Approval",
@@ -459,7 +481,7 @@ def test_service_reports_missing_rpc_result(
         (
             "P0001",
             409,
-            "An equipment request has already been submitted for this event.",
+            "An equipment request has already been submitted for this session.",
         ),
         (
             "22023",
