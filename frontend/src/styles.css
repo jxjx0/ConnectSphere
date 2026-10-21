@@ -308,6 +308,26 @@ a:hover {
   gap: var(--space-3);
 }
 
+/* One session of an event request: a card on the form and the review. */
+.session-card {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.session-card legend,
+.session-card h3 {
+  margin: 0;
+  font-weight: 600;
+}
+
+.session-card .button {
+  justify-self: start;
+}
+
 .booking-calendar__nav {
   display: flex;
   align-items: center;
