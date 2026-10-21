@@ -201,8 +201,14 @@ export default function SafetyReviewDetailPage() {
           </dl>
         </section>
 
-        {/* Each session's own time, attendance and needs (T7-277). */}
-        <SessionList event={event} />
+        {/* Each session's own time, attendance and needs (T7-277). These
+            are the Organiser's requests; the booked venue and equipment
+            follow in their own sections. */}
+        <SessionList
+          event={event}
+          title="Sessions requested"
+          note="What the Organiser asked for. The venue and equipment actually booked are shown below."
+        />
 
         {/* Venue Profile & Requested Layout Section */}
         <section className="stack stack--tight">
