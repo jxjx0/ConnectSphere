@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import AppShell from '../components/AppShell'
 import { getEquipment, updateEquipment } from '../api/equipment'
 
 export default function EquipmentPage() {
+  // Set when Tech Support arrives from a request, so each item's bookings
+  // page opens with that request already chosen.
+  const [searchParams] = useSearchParams()
+  const requestId = searchParams.get('request')
   const [equipment, setEquipment] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -252,7 +256,9 @@ export default function EquipmentPage() {
                       </button>
                       {' '}
                       <Link
-                        to={`/equipment/${item.id}/bookings`}
+                        to={requestId
+                          ? `/equipment/${item.id}/bookings?request=${encodeURIComponent(requestId)}`
+                          : `/equipment/${item.id}/bookings`}
                         className="button button--secondary button--small"
                       >
                         Bookings

@@ -31,6 +31,10 @@ export function getEquipmentRequests(token) {
   return request('/equipment-requests', token)
 }
 
+export function getEventEquipmentRequests(eventId, token) {
+  return request(`/equipment-requests?event_id=${encodeURIComponent(eventId)}`, token)
+}
+
 export function reviewEquipmentRequest(requestId, decision, token) {
   return request(`/equipment-requests/${requestId}/review`, token, {
     method: 'PATCH',

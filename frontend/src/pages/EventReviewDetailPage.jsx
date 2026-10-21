@@ -21,6 +21,7 @@ import {
   readableStatus,
 } from '../eventDisplay'
 import { getVenueBookingsForEvent } from '../api/venues'
+import { getEventEquipmentRequests } from '../api/equipmentRequests'
 
 import { requestSafetyCheck } from '../api/events'
 
@@ -106,6 +107,8 @@ export default function EventReviewDetailPage() {
   const [showClarificationForm, setShowClarificationForm] = useState(false)
   const [loading, setLoading] = useState(true)
   const [venueBookings, setVenueBookings] = useState([])
+  const [equipmentRequest, setEquipmentRequest] = useState(null)
+  const [equipmentRequestError, setEquipmentRequestError] = useState('')
 
   const [submittingSafety, setSubmittingSafety] = useState(false)
   const [safetyError, setSafetyError] = useState('')
@@ -119,8 +122,12 @@ export default function EventReviewDetailPage() {
     Promise.all([
       getAssignedEventRequest(eventId, token),
       getVenueBookingsForEvent(eventId, token).catch(caught => ({ bookings: [], error: caught.message })),
+      getEventEquipmentRequests(eventId, token).catch((caught) => {
+        if (active) setEquipmentRequestError(caught.message)
+        return null
+      }),
     ])
-      .then(([data, bookingData]) => {
+      .then(([data, bookingData, requestData]) => {
         if (!active) return
         setEvent(data.event)
         setOrganiser(data.organiser)
@@ -128,6 +135,7 @@ export default function EventReviewDetailPage() {
         setVenueBookings(bookingData.bookings || [])
         setHasActiveHold(bookingData.has_active_venue_hold === true)
         setVenueError(bookingData.error || '')
+        if (requestData) setEquipmentRequest(requestData.requests[0] || null)
       })
       .catch((caught) => {
         if (active) setError(caught.message)
@@ -249,6 +257,9 @@ export default function EventReviewDetailPage() {
     .filter((status) => !['CANCELLED', 'REJECTED', 'REJECTED_BY_SAFETY'].includes(status))
   const hasApprovedVenue =
     liveVenueStatuses.length > 0 && liveVenueStatuses.every((status) => status === 'APPROVED')
+  // Each event has one equipment request, so hide the link once one exists
+  // (or while we can't tell because loading it failed).
+  const canRequestEquipment = !equipmentRequest && !equipmentRequestError
 
   return (
     <AppShell>
@@ -300,6 +311,15 @@ export default function EventReviewDetailPage() {
                   {venueBookings.length > 0 ? 'Find / Request Additional Venue' : 'Find Venue'}
                 </Link>
 
+                {canRequestEquipment && (
+                  <Link
+                    to={`/equipment-requests?eventId=${encodeURIComponent(eventId)}`}
+                    className="button button--secondary"
+                  >
+                    Request Equipment
+                  </Link>
+                )}
+
                 <button
                   type="button"
                   className="button button--secondary"
@@ -341,6 +361,16 @@ export default function EventReviewDetailPage() {
           )}
         </header>
 
+        {event.status === 'confirmed' && canRequestEquipment && (
+          <div className="form-actions">
+            <Link
+              to={`/equipment-requests?eventId=${encodeURIComponent(eventId)}`}
+              className="button button--secondary"
+            >
+              Request Equipment
+            </Link>
+          </div>
+        )}
 
         <section className="stack stack--tight">
           <h2 className="section-title">
@@ -422,6 +452,46 @@ export default function EventReviewDetailPage() {
             </ul>
           )}
         </section>
+
+        {(event.status === 'planning' || equipmentRequest || equipmentRequestError) && (
+          <section className="stack stack--tight">
+            <h2 className="section-title">Equipment request</h2>
+            {equipmentRequestError && (
+              <p className="form-error" role="alert">{equipmentRequestError}</p>
+            )}
+            {equipmentRequestError ? null : equipmentRequest ? (
+              <>
+                <p>
+                  Status: <span className="tag">{equipmentRequest.status}</span>
+                </p>
+                <p>
+                  Requested equipment: {equipmentRequest.request_details}
+                </p>
+                <p className="note">
+                  Needed for: {formatDateRange(event.start_time, event.end_time)}
+                  {' '}including venue setup and teardown.
+                </p>
+                {equipmentRequest.status === 'Pending Technical Approval' && (
+                  <p className="note">
+                    Technical Support is checking availability and allocating
+                    suitable equipment.
+                  </p>
+                )}
+                {equipmentRequest.equipment_bookings?.length > 0 && (
+                  <p className="note">
+                    Allocated: {equipmentRequest.equipment_bookings.map(
+                      (booking) => booking.equipment?.name || 'Equipment',
+                    ).join(', ')}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="note">
+                No equipment request has been submitted for this event.
+              </p>
+            )}
+          </section>
+        )}
 
         <section className="stack stack--tight">
           <h2 className="section-title">Organiser</h2>

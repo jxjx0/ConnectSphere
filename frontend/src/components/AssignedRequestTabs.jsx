@@ -187,6 +187,42 @@ function getSafetyBadge(event) {
   return null
 }
 
+function getEquipmentBadge(equipmentRequests) {
+  const status = equipmentRequests?.[0]?.status?.toLowerCase()
+  if (!status) return null
+
+  if (status === 'approved') {
+    return {
+      label: 'Equipment Approved',
+      style: {
+        backgroundColor: 'var(--accent-faint)',
+        color: 'var(--accent)',
+        borderColor: 'var(--accent)',
+      },
+    }
+  }
+
+  if (status === 'rejected') {
+    return {
+      label: 'Equipment Rejected',
+      style: {
+        backgroundColor: 'var(--danger-faint)',
+        color: 'var(--danger)',
+        borderColor: 'var(--danger)',
+      },
+    }
+  }
+
+  return {
+    label: 'Equipment Pending',
+    style: {
+      backgroundColor: 'var(--surface)',
+      color: 'var(--ink)',
+      borderColor: 'var(--rule-strong)',
+    },
+  }
+}
+
 export default function AssignedRequestTabs({ events }) {
   // The open tab lives in the URL (?tab=planning), so the back button
   // returns to the same tab. Under Review is the default.
@@ -224,6 +260,7 @@ export default function AssignedRequestTabs({ events }) {
           {tabEvents.map((event) => {
             const venueBadge = getVenueBadge(event.venue_bookings)
             const safetyBadge = getSafetyBadge(event)
+            const equipmentBadge = getEquipmentBadge(event.equipment_requests)
 
             return (
               <Link
@@ -243,6 +280,11 @@ export default function AssignedRequestTabs({ events }) {
                     {safetyBadge && (
                       <span className="tag" style={safetyBadge.style}>
                         {safetyBadge.label}
+                      </span>
+                    )}
+                    {equipmentBadge && (
+                      <span className="tag" style={equipmentBadge.style}>
+                        {equipmentBadge.label}
                       </span>
                     )}
                   </span>
