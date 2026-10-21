@@ -228,13 +228,63 @@ class EventSubmitRequest(BaseModel):
         return self
 
 
+class EventSessionDraft(BaseModel):
+    """One session of a draft (T7-275): every field may still be empty.
+
+    Whatever has been filled in is checked, so a draft never holds a session
+    that could not be submitted later. "Start time must be in the future" is
+    left to submission, as for the rest of a draft.
+    """
+
+    name: str | None = Field(default=None, max_length=200)
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    expected_attendance: int | None = Field(default=None, gt=0)
+    location_preference: str | None = None
+    layout_preference: str | None = None
+    equipment_requirements: str | None = None
+
+    @field_validator(
+        "name",
+        "location_preference",
+        "layout_preference",
+        "equipment_requirements",
+    )
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator(
+        "start_time", "end_time", "expected_attendance", mode="before"
+    )
+    @classmethod
+    def empty_means_not_filled_in(cls, value):
+        """An untouched form input arrives as "", which means not filled in."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @model_validator(mode="after")
+    def validate_filled_in_times(self) -> "EventSessionDraft":
+        if (
+            self.start_time
+            and self.end_time
+            and _as_utc(self.end_time) <= _as_utc(self.start_time)
+        ):
+            label = self.name or "A session"
+            raise ValueError(f"{label}: End time must be after the start time")
+        return self
+
+
 class EventDraftRequest(BaseModel):
     """The body of POST /events/drafts and PUT /events/drafts/<id>.
 
-    A draft may be incomplete, so only name is required. Whatever has been
-    filled in is still checked, so a draft never holds data that could not
-    be submitted later. "Start time must be in the future" is left to
-    submission: a draft saved today may be finished next week.
+    A draft may be incomplete, so only name is required, and it may have no
+    sessions yet. Whatever has been filled in is still checked, so a draft
+    never holds data that could not be submitted later.
     """
 
     name: str = Field(min_length=1, max_length=200)
@@ -242,13 +292,8 @@ class EventDraftRequest(BaseModel):
     purpose: str | None = None
     category: EventCategory | None = None
     category_other: str | None = Field(default=None, max_length=120)
-    start_time: datetime | None = None
-    end_time: datetime | None = None
-    expected_attendance: int | None = Field(default=None, gt=0)
-    location_preference: str | None = None
-    layout_preference: str | None = None
     accessibility_requirements: str | None = None
-    equipment_requirements: str | None = None
+    sessions: list[EventSessionDraft] = []
 
     @field_validator("name")
     @classmethod
@@ -262,10 +307,7 @@ class EventDraftRequest(BaseModel):
         "description",
         "purpose",
         "category_other",
-        "location_preference",
-        "layout_preference",
         "accessibility_requirements",
-        "equipment_requirements",
     )
     @classmethod
     def strip_optional_text(cls, value: str | None) -> str | None:
@@ -274,10 +316,7 @@ class EventDraftRequest(BaseModel):
         stripped = value.strip()
         return stripped or None
 
-    @field_validator(
-        "category", "start_time", "end_time", "expected_attendance",
-        mode="before",
-    )
+    @field_validator("category", mode="before")
     @classmethod
     def empty_means_not_filled_in(cls, value):
         """An untouched form input arrives as "", which means not filled in."""
@@ -291,12 +330,6 @@ class EventDraftRequest(BaseModel):
             raise ValueError(
                 "Only choose a category description when the category is Other"
             )
-        if (
-            self.start_time
-            and self.end_time
-            and _as_utc(self.end_time) <= _as_utc(self.start_time)
-        ):
-            raise ValueError("End time must be after the start time")
         return self
 
 

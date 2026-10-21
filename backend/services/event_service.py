@@ -17,6 +17,7 @@ from models.event import (
     EventOrganiser,
     EventReviewSummary,
     EventSession,
+    EventSessionDraft,
     EventSessionSubmit,
     EventStatus,
     EventSubmitRequest,
@@ -163,7 +164,9 @@ def submit_event(
 
 
 def _save_sessions(
-    client, event_id: str, sessions: list[EventSessionSubmit]
+    client,
+    event_id: str,
+    sessions: list[EventSessionSubmit] | list[EventSessionDraft],
 ) -> list[EventSession]:
     """Replace all of a draft's sessions with these, in one database call.
 
@@ -397,7 +400,7 @@ def create_draft(
     from the request body.
     """
     client = config.get_user_client(access_token)
-    draft = request.model_dump(mode="json")
+    draft = request.model_dump(mode="json", exclude={"sessions"})
     draft["organiser_id"] = organiser_id
     draft["status"] = EventStatus.DRAFT.value
 
@@ -408,7 +411,15 @@ def create_draft(
 
     if not result.data:
         raise AuthError("Draft was not saved.", status_code=502)
-    return Event(**result.data[0])
+    saved = Event(**result.data[0])
+    try:
+        sessions = _save_sessions(client, saved.id, request.sessions)
+    except AuthError:
+        # The form never learnt this draft's id, so the next save would
+        # create a second draft; remove this one instead.
+        _discard_unsubmitted_draft(client, organiser_id, saved.id)
+        raise
+    return saved.model_copy(update={"sessions": sessions})
 
 
 def list_my_drafts(access_token: str, organiser_id: str) -> list[Event]:
@@ -446,7 +457,27 @@ def get_my_draft(access_token: str, organiser_id: str, draft_id: str) -> Event:
 
     if not result.data:
         raise AuthError(DRAFT_NOT_FOUND, status_code=404)
-    return Event(**result.data[0])
+    draft = Event(**result.data[0])
+    return draft.model_copy(
+        update={"sessions": _read_sessions(client, draft.id)}
+    )
+
+
+def _read_sessions(client, event_id: str) -> list[EventSession]:
+    """Return an event's sessions, earliest first; unscheduled ones last."""
+    try:
+        result = (
+            client.table("event_sessions")
+            .select("*")
+            .eq("event_id", event_id)
+            .order("start_time")
+            .order("created_at")
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    return [EventSession(**row) for row in result.data]
 
 
 def _update_my_draft(client, organiser_id: str, draft_id: str, values: dict):
@@ -482,12 +513,18 @@ def update_draft(
     """Save the form as it now stands over an existing draft.
 
     Every field is written, so a field cleared in the form is cleared in
-    the draft too.
+    the draft too. The sessions are replaced the same way: a session
+    removed in the form is removed from the draft.
     """
     client = config.get_user_client(access_token)
-    return _update_my_draft(
-        client, organiser_id, draft_id, request.model_dump(mode="json")
+    saved = _update_my_draft(
+        client,
+        organiser_id,
+        draft_id,
+        request.model_dump(mode="json", exclude={"sessions"}),
     )
+    sessions = _save_sessions(client, draft_id, request.sessions)
+    return saved.model_copy(update={"sessions": sessions})
 
 
 def submit_draft(
