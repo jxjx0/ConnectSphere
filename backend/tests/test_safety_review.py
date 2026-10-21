@@ -321,3 +321,66 @@ def test_missing_event_returns_not_found(monkeypatch):
         safety_review_service.request_safety_check(EVENT_ID, "token")
 
     assert caught.value.status_code == 404
+
+# --- Sessions (T7-278) -------------------------------------------------------
+
+CONFERENCE_SESSIONS = [
+    {"id": "ses-main", "name": "Main programme", "expected_attendance": 300},
+    {"id": "ses-a", "name": "Breakout A", "expected_attendance": 50},
+]
+
+
+def test_request_is_refused_until_every_session_has_an_approved_venue(monkeypatch):
+    _, updates = fake_database(monkeypatch, {
+        "events": [PLANNING_EVENT],
+        "venue_bookings": [{"status": "APPROVED", "session_id": "ses-main"}],
+        "event_sessions": CONFERENCE_SESSIONS,
+    })
+
+    with pytest.raises(AuthError) as caught:
+        safety_review_service.request_safety_check(EVENT_ID, "token")
+
+    assert caught.value.status_code == 409
+    assert "every session needs an approved venue booking (Breakout A has none)" in caught.value.message
+    assert updates == []
+
+
+def test_request_is_accepted_once_every_session_has_an_approved_venue(monkeypatch):
+    _, updates = fake_database(monkeypatch, {
+        "events": [PLANNING_EVENT],
+        "venue_bookings": [
+            {"status": "APPROVED", "session_id": "ses-main"},
+            {"status": "APPROVED", "session_id": "ses-a"},
+        ],
+        "event_sessions": CONFERENCE_SESSIONS,
+    })
+
+    safety_review_service.request_safety_check(EVENT_ID, "token")
+
+    assert updates
+
+
+def test_each_venue_is_checked_against_its_own_sessions_attendance(monkeypatch):
+    """A 60-seat room is fine for a 50-person breakout in a 300-person event."""
+    fake_database(monkeypatch, {
+        "events": [{**PLANNING_EVENT, "expected_attendance": 300, "sessions": CONFERENCE_SESSIONS}],
+        "venue_bookings": [
+            {"status": "APPROVED", "session_id": "ses-a", "room_layout": "Classroom",
+             "venue": {"name": "Room 3-1", "capacity": 120, "accessibility": ["Wheelchair access"],
+                       "layouts": [{"name": "Classroom", "capacity": 60}]}},
+            {"status": "APPROVED", "session_id": "ses-main", "room_layout": "Theatre",
+             "venue": {"name": "Hall", "capacity": 200, "accessibility": ["Wheelchair access"],
+                       "layouts": [{"name": "Theatre", "capacity": 200}]}},
+        ],
+    })
+
+    details = safety_review_service.get_safety_event_details(EVENT_ID, "token")
+
+    capacity = [flag["message"] for flag in details["safety_flags"] if flag["type"] == "CAPACITY_EXCEEDED"]
+    assert capacity == [
+        "Main programme - Hall: expected attendance (300) exceeds capacity (200) for layout 'Theatre'."
+    ]
+    assert [booking["session"]["name"] for booking in details["venue_bookings"]] == [
+        "Breakout A",
+        "Main programme",
+    ]

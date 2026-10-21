@@ -9,6 +9,7 @@ import {
   formatDateTime,
   formatSessionSummary,
   optional,
+  sessionsOf,
 } from '../eventDisplay'
 import SessionList from '../components/SessionList'
 
@@ -18,6 +19,36 @@ function Answer({ label, value }) {
       <dt>{label}</dt>
       <dd data-empty={!value}>{optional(value)}</dd>
     </div>
+  )
+}
+
+// The venue actually booked for a session: what the Safety Officer checks
+// capacity, layout, access and hours against.
+function BookedVenue({ booking }) {
+  const venue = booking.venue || {}
+  const layouts = Array.isArray(venue.layouts) ? venue.layouts : []
+  const layout = layouts.find((item) =>
+    item.name?.toLowerCase() === booking.room_layout?.toLowerCase())
+  const rows = [
+    ['Venue', venue.name],
+    ['Location', venue.location],
+    ['Capacity', venue.capacity ? `${venue.capacity} people` : ''],
+    ['Layout', booking.room_layout
+      ? `${booking.room_layout}${layout?.capacity ? ` (up to ${layout.capacity})` : ''}`
+      : ''],
+    ['Accessibility', formatList(venue.accessibility)],
+    ['Facilities', formatList(venue.facilities)],
+    ['Hours', formatOperatingHours(venue.operating_hours)],
+  ]
+  return (
+    <dl className="detail-list detail-list--compact">
+      {rows.map(([label, value]) => (
+        <div className="detail-list__row" key={label}>
+          <dt>{label}</dt>
+          <dd>{optional(value)}</dd>
+        </div>
+      ))}
+    </dl>
   )
 }
 
@@ -142,7 +173,18 @@ export default function SafetyReviewDetailPage() {
     )
   }
 
-  const { event, venue_booking = {}, venue = {}, equipment_items = [], safety_flags = [] } = data
+  const { event, venue_bookings = [], equipment_items = [], safety_flags = [] } = data
+  // Each approved venue belongs to one session (T7-278). An event from
+  // before sessions has a single stand-in session that gets every booking;
+  // a booking with no matching session is listed separately.
+  const hasSessions = Boolean(event.sessions?.length)
+  const sessionIds = new Set(sessionsOf(event).map((session) => session.id))
+  const bookingsFor = (session) => venue_bookings.filter(
+    (booking) => !hasSessions || booking.session_id === session.id,
+  )
+  const unlinkedBookings = hasSessions
+    ? venue_bookings.filter((booking) => !sessionIds.has(booking.session_id))
+    : []
 
   return (
     <AppShell>
@@ -201,40 +243,33 @@ export default function SafetyReviewDetailPage() {
           </dl>
         </section>
 
-        {/* Each session's own time, attendance and needs (T7-277). These
-            are the Organiser's requests; the booked venue and equipment
-            follow in their own sections. */}
+        {/* One card per session: what the Organiser asked for, then the venue
+            actually booked for it, which is what the safety check is about. */}
         <SessionList
           event={event}
-          title="Sessions requested"
-          note="What the Organiser asked for. The venue and equipment actually booked are shown below."
+          title="Sessions and booked venues"
+          note="Each session shows what the Organiser asked for, then the venue booked for it."
+          extra={(session) => (
+            <>
+              <h4 className="session-card__label">Booked venue</h4>
+              {bookingsFor(session).length === 0
+                ? <p className="note">No approved venue for this session.</p>
+                : bookingsFor(session).map((booking) => (
+                  <BookedVenue key={booking.booking_id} booking={booking} />
+                ))}
+            </>
+          )}
         />
 
-        {/* Venue Profile & Requested Layout Section */}
-        <section className="stack stack--tight">
-          <h2 className="section-title">Venue Profile & Requested Layout</h2>
-          <dl className="answers">
-            <Answer label="Venue Name" value={venue.name || 'No Venue Assigned'} />
-            <Answer label="Location" value={venue.location} />
-            <Answer label="Capacity Limit" value={venue.capacity ? `${venue.capacity} people` : ''} />
-            <Answer
-              label="Requested Room Layout"
-              value={venue_booking.room_layout || event.layout_preference}
-            />
-            <Answer
-              label="Accessibility Features"
-              value={formatList(venue.accessibility || event.accessibility_requirements)}
-            />
-            <Answer
-              label="Facilities Available"
-              value={formatList(venue.facilities)}
-            />
-            <Answer
-              label="Operating Hours"
-              value={formatOperatingHours(venue.operating_hours)}
-            />
-          </dl>
-        </section>
+        {unlinkedBookings.length > 0 && (
+          <section className="stack stack--tight">
+            <h2 className="section-title">Other booked venues</h2>
+            <p className="note">Approved venues not linked to a session.</p>
+            {unlinkedBookings.map((booking) => (
+              <BookedVenue key={booking.booking_id} booking={booking} />
+            ))}
+          </section>
+        )}
 
         {/* Equipment Booked Section */}
         <section className="stack stack--tight">

@@ -50,6 +50,90 @@ def get_safety_review_queue(access_token: str) -> list[dict]:
         raise AuthError(f"Internal server error while fetching safety queue: {str(exc)}", status_code=500)
 
 
+def _layout_capacity(venue: dict, layout_name: str | None) -> int:
+    """The booked layout's capacity in this venue, or 0 when it is unknown."""
+    layouts = venue.get("layouts") or []
+    if isinstance(layouts, dict):
+        layouts = [{"name": name, "capacity": capacity} for name, capacity in layouts.items()]
+    if not layout_name or not isinstance(layouts, list):
+        return 0
+    match = next(
+        (layout for layout in layouts
+         if isinstance(layout, dict) and layout.get("name", "").lower() == layout_name.lower()),
+        None,
+    )
+    return (match or {}).get("capacity") or 0
+
+
+def _venue_flags(booking: dict, session: dict, event_attendance: int, accessibility_req: str) -> list[dict]:
+    """Capacity, operating-hours and accessibility flags for one booked venue.
+
+    Attendance is the booking's own session's; bookings made before
+    sessions existed fall back to the event's. Each message names the
+    session and venue, since an event may have several.
+    """
+    venue = booking.get("venue") or {}
+    if not isinstance(venue, dict):
+        venue = {}
+    attendance = session.get("expected_attendance") or event_attendance
+    where = " - ".join(
+        part for part in (session.get("name"), venue.get("name")) if part
+    ) or "Venue"
+    flags = []
+
+    # Flag 1: Capacity Exceeded (booked layout when known, otherwise the whole venue)
+    layout = booking.get("room_layout")
+    layout_capacity = _layout_capacity(venue, layout)
+    venue_capacity = venue.get("capacity") or 0
+    if layout_capacity > 0 and attendance > layout_capacity:
+        flags.append({
+            "type": "CAPACITY_EXCEEDED",
+            "severity": "HIGH",
+            "message": f"{where}: expected attendance ({attendance}) exceeds capacity ({layout_capacity}) for layout '{layout}'.",
+        })
+    elif layout_capacity == 0 and venue_capacity > 0 and attendance > venue_capacity:
+        flags.append({
+            "type": "CAPACITY_EXCEEDED",
+            "severity": "HIGH",
+            "message": f"{where}: expected attendance ({attendance}) exceeds venue capacity ({venue_capacity}).",
+        })
+
+    # Flag 2: Operating Hours Violation
+    op_hours = venue.get("operating_hours")
+    start_str = booking.get("effective_start_at") or booking.get("start_at")
+    end_str = booking.get("effective_end_at") or booking.get("end_at")
+    if op_hours and start_str and end_str:
+        try:
+            start_dt = datetime.fromisoformat(start_str)
+            end_dt = datetime.fromisoformat(end_str)
+            if not availability.booking_within_operating_hours(start_dt, end_dt, op_hours):
+                local_start = start_dt.astimezone(availability.VENUE_TIMEZONE)
+                local_end = end_dt.astimezone(availability.VENUE_TIMEZONE)
+                flags.append({
+                    "type": "OPERATING_HOURS_VIOLATION",
+                    "severity": "HIGH",
+                    "message": (
+                        f"{where}: schedule including setup and turnaround "
+                        f"({local_start:%H:%M} - {local_end:%H:%M}) falls outside venue "
+                        f"operating hours ({op_hours.get('open')} - {op_hours.get('close')})."
+                    ),
+                })
+        except ValueError:
+            pass
+
+    # Flag 4: Accessibility Requirements Misalignment
+    venue_access = venue.get("accessibility") or []
+    is_accessible = any("wheelchair" in str(feature).lower() for feature in venue_access)
+    if "wheelchair" in accessibility_req and not is_accessible:
+        flags.append({
+            "type": "ACCESSIBILITY_GAP",
+            "severity": "MEDIUM",
+            "message": f"{where}: the event needs wheelchair access, but this venue is not marked as accessible.",
+        })
+
+    return flags
+
+
 def get_safety_event_details(event_id: str, access_token: str) -> dict:
     """Retrieve full event, venue, equipment, and automated safety flags."""
     try:
@@ -66,9 +150,9 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
             raise AuthError("Event not found", status_code=404)
         event = event_res.data[0]
 
-        # 2. Fetch Approved Venue Booking & Joined Venue Profile
-        booking = {}
-        venue = {}
+        # 2. Fetch every approved venue booking, each with its venue profile.
+        # An event may use several venues, one per session (W7 change 3).
+        venue_bookings = []
         try:
             venue_booking_res = (
                 client.table("venue_bookings")
@@ -77,12 +161,12 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
                 .eq("status", "APPROVED")
                 .execute()
             )
-            if venue_booking_res.data and len(venue_booking_res.data) > 0:
-                booking = venue_booking_res.data[0] or {}
-                if isinstance(booking, dict):
-                    venue = booking.get("venue") or {}
+            venue_bookings = [
+                booking for booking in (venue_booking_res.data or [])
+                if isinstance(booking, dict)
+            ]
         except Exception as exc:
-            logger.warning(f"Could not load venue booking for event {event_id}: {exc}")
+            logger.warning(f"Could not load venue bookings for event {event_id}: {exc}")
 
         # 3. Fetch Equipment Requests & Joined Items
         equipment_items = []
@@ -113,62 +197,18 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
         # 4. Automated Safety Flag & Clash Detection
         flags = []
         expected_attendance = event.get("expected_attendance") or 0
-        
-        # Room layout capacity check
-        requested_layout = booking.get("room_layout") if isinstance(booking, dict) else None
-        supported_layouts = venue.get("layouts") or [] if isinstance(venue, dict) else []
-        
-        # Normalize layouts if stored as object dictionary or array
-        if isinstance(supported_layouts, dict):
-            supported_layouts = [{"name": k, "capacity": v} for k, v in supported_layouts.items()]
+        sessions_by_id = {
+            session.get("id"): session for session in (event.get("sessions") or [])
+        }
+        accessibility_req = (event.get("accessibility_requirements") or "").lower()
 
-        layout_capacity = 0
-        if requested_layout and isinstance(supported_layouts, list):
-            layout_match = next(
-                (l for l in supported_layouts if isinstance(l, dict) and l.get("name", "").lower() == requested_layout.lower()),
-                None
-            )
-            if layout_match:
-                layout_capacity = layout_match.get("capacity") or 0
-
-        # Flag 1: Capacity Exceeded (booked layout when known, otherwise the whole venue)
-        venue_capacity = (venue.get("capacity") or 0) if isinstance(venue, dict) else 0
-        if layout_capacity > 0 and expected_attendance > layout_capacity:
-            flags.append({
-                "type": "CAPACITY_EXCEEDED",
-                "severity": "HIGH",
-                "message": f"Expected attendance ({expected_attendance}) exceeds capacity ({layout_capacity}) for layout '{requested_layout}'.",
-            })
-        elif layout_capacity == 0 and venue_capacity > 0 and expected_attendance > venue_capacity:
-            flags.append({
-                "type": "CAPACITY_EXCEEDED",
-                "severity": "HIGH",
-                "message": f"Expected attendance ({expected_attendance}) exceeds venue capacity ({venue_capacity}).",
-            })
-
-        # Flag 2: Operating Hours Violation
-        if booking and isinstance(venue, dict):
-            op_hours = venue.get("operating_hours")
-            start_str = booking.get("effective_start_at") or booking.get("start_at")
-            end_str = booking.get("effective_end_at") or booking.get("end_at")
-            if op_hours and start_str and end_str:
-                try:
-                    start_dt = datetime.fromisoformat(start_str)
-                    end_dt = datetime.fromisoformat(end_str)
-                    if not availability.booking_within_operating_hours(start_dt, end_dt, op_hours):
-                        local_start = start_dt.astimezone(availability.VENUE_TIMEZONE)
-                        local_end = end_dt.astimezone(availability.VENUE_TIMEZONE)
-                        flags.append({
-                            "type": "OPERATING_HOURS_VIOLATION",
-                            "severity": "HIGH",
-                            "message": (
-                                f"Event schedule including setup and turnaround "
-                                f"({local_start:%H:%M} - {local_end:%H:%M}) falls outside venue "
-                                f"operating hours ({op_hours.get('open')} - {op_hours.get('close')})."
-                            ),
-                        })
-                except ValueError:
-                    pass
+        # Flags 1, 2 and 4 are checked for each booked venue against its own
+        # session, so a 50-seat breakout room is not judged by the 300-person
+        # main programme (T7-278).
+        for booking in venue_bookings:
+            session = sessions_by_id.get(booking.get("session_id")) or {}
+            booking["session"] = session or None
+            flags.extend(_venue_flags(booking, session, expected_attendance, accessibility_req))
 
         # Flag 3: Equipment Under Maintenance / Damaged
         for item in equipment_items:
@@ -181,18 +221,6 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
                     "message": f"Requested equipment '{equip.get('name', 'Item')}' is currently marked as '{m_status}'.",
                 })
 
-        # Flag 4: Accessibility Requirements Misalignment
-        accessibility_req = (event.get("accessibility_requirements") or "").lower()
-        venue_access = venue.get("accessibility") or [] if isinstance(venue, dict) else []
-        is_accessible = any("wheelchair" in str(feature).lower() for feature in venue_access)
-
-        if "wheelchair" in accessibility_req and not is_accessible:
-            flags.append({
-                "type": "ACCESSIBILITY_GAP",
-                "severity": "MEDIUM",
-                "message": "Event specifies wheelchair accessibility needs, but the venue is not marked as accessible.",
-            })
-
         # Flag 5: Large Crowd Safety Protocol
         if expected_attendance >= 500:
             flags.append({
@@ -203,8 +231,7 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
 
         return {
             "event": event,
-            "venue_booking": booking,
-            "venue": venue,
+            "venue_bookings": venue_bookings,
             "equipment_items": equipment_items,
             "safety_flags": flags,
         }
@@ -224,7 +251,7 @@ def _safety_check_blockers(client, event: dict) -> list[str]:
 
     bookings = (
         client.table("venue_bookings")
-        .select("status")
+        .select("status, session_id")
         .eq("event_id", event["id"])
         .execute()
     ).data or []
@@ -235,6 +262,30 @@ def _safety_check_blockers(client, event: dict) -> list[str]:
         blockers.append("it needs an approved venue booking")
     elif any(status != "APPROVED" for status in live_statuses):
         blockers.append("every venue booking must be approved first")
+    else:
+        # Every session needs its own approved venue (scope doc 9.1).
+        # Events created before sessions existed have none to check.
+        sessions = (
+            client.table("event_sessions")
+            .select("id, name")
+            .eq("event_id", event["id"])
+            .execute()
+        ).data or []
+        approved_sessions = {
+            booking.get("session_id") for booking in bookings
+            if (booking.get("status") or "").upper() == "APPROVED"
+        }
+        missing = [
+            session.get("name") or "a session" for session in sessions
+            if session.get("id") not in approved_sessions
+        ]
+        if missing:
+            blockers.append(
+                "every session needs an approved venue booking ("
+                + ", ".join(missing)
+                + (" has" if len(missing) == 1 else " have")
+                + " none)"
+            )
 
     equipment_requests = (
         client.table("equipment_requests")
