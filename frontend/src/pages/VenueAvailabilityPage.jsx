@@ -252,7 +252,8 @@ export default function VenueAvailabilityPage() {
               endDate: derivedEndDate,
               startTime: searchParams.get('start_time') || filters?.start_time || '',
               endTime: searchParams.get('end_time') || filters?.end_time || '',
-              layout: searchParams.get('required_layout') || filters?.required_layout || (eventContext.event?.layout_preference || ''),
+              // The session chosen in the form fills in its preferred layout.
+              layout: searchParams.get('required_layout') || filters?.required_layout || '',
             }}
             onClose={() => setBookingVenue(null)}
             onCreated={() => {

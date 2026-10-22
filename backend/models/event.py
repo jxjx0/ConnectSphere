@@ -6,6 +6,10 @@ from enum import Enum
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+# Venue booking statuses that no longer hold a venue.
+SETTLED_VENUE_BOOKING_STATUSES = ("CANCELLED", "REJECTED", "REJECTED_BY_SAFETY")
+
+
 class EventStatus(str, Enum):
     """Every status an event row may hold.
 
@@ -561,9 +565,24 @@ class Event(BaseModel):
             if not evt or evt.get("status") in ["completed", "rejected"]:
                 continue
 
-            venue_bookings = evt.get("venue_bookings") or []
-            venue_info = venue_bookings[0].get("venue", {}) if venue_bookings else {}
-            
+            # One line per session's venue (T7-278). Cancelled and rejected
+            # bookings hold no venue, so they are left out.
+            live_bookings = sorted(
+                (
+                    booking for booking in evt.get("venue_bookings") or []
+                    if booking.get("status") not in SETTLED_VENUE_BOOKING_STATUSES
+                ),
+                key=lambda booking: (booking.get("session") or {}).get("start_time") or "",
+            )
+            venues = [
+                {
+                    "session_name": (booking.get("session") or {}).get("name") or "Removed session",
+                    "venue_name": (booking.get("venue") or {}).get("name") or "Unknown venue",
+                    "status": booking.get("status"),
+                }
+                for booking in live_bookings
+            ]
+
             coordinator = evt.get("coordinator") or {}
 
             formatted_events.append({
@@ -573,9 +592,7 @@ class Event(BaseModel):
                 "end_time": str(evt.get("end_time")) if evt.get("end_time") else None,
                 "status": evt.get("status"),
                 "equipment_requirements": evt.get("equipment_requirements") or "No specific equipment requested.",
-                "venue_id": venue_bookings[0].get("venue_id") if venue_bookings else None,
-                "venue_name": venue_info.get("name", "No venue assigned"),
-                "venue_location": venue_info.get("location"),
+                "venues": venues,
                 "coordinator_id": evt.get("coordinator_id"),
                 "coordinator_name": coordinator.get("full_name", "Unassigned"),
                 "expected_attendance": evt.get("expected_attendance", 0),

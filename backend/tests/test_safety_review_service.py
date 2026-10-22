@@ -254,3 +254,29 @@ def test_database_errors_are_reported(database):
 
     assert caught.value.status_code == 400
     assert database.calls_to("events", "update") == []
+
+
+# --- Large crowd counts sessions at the same time ---------------------------
+
+def _session(start_hour, end_hour, attendance):
+    return {
+        "start_time": f"2026-12-15T{start_hour:02d}:00:00+00:00",
+        "end_time": f"2026-12-15T{end_hour:02d}:00:00+00:00",
+        "expected_attendance": attendance,
+    }
+
+
+def test_overlapping_sessions_add_up_for_the_crowd_size():
+    event = {"expected_attendance": 300, "sessions": [_session(1, 9, 300), _session(5, 9, 300)]}
+
+    assert safety_review_service._peak_attendance(event) == 600
+
+
+def test_back_to_back_sessions_do_not_add_up():
+    event = {"expected_attendance": 300, "sessions": [_session(1, 5, 300), _session(5, 9, 300)]}
+
+    assert safety_review_service._peak_attendance(event) == 300
+
+
+def test_events_without_sessions_use_their_own_attendance():
+    assert safety_review_service._peak_attendance({"expected_attendance": 550}) == 550

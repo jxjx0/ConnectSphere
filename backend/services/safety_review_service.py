@@ -136,6 +136,27 @@ def _venue_flags(booking: dict, session: dict, event_attendance: int, accessibil
     return flags
 
 
+def _peak_attendance(event: dict) -> int:
+    """The most people at the event at any one time.
+
+    Sessions may run at the same time (scope doc 9.1), so the crowd is the
+    total of every session running at each session's start. Events without
+    timed sessions fall back to the event's own attendance.
+    """
+    sessions = [
+        session for session in (event.get("sessions") or [])
+        if session.get("start_time") and session.get("end_time")
+    ]
+    peak = 0
+    for session in sessions:
+        moment = datetime.fromisoformat(session["start_time"])
+        peak = max(peak, sum(
+            other.get("expected_attendance") or 0 for other in sessions
+            if datetime.fromisoformat(other["start_time"]) <= moment < datetime.fromisoformat(other["end_time"])
+        ))
+    return max(peak, event.get("expected_attendance") or 0)
+
+
 def get_safety_event_details(event_id: str, access_token: str) -> dict:
     """Retrieve full event, venue, equipment, and automated safety flags."""
     try:
@@ -229,12 +250,13 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
                     "message": f"Requested equipment '{equip.get('name', 'Item')}' is currently marked as '{m_status}'.",
                 })
 
-        # Flag 5: Large Crowd Safety Protocol
-        if expected_attendance >= 500:
+        # Flag 5: Large Crowd Safety Protocol. Counts everyone on site at
+        # once, so overlapping sessions add up.
+        if _peak_attendance(event) >= 500:
             flags.append({
                 "type": "LARGE_CROWD_PROTOCOL",
                 "severity": "MEDIUM",
-                "message": "Expected attendance exceeds 500. Requires First Aid & Crowd Management Plan.",
+                "message": "Up to 500 or more people are expected at the same time. Requires First Aid & Crowd Management Plan.",
             })
 
         return {

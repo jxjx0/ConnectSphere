@@ -74,8 +74,13 @@ export default function BookingForm({ venue, eventId: initialEventId, sessionId:
     return () => { active = false }
   }, [fixedSessionId, selectedEventId, token])
 
+  // Fills in the session's own time, and its preferred layout when this
+  // venue offers it. Layout preferences belong to sessions (scope doc 9.1).
   function chooseSession(session) {
     setSelectedSessionId(session.id)
+    const preference = (session.layout_preference || '').trim().toLowerCase()
+    const layout = (venue?.layouts || []).find((item) => item.name?.toLowerCase() === preference)
+    if (layout) setForm((prev) => ({ ...prev, roomLayout: layout.name }))
     if (!session.start_time || !session.end_time) return
     const start = localParts(session.start_time)
     const end = localParts(session.end_time)
