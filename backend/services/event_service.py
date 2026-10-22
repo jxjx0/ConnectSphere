@@ -308,7 +308,7 @@ def _with_change_request(client, events: list[Event]) -> list[Event]:
     try:
         result = (
             client.table("event_change_requests")
-            .select("*")
+            .select("*, sessions:event_change_request_sessions(*)")
             .in_("event_id", [event.id for event in events])
             .order("created_at", desc=True)
             .execute()
@@ -318,6 +318,8 @@ def _with_change_request(client, events: list[Event]) -> list[Event]:
 
     latest_by_event = {}
     for row in result.data:
+        # Proposed sessions are shown in time order, like the event's own.
+        row["sessions"] = sorted(row.get("sessions") or [], key=lambda session: session["start_time"])
         latest_by_event.setdefault(row["event_id"], EventChangeRequest(**row))
     return [
         event.model_copy(
@@ -342,15 +344,16 @@ def submit_event_change_request(
     """Persist a proposed change and mark its event as change_requested.
 
     The database function performs ownership, event status, duplicate
-    pending request, and changed-values checks atomically.
+    pending request, started-session and changed-values checks atomically
+    (T7-280). It signs the request with the caller's own id, so
+    organiser_id is not sent.
     """
     client = config.get_user_client(access_token)
     try:
         client.rpc(
-            "submit_event_change_request",
+            "submit_session_change_request",
             {
                 "p_event_id": event_id,
-                "p_organiser_id": organiser_id,
                 "p_changes": request.model_dump(mode="json"),
             },
         ).execute()
@@ -372,6 +375,10 @@ def submit_event_change_request(
                 "Change at least one event detail before submitting.",
                 status_code=400,
             ) from error
+        if error.code == "22023":
+            # Written for the Organiser and names the session, e.g.
+            # "Breakout A: This session has already started and cannot be changed".
+            raise AuthError(error.message, status_code=400) from error
         raise _database_error(error) from error
 
 

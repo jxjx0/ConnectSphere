@@ -6,19 +6,18 @@ import {
   submitEventChangeRequest,
 } from '../api/events'
 import AppShell from '../components/AppShell'
+import SessionFields from '../components/SessionFields'
 import { useAuth } from '../context/AuthContext'
+import {
+  changeSessionToPayload,
+  sessionsForChange,
+  validateChangeSessions,
+} from '../changeRequestSessions'
 import { EVENT_CATEGORIES, OTHER_CATEGORY } from '../eventCategories'
 import { CHANGEABLE_STATUSES } from '../eventDisplay'
 
-const NIL = 'NIL'
-
-function localDateTime(value) {
-  const date = new Date(value)
-  const pad = (part) => String(part).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-    + `T${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
+// The whole event in one change request: its details and every session it
+// should have afterwards (T7-280). The current values are prefilled.
 function formFromEvent(event) {
   return {
     name: event.name ?? '',
@@ -27,86 +26,45 @@ function formFromEvent(event) {
     purpose: event.purpose ?? '',
     category: event.category ?? '',
     category_other: event.category_other ?? '',
-    start_time: localDateTime(event.start_time),
-    end_time: localDateTime(event.end_time),
-    expected_attendance: String(event.expected_attendance ?? ''),
-    location_preference: event.location_preference ?? NIL,
-    layout_preference: event.layout_preference ?? NIL,
-    accessibility_requirements: event.accessibility_requirements ?? NIL,
-    equipment_requirements: event.equipment_requirements ?? NIL,
+    accessibility_requirements: event.accessibility_requirements ?? '',
+    sessions: sessionsForChange(event.sessions),
   }
 }
 
 function toPayload(form) {
-  // Keep the sentinel through the API boundary. The backend converts NIL to
-  // null after it has first distinguished it from an empty field.
-  const keepNil = (value) => value.trim()
   return {
-    ...form,
+    name: form.name.trim(),
+    description: form.description.trim(),
+    reason_for_change: form.reason_for_change.trim(),
+    purpose: form.purpose.trim(),
+    category: form.category,
     category_other: form.category === OTHER_CATEGORY
       ? form.category_other.trim()
       : null,
-    start_time: form.start_time && !Number.isNaN(new Date(form.start_time).getTime())
-      ? new Date(form.start_time).toISOString()
-      : '',
-    end_time: form.end_time && !Number.isNaN(new Date(form.end_time).getTime())
-      ? new Date(form.end_time).toISOString()
-      : '',
-    expected_attendance: Number(form.expected_attendance),
-    location_preference: keepNil(form.location_preference),
-    layout_preference: keepNil(form.layout_preference),
-    accessibility_requirements: keepNil(form.accessibility_requirements),
-    equipment_requirements: keepNil(form.equipment_requirements),
+    accessibility_requirements: form.accessibility_requirements.trim() || null,
+    sessions: form.sessions.map(changeSessionToPayload),
   }
 }
 
+// Everything except the reason, so an untouched form counts as no change.
 function comparable(payload) {
   const { reason_for_change: _reason, ...eventDetails } = payload
-  const nilToNull = (value) => typeof value === 'string'
-    && value.trim().toLowerCase() === 'nil'
-    ? null
-    : value
-  return {
-    ...eventDetails,
-    start_time: eventDetails.start_time.slice(0, 16),
-    end_time: eventDetails.end_time.slice(0, 16),
-    location_preference: nilToNull(eventDetails.location_preference),
-    layout_preference: nilToNull(eventDetails.layout_preference),
-    accessibility_requirements: nilToNull(eventDetails.accessibility_requirements),
-    equipment_requirements: nilToNull(eventDetails.equipment_requirements),
-  }
+  return JSON.stringify(eventDetails)
 }
 
 function validate(form, baseline) {
   const errors = {}
-  const required = [
-    'name', 'description', 'reason_for_change', 'purpose', 'category', 'start_time', 'end_time',
-    'expected_attendance', 'location_preference', 'layout_preference',
-    'accessibility_requirements', 'equipment_requirements',
-  ]
-  for (const field of required) {
+  for (const field of ['name', 'description', 'reason_for_change', 'purpose', 'category']) {
     if (!String(form[field] ?? '').trim()) errors[field] = 'This field is required.'
   }
   if (form.category === OTHER_CATEGORY && !form.category_other.trim()) {
     errors.category_other = 'Describe the category when choosing Other.'
   }
-  if (form.expected_attendance && Number(form.expected_attendance) <= 0) {
-    errors.expected_attendance = 'Enter a positive number.'
+  return {
+    fieldErrors: errors,
+    sessionError: validateChangeSessions(form.sessions),
+    noChanges: comparable(toPayload(form)) === comparable(baseline),
   }
-  if (form.start_time && form.end_time) {
-    const start = new Date(form.start_time)
-    const end = new Date(form.end_time)
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      errors.start_time = 'Enter valid event dates and times.'
-    } else if (end <= start) {
-      errors.end_time = 'End time must be after the start time.'
-    }
-  }
-
-  const current = toPayload(form)
-  const unchanged = JSON.stringify(comparable(current))
-    === JSON.stringify(comparable(baseline))
-  return { fieldErrors: errors, noChanges: unchanged }
 }
 
 function FieldError({ id, message }) {
@@ -120,6 +78,7 @@ export default function EventChangeRequestPage() {
   const navigate = useNavigate()
   const [event, setEvent] = useState(null)
   const [form, setForm] = useState(null)
+  const [baseline, setBaseline] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -128,22 +87,25 @@ export default function EventChangeRequestPage() {
   useEffect(() => {
     getMyEvent(eventId, token)
       .then(({ event: current }) => {
+        const initial = formFromEvent(current)
         setEvent(current)
-        setForm(formFromEvent(current))
+        setForm(initial)
+        setBaseline(toPayload(initial))
       })
       .catch((caught) => setError(caught.message))
       .finally(() => setLoading(false))
   }, [eventId, token])
 
-  const baseline = useMemo(() => event ? toPayload(formFromEvent(event)) : null, [event])
   const validation = useMemo(
     () => (attempted && form && baseline ? validate(form, baseline) : {}),
     [attempted, form, baseline],
   )
   const fieldErrors = validation.fieldErrors || {}
+  const sessionError = validation.sessionError || ''
   const noChanges = Boolean(validation.noChanges)
   const eligible = event && CHANGEABLE_STATUSES.includes(event.status)
-  const canSubmit = !submitting && Object.keys(fieldErrors).length === 0 && !noChanges
+  const canSubmit = !submitting && Object.keys(fieldErrors).length === 0
+    && !sessionError && !noChanges
 
   function updateField(field) {
     return (change) => {
@@ -156,8 +118,8 @@ export default function EventChangeRequestPage() {
     change.preventDefault()
     setAttempted(true)
     if (!form) return
-    const validationResult = validate(form, baseline)
-    if (Object.keys(validationResult.fieldErrors).length > 0 || validationResult.noChanges) return
+    const result = validate(form, baseline)
+    if (Object.keys(result.fieldErrors).length > 0 || result.sessionError || result.noChanges) return
 
     setSubmitting(true)
     setError('')
@@ -217,9 +179,8 @@ export default function EventChangeRequestPage() {
         <div className="content__header">
           <h1>Request an event change</h1>
           <p className="lead">
-            Update the details below. The current event details are prefilled;
-            change at least one field before submitting. Enter NIL where no
-            preference or requirement applies.
+            The current event details and sessions are prefilled. Change what
+            you need, then submit for your Coordinator to review.
           </p>
         </div>
 
@@ -257,6 +218,11 @@ export default function EventChangeRequestPage() {
               <FieldError id="description-error" message={fieldErrors.description} />
             </div>
             <div className="field">
+              <label htmlFor="accessibility_requirements">Accessibility requirements</label>
+              <textarea id="accessibility_requirements" rows={3} value={form.accessibility_requirements} onChange={updateField('accessibility_requirements')} />
+              <p className="field__hint">Optional. Leave blank if none are required.</p>
+            </div>
+            <div className="field">
               <label htmlFor="reason_for_change">Reason for change</label>
               <textarea id="reason_for_change" rows={3} value={form.reason_for_change} onChange={updateField('reason_for_change')} {...fieldProps('reason_for_change')} />
               <FieldError id="reason_for_change-error" message={fieldErrors.reason_for_change} />
@@ -265,47 +231,26 @@ export default function EventChangeRequestPage() {
           </section>
 
           <section className="stack stack--tight">
-            <h2 className="section-title">When and how many</h2>
-            <div className="field">
-              <label htmlFor="start_time">Starts</label>
-              <input id="start_time" type="datetime-local" value={form.start_time} onChange={updateField('start_time')} {...fieldProps('start_time')} />
-              <FieldError id="start_time-error" message={fieldErrors.start_time} />
-            </div>
-            <div className="field">
-              <label htmlFor="end_time">Ends</label>
-              <input id="end_time" type="datetime-local" value={form.end_time} onChange={updateField('end_time')} {...fieldProps('end_time')} />
-              <FieldError id="end_time-error" message={fieldErrors.end_time} />
-            </div>
-            <div className="field">
-              <label htmlFor="expected_attendance">Expected attendance</label>
-              <input id="expected_attendance" type="number" min={1} value={form.expected_attendance} onChange={updateField('expected_attendance')} {...fieldProps('expected_attendance')} />
-              <FieldError id="expected_attendance-error" message={fieldErrors.expected_attendance} />
-            </div>
-          </section>
-
-          <section className="stack stack--tight">
-            <h2 className="section-title">Preferences and requirements</h2>
-            {[
-              ['location_preference', 'Preferred location', 'For example: Central or near an MRT station.'],
-              ['layout_preference', 'Preferred room layout', 'For example: theatre, classroom, or banquet.'],
-              ['accessibility_requirements', 'Accessibility requirements', 'Enter NIL if none are required.'],
-              ['equipment_requirements', 'Equipment requirements', 'Describe what you need, or enter NIL if none are required.'],
-            ].map(([name, label, hint]) => (
-              <div className="field" key={name}>
-                <label htmlFor={name}>{label}</label>
-                {name === 'accessibility_requirements' || name === 'equipment_requirements'
-                  ? <textarea id={name} rows={3} value={form[name]} onChange={updateField(name)} {...fieldProps(name)} />
-                  : <input id={name} value={form[name]} onChange={updateField(name)} {...fieldProps(name)} />}
-                <FieldError id={`${name}-error`} message={fieldErrors[name]} />
-                <p className="field__hint">{hint}</p>
-              </div>
-            ))}
+            <h2 className="section-title">Sessions</h2>
+            <p className="field__hint">
+              Edit, add or remove sessions. Changing a session&apos;s time may
+              mean its venue and equipment have to be booked again.
+            </p>
+            <SessionFields
+              sessions={form.sessions}
+              onChange={(sessions) => {
+                setForm((current) => ({ ...current, sessions }))
+                setError('')
+              }}
+              isLocked={(session) => session.locked}
+            />
           </section>
 
           {error && <p className="form-error" role="alert">{error}</p>}
+          {sessionError && <p className="form-error" role="alert">{sessionError}</p>}
           {attempted && noChanges && (
             <p className="form-error" role="alert">
-              Change at least one event detail before submitting.
+              Change at least one event detail or session before submitting.
             </p>
           )}
           {attempted && Object.keys(fieldErrors).length > 0 && (

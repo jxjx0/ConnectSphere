@@ -29,22 +29,19 @@ import { cancelVenueBooking, getVenueBookingsForEvent } from '../api/venues'
 import { cancelEquipmentRequest, getEventEquipmentRequests } from '../api/equipmentRequests'
 import { canCancelEquipmentRequest, canCancelVenueBooking } from '../cancelArrangements'
 import { sessionsWithoutEquipmentRequest } from '../equipmentRequestEligibility'
+import { sessionChanges } from '../changeRequestSessions'
 
 import { requestSafetyCheck } from '../api/events'
 
+// Event-level details a change request can change. Time, attendance and
+// space and equipment needs belong to the sessions (T7-280).
 const CHANGE_FIELDS = [
   { key: 'name', label: 'Event name' },
   { key: 'description', label: 'Description' },
   { key: 'purpose', label: 'Purpose' },
   { key: 'category', label: 'Category' },
   { key: 'category_other', label: 'Other category details' },
-  { key: 'start_time', label: 'Start time' },
-  { key: 'end_time', label: 'End time' },
-  { key: 'expected_attendance', label: 'Expected attendance' },
-  { key: 'location_preference', label: 'Preferred location' },
-  { key: 'layout_preference', label: 'Room layout' },
   { key: 'accessibility_requirements', label: 'Accessibility needs' },
-  { key: 'equipment_requirements', label: 'Equipment needs' },
 ]
 
 function normalizedValue(key, value) {
@@ -60,6 +57,48 @@ function displayChangeValue(key, value, categoryOther) {
   if (key === 'start_time' || key === 'end_time') return formatDateTime(value)
   if (key === 'expected_attendance') return `${value} people`
   return optional(value)
+}
+
+function sessionSummary(session) {
+  return `${formatDateRange(session.start_time, session.end_time)} · ${session.expected_attendance} attendees`
+}
+
+// The proposed sessions compared with the current ones (T7-280).
+function ProposedSessionChanges({ event }) {
+  const { added, removed, edited } = sessionChanges(sessionsOf(event), event.change_request.sessions)
+  if (!added.length && !removed.length && !edited.length) {
+    return <p className="note">No session changes.</p>
+  }
+  return (
+    <div className="stack stack--tight">
+      {edited.map(({ session, fields }) => (
+        <div className="session-card" key={session.id}>
+          <h3>Changed: {session.name}</h3>
+          <dl className="answers">
+            {fields.map(({ key, label, before, after }) => (
+              <div className="answer answer--wide" key={key}>
+                <dt>{label}</dt>
+                <dd>{displayChangeValue(key, before)}{' → '}{displayChangeValue(key, after)}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ))}
+      {added.map((session) => (
+        <div className="session-card" key={`new-${session.id}`}>
+          <h3>Added: {session.name}</h3>
+          <p className="note">{sessionSummary(session)}</p>
+          {session.equipment_requirements && <p className="note">Equipment: {session.equipment_requirements}</p>}
+        </div>
+      ))}
+      {removed.map((session) => (
+        <div className="session-card" key={`removed-${session.id}`}>
+          <h3>Removed: {session.name}</h3>
+          <p className="note">{sessionSummary(session)}</p>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function Answer({ label, value }) {
@@ -654,6 +693,8 @@ export default function EventReviewDetailPage() {
                   </div>
                 ))}
             </dl>
+            <h3>Sessions</h3>
+            <ProposedSessionChanges event={event} />
           </section>
         )}
 

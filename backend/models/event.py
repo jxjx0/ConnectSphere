@@ -333,8 +333,59 @@ class EventDraftRequest(BaseModel):
         return self
 
 
+class EventChangeRequestSessionSubmit(BaseModel):
+    """One session in an Organiser's proposed change (T7-280).
+
+    session_id names the existing session being kept or edited, so only its
+    own arrangements are affected; no session_id means a new session
+    (scope doc 9.1). The database checks that edited sessions have not
+    already started, since that needs their current values.
+    """
+
+    session_id: str | None = None
+    name: str = Field(min_length=1, max_length=200)
+    start_time: datetime
+    end_time: datetime
+    expected_attendance: int = Field(gt=0)
+    location_preference: str | None = None
+    layout_preference: str | None = None
+    equipment_requirements: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Give every session a name")
+        return stripped
+
+    @field_validator(
+        "location_preference", "layout_preference", "equipment_requirements"
+    )
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @model_validator(mode="after")
+    def validate_session_times(self) -> "EventChangeRequestSessionSubmit":
+        if _as_utc(self.end_time) <= _as_utc(self.start_time):
+            raise ValueError(f"{self.name}: End time must be after the start time")
+        # A kept session may have started already; the database decides
+        # whether it changed.
+        if self.session_id is None and _as_utc(self.start_time) <= datetime.now(timezone.utc):
+            raise ValueError(f"{self.name}: Start time must be in the future")
+        return self
+
+
 class EventChangeRequestSubmit(BaseModel):
-    """The proposed details in an Organiser's event change request."""
+    """The body of POST /events/<id>/change-requests.
+
+    The whole event in one request: its details plus every session it
+    should have afterwards. Existing sessions left out are removed.
+    """
 
     name: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1)
@@ -342,13 +393,8 @@ class EventChangeRequestSubmit(BaseModel):
     purpose: str = Field(min_length=1)
     category: EventCategory
     category_other: str | None = Field(default=None, max_length=120)
-    start_time: datetime
-    end_time: datetime
-    expected_attendance: int = Field(gt=0)
-    location_preference: str | None
-    layout_preference: str | None
-    accessibility_requirements: str | None
-    equipment_requirements: str | None
+    accessibility_requirements: str | None = None
+    sessions: list[EventChangeRequestSessionSubmit]
 
     @field_validator("name", "description", "reason_for_change", "purpose")
     @classmethod
@@ -358,27 +404,25 @@ class EventChangeRequestSubmit(BaseModel):
             raise ValueError("This field must not be blank")
         return stripped
 
-    @field_validator("category_other")
+    @field_validator("category_other", "accessibility_requirements")
     @classmethod
-    def strip_category_other(cls, value: str | None) -> str | None:
+    def strip_optional_text(cls, value: str | None) -> str | None:
         if value is None:
             return None
         stripped = value.strip()
         return stripped or None
 
-    @field_validator(
-        "location_preference", "layout_preference",
-        "accessibility_requirements", "equipment_requirements",
-        mode="before",
-    )
+    @field_validator("sessions")
     @classmethod
-    def nil_means_no_requirement(cls, value: str) -> str | None:
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError("This field must not be blank")
-        stripped = value.strip()
-        if stripped.casefold() == "nil":
-            return None
-        return stripped
+    def require_a_session(
+        cls, value: list[EventChangeRequestSessionSubmit]
+    ) -> list[EventChangeRequestSessionSubmit]:
+        if not value:
+            raise ValueError("Keep at least one session")
+        kept = [session.session_id for session in value if session.session_id]
+        if len(kept) != len(set(kept)):
+            raise ValueError("Each session can only be listed once")
+        return value
 
     @model_validator(mode="after")
     def validate_change_request(self) -> "EventChangeRequestSubmit":
@@ -388,8 +432,6 @@ class EventChangeRequestSubmit(BaseModel):
             raise ValueError(
                 "Only choose a category description when the category is Other"
             )
-        if _as_utc(self.end_time) <= _as_utc(self.start_time):
-            raise ValueError("End time must be after the start time")
         return self
 
 
@@ -405,6 +447,24 @@ class EventChangeRequestDecision(BaseModel):
         if not stripped:
             raise ValueError("Give a reason for rejecting this change request")
         return stripped
+
+
+class EventChangeRequestSession(BaseModel):
+    """A row of `event_change_request_sessions`: one proposed session.
+
+    session_id is the existing session it keeps or edits, or None for a new
+    session.
+    """
+
+    id: str
+    session_id: str | None = None
+    name: str
+    start_time: datetime
+    end_time: datetime
+    expected_attendance: int
+    location_preference: str | None = None
+    layout_preference: str | None = None
+    equipment_requirements: str | None = None
 
 
 class EventChangeRequest(BaseModel):
@@ -431,6 +491,9 @@ class EventChangeRequest(BaseModel):
     created_at: datetime | None = None
     reviewed_at: datetime | None = None
     rejection_reason: str | None = None
+    # The proposed sessions (T7-280). start_time, end_time and
+    # expected_attendance above are their overall span and largest session.
+    sessions: list[EventChangeRequestSession] = []
 
 
 class Event(BaseModel):
