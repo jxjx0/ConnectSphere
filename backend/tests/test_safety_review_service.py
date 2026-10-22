@@ -132,7 +132,7 @@ def test_rejection_releases_only_live_venue_bookings(database):
     decide("rejected", "Unsafe crowd flow")
 
     (booking_query,) = database.calls_to("venue_bookings", "select")
-    assert ("in_", "status", ["PENDING_VENUE_APPROVAL", "APPROVED", "AFFECTED_BY_UNAVAILABILITY"]) in booking_query.filters
+    assert ("in_", "status", ["PENDING_VENUE_APPROVAL", "APPROVED", "AFFECTED_BY_UNAVAILABILITY", "AFFECTED_BY_SESSION_CHANGE"]) in booking_query.filters
     updates = database.calls_to("venue_bookings", "update")
     assert [update.filters for update in updates] == [
         [("eq", "booking_id", "bk-approved")],
@@ -179,7 +179,7 @@ def test_rejection_releases_equipment_bookings_and_requests(database):
 
     (request_query,) = database.calls_to("equipment_requests", "select")
     # Rejected and cancelled requests are left as they are (T7-282).
-    assert ("in_", "status", ["Pending Technical Approval", "Approved"]) in request_query.filters
+    assert ("in_", "status", ["Pending Technical Approval", "Approved", "Affected by Session Change"]) in request_query.filters
     (equipment_delete,) = database.calls_to("equipment_bookings", "delete")
     assert equipment_delete.filters == [("in_", "request_id", ["req-1", "req-2"])]
     (request_update,) = database.calls_to("equipment_requests", "update")

@@ -71,3 +71,14 @@ export function sessionChanges(currentSessions, proposedSessions) {
     edited,
   }
 }
+
+// Ids of the sessions a change request moves (any time change) or removes.
+// Only these affect bookings: their approved bookings and equipment are
+// flagged on approval, and their pending bookings may be cancelled (T7-281).
+export function sessionsNeedingRebooking(currentSessions, proposedSessions) {
+  const { removed, edited } = sessionChanges(currentSessions, proposedSessions)
+  const moved = edited
+    .filter(({ fields }) => fields.some(({ key }) => key === 'start_time' || key === 'end_time'))
+    .map(({ session }) => session.id)
+  return [...moved, ...removed.map((session) => session.id)]
+}

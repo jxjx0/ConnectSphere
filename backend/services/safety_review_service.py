@@ -17,7 +17,9 @@ DECISION_NEXT_STATUS = {
     "rejected": "planning",
 }
 # Bookings that still hold the venue and must be released when safety is rejected.
-RELEASABLE_BOOKING_STATUSES = ("PENDING_VENUE_APPROVAL", "APPROVED", "AFFECTED_BY_UNAVAILABILITY")
+RELEASABLE_BOOKING_STATUSES = (
+    "PENDING_VENUE_APPROVAL", "APPROVED", "AFFECTED_BY_UNAVAILABILITY", "AFFECTED_BY_SESSION_CHANGE",
+)
 SETTLED_BOOKING_STATUSES = ("CANCELLED", "REJECTED", "REJECTED_BY_SAFETY")
 
 
@@ -301,6 +303,9 @@ def _safety_check_blockers(client, event: dict) -> list[str]:
     ).data or []
     if any(request.get("status") == "Pending Technical Approval" for request in equipment_requests):
         blockers.append("pending equipment requests must be reviewed first")
+    elif any(request.get("status") == "Affected by Session Change" for request in equipment_requests):
+        # Its session moved or was removed (T7-281): cancel it and request again.
+        blockers.append("equipment requests affected by a session change must be cancelled and requested again")
     else:
         # Every session that lists equipment needs its own request (scope
         # doc 9.1). Sessions that need none count as done.
@@ -433,7 +438,7 @@ def _release_event_arrangements(client, event_id: str, reason: str) -> None:
         client.table("equipment_requests")
         .select("id")
         .eq("event_id", event_id)
-        .in_("status", ["Pending Technical Approval", "Approved"])
+        .in_("status", ["Pending Technical Approval", "Approved", "Affected by Session Change"])
         .execute()
     ).data or []
     request_ids = [request["id"] for request in equipment_requests]

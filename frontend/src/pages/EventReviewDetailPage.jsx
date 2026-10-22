@@ -29,7 +29,7 @@ import { cancelVenueBooking, getVenueBookingsForEvent } from '../api/venues'
 import { cancelEquipmentRequest, getEventEquipmentRequests } from '../api/equipmentRequests'
 import { canCancelEquipmentRequest, canCancelVenueBooking } from '../cancelArrangements'
 import { sessionsWithoutEquipmentRequest } from '../equipmentRequestEligibility'
-import { sessionChanges } from '../changeRequestSessions'
+import { sessionChanges, sessionsNeedingRebooking } from '../changeRequestSessions'
 
 import { requestSafetyCheck } from '../api/events'
 
@@ -101,6 +101,15 @@ function ProposedSessionChanges({ event }) {
   )
 }
 
+// Pending bookings of sessions the pending change moves or removes; the
+// Coordinator chooses which to cancel when approving (T7-281).
+function pendingBookingsAffectedBy(event, venueBookings) {
+  if (event.change_request?.status !== 'pending') return []
+  const sessionIds = sessionsNeedingRebooking(sessionsOf(event), event.change_request.sessions)
+  return venueBookings.filter((booking) =>
+    booking.status === 'PENDING_VENUE_APPROVAL' && sessionIds.includes(booking.session_id))
+}
+
 function Answer({ label, value }) {
   return (
     <div className="answer">
@@ -123,6 +132,7 @@ function getBookingCardStyle(status) {
         backgroundColor: 'var(--surface)',
       }
     case 'AFFECTED_BY_UNAVAILABILITY':
+    case 'AFFECTED_BY_SESSION_CHANGE':
     case 'REJECTED':
       return {
         borderLeft: '3px solid var(--danger)',
@@ -161,6 +171,9 @@ export default function EventReviewDetailPage() {
   const [hasActiveHold, setHasActiveHold] = useState(false)
   const [venueError, setVenueError] = useState('')
   const [safetyDecision, setSafetyDecision] = useState(null)
+  // Pending bookings the Coordinator unticked, so they stay pending when the
+  // change is approved. Everything else listed is cancelled (T7-281).
+  const [keptPendingIds, setKeptPendingIds] = useState(() => new Set())
 
   useEffect(() => {
     let active = true
@@ -244,10 +257,26 @@ export default function EventReviewDetailPage() {
     setDecisionError('')
     setDeciding(true)
     try {
-      if (reviewingChange) {
-        const data = decision === 'approve'
-          ? await approveAssignedChangeRequest(eventId, token)
-          : await rejectAssignedChangeRequest(eventId, rejectionReason.trim(), token)
+      if (reviewingChange && decision === 'approve') {
+        await approveAssignedChangeRequest(
+          eventId,
+          pendingBookingsAffectedBy(event, venueBookings)
+            .filter((booking) => !keptPendingIds.has(booking.booking_id))
+            .map((booking) => booking.booking_id),
+          token,
+        )
+        // Sessions, bookings and equipment may all have changed, so load
+        // them again rather than patching the page.
+        const [data, bookingData, requestData] = await Promise.all([
+          getAssignedEventRequest(eventId, token),
+          getVenueBookingsForEvent(eventId, token),
+          getEventEquipmentRequests(eventId, token),
+        ])
+        setEvent(data.event)
+        setVenueBookings(bookingData.bookings || [])
+        setEquipmentRequests(requestData.requests || [])
+      } else if (reviewingChange) {
+        const data = await rejectAssignedChangeRequest(eventId, rejectionReason.trim(), token)
         setEvent({
           ...data.event,
           change_request: data.change_request,
@@ -317,6 +346,8 @@ export default function EventReviewDetailPage() {
     )
   }
 
+
+  const pendingBookingsToCancel = pendingBookingsAffectedBy(event, venueBookings)
 
   const liveVenueStatuses = venueBookings
     .map((booking) => (booking.status || '').toUpperCase())
@@ -502,10 +533,12 @@ export default function EventReviewDetailPage() {
                         fontSize: '0.8125rem',
                       }}
                     >
-                      {booking.session?.name && (
+                      {/* Every booking is for a session (T7-278), so one without a
+                          session lost it when a change request removed it. */}
+                      {(booking.session?.name || !booking.session_id) && (
                         <div>
                           <span className="note" style={{ display: 'block' }}>Session:</span>
-                          <span style={{ color: 'var(--ink)' }}>{booking.session.name}</span>
+                          <span style={{ color: 'var(--ink)' }}>{booking.session?.name || 'Removed session'}</span>
                         </div>
                       )}
                       <div>
@@ -535,6 +568,14 @@ export default function EventReviewDetailPage() {
                     {booking.status === 'AFFECTED_BY_UNAVAILABILITY' && (
                       <p className="form-error" role="status">
                         Originally approved. Venue now unavailable. Please arrange another venue.
+                      </p>
+                    )}
+                    {booking.status === 'AFFECTED_BY_SESSION_CHANGE' && (
+                      <p className="form-error" role="status">
+                        {booking.session_id
+                          ? 'Its session was moved by an approved change request.'
+                          : 'Its session was removed by an approved change request.'}
+                        {' '}Cancel this booking, then book a venue again if needed.
                       </p>
                     )}
                     {booking.status === 'REJECTED' && booking.rejection_reason && (
@@ -599,7 +640,7 @@ export default function EventReviewDetailPage() {
                   {eventLevelRequests.map((request) => (
                     <li key={request.id}>
                       <EquipmentRequestCard
-                        title="Whole event"
+                        title={request.status === 'Affected by Session Change' ? 'Removed session' : 'Whole event'}
                         request={request}
                         timing={event}
                         actions={equipmentCancelAction(request)}
@@ -743,6 +784,32 @@ export default function EventReviewDetailPage() {
                   maxLength={2000}
                 />
               </label>
+              {pendingBookingsToCancel.length > 0 && (
+                <fieldset className="stack stack--tight">
+                  <legend>Pending venue bookings for moved or removed sessions</legend>
+                  <p className="note">
+                    Ticked bookings are cancelled when you approve. Unticked ones stay pending.
+                    Approved bookings and equipment for these sessions are kept but marked as
+                    affected, so you can cancel and book them again.
+                  </p>
+                  {pendingBookingsToCancel.map((booking) => (
+                    <label key={booking.booking_id} style={{ display: 'block' }}>
+                      <input
+                        type="checkbox"
+                        checked={!keptPendingIds.has(booking.booking_id)}
+                        onChange={(change) => setKeptPendingIds((current) => {
+                          const next = new Set(current)
+                          if (change.target.checked) next.delete(booking.booking_id)
+                          else next.add(booking.booking_id)
+                          return next
+                        })}
+                      />
+                      {' '}Cancel {booking.venues?.name || 'venue'} for {booking.session?.name || 'its session'}
+                      {' '}({formatDateTime(booking.start_at)} – {formatDateTime(booking.end_at)})
+                    </label>
+                  ))}
+                </fieldset>
+              )}
               <div className="form-actions">
                 <button
                   type="button"

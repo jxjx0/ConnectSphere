@@ -435,6 +435,16 @@ class EventChangeRequestSubmit(BaseModel):
         return self
 
 
+class EventChangeRequestApproval(BaseModel):
+    """The body of POST /events/review/<id>/change-request/approve (T7-281).
+
+    The pending venue bookings of moved or removed sessions that the
+    Coordinator chose to cancel. Unticked ones stay pending.
+    """
+
+    cancel_booking_ids: list[str] = Field(default_factory=list)
+
+
 class EventChangeRequestDecision(BaseModel):
     """A Coordinator's required reason for rejecting a proposed change."""
 

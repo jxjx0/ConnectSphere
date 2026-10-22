@@ -9,6 +9,7 @@ function getStatusClass(status) {
     case 'PENDING_VENUE_APPROVAL':
       return styles.pending
     case 'AFFECTED_BY_UNAVAILABILITY':
+    case 'AFFECTED_BY_SESSION_CHANGE':
     case 'REJECTED':
       return styles.rejected
     default:
@@ -74,6 +75,12 @@ export default function VenueBookingCard({ booking, validationError, actions }) 
       {booking.status === 'AFFECTED_BY_UNAVAILABILITY' && (
         <p className="form-error" role="status">
           Originally approved. Venue now unavailable. Please arrange another venue.
+        </p>
+      )}
+
+      {booking.status === 'AFFECTED_BY_SESSION_CHANGE' && (
+        <p className="form-error" role="status">
+          Its session was moved or removed by an approved change request.
         </p>
       )}
 

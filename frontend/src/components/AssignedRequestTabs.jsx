@@ -87,7 +87,7 @@ function getVenueBadge(allVenueBookings) {
     }
   }
 
-  if (venueBookings.some((b) => b.status === 'AFFECTED_BY_UNAVAILABILITY')) {
+  if (venueBookings.some((b) => ['AFFECTED_BY_UNAVAILABILITY', 'AFFECTED_BY_SESSION_CHANGE'].includes(b.status))) {
     return {
       label: 'Venue Affected',
       style: {
@@ -201,6 +201,17 @@ function getEquipmentBadge(equipmentRequests) {
     .map((request) => request.status?.toLowerCase())
     .filter((status) => status !== 'cancelled')
   if (statuses.length === 0) return null
+  // A session moved or was removed (T7-281); the request must be redone.
+  if (statuses.includes('affected by session change')) {
+    return {
+      label: 'Equipment Affected',
+      style: {
+        backgroundColor: 'var(--danger-faint)',
+        color: 'var(--danger)',
+        borderColor: 'var(--danger)',
+      },
+    }
+  }
   const status = statuses.every((value) => value === 'approved')
     ? 'approved'
     : statuses.includes('rejected') && !statuses.includes('pending technical approval')

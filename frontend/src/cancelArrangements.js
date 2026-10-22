@@ -2,8 +2,12 @@
 // (T7-282). The backend checks the same rules; this only decides whether
 // to show the Cancel button.
 
-const CANCELLABLE_VENUE_STATUSES = ['PENDING_VENUE_APPROVAL', 'APPROVED', 'AFFECTED_BY_UNAVAILABILITY']
-const CANCELLABLE_EQUIPMENT_STATUSES = ['Pending Technical Approval', 'Approved']
+const CANCELLABLE_VENUE_STATUSES = [
+  'PENDING_VENUE_APPROVAL', 'APPROVED', 'AFFECTED_BY_UNAVAILABILITY', 'AFFECTED_BY_SESSION_CHANGE',
+]
+const CANCELLABLE_EQUIPMENT_STATUSES = [
+  'Pending Technical Approval', 'Approved', 'Affected by Session Change',
+]
 
 // The session's start, or `fallback` for bookings and requests made before
 // sessions existed.

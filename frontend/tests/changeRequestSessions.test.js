@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   changeSessionToPayload,
   sessionChanges,
+  sessionsNeedingRebooking,
   sessionsForChange,
   validateChangeSessions,
 } from '../src/changeRequestSessions.js'
@@ -77,4 +78,16 @@ test('sessions without an id are added and missing ones are removed', () => {
   const { added, removed } = sessionChanges(current, proposed)
   assert.deepEqual(added.map((session) => session.name), ['Breakout B'])
   assert.deepEqual(removed.map((session) => session.id), ['a'])
+})
+
+test('only moved and removed sessions need rebooking', () => {
+  const proposed = [
+    { ...current[0], session_id: 'main', expected_attendance: 250 },
+    { session_id: null, name: 'New', start_time: '2026-12-15T01:00:00Z', end_time: '2026-12-15T02:00:00Z', expected_attendance: 10 },
+  ]
+  // Main only changed attendance, so nothing is rebooked for it; A was removed.
+  assert.deepEqual(sessionsNeedingRebooking(current, proposed), ['a'])
+
+  const moved = [{ ...current[0], session_id: 'main', end_time: '2026-12-15T10:00:00Z' }, { ...current[1], session_id: 'a' }]
+  assert.deepEqual(sessionsNeedingRebooking(current, moved), ['main'])
 })

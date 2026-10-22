@@ -11,6 +11,7 @@ import config
 from models.event import (
     Event,
     EventChangeRequest,
+    EventChangeRequestApproval,
     EventChangeRequestDecision,
     EventChangeRequestSubmit,
     EventStatus,
@@ -529,14 +530,87 @@ def test_coordinator_review_calls_atomic_approval_rpc(monkeypatch):
     )
 
     result = event_service.review_assigned_change_request(
-        "coordinator-token", COORDINATOR.id, EVENT_ID, "approve"
+        "coordinator-token", COORDINATOR.id, EVENT_ID, "approve",
+        approval=EventChangeRequestApproval(cancel_booking_ids=["booking-1"]),
     )
 
+    # T7-281: approving applies the sessions and cancels the ticked bookings.
     assert captured == {
-        "function_name": "approve_event_change_request",
-        "params": {"p_event_id": EVENT_ID},
+        "function_name": "approve_session_change_request",
+        "params": {"p_event_id": EVENT_ID, "p_cancel_booking_ids": ["booking-1"]},
     }
     assert result[1].status == "approved"
+
+
+def test_approval_without_ticked_bookings_cancels_none(monkeypatch):
+    captured = {}
+
+    class FakeRPC:
+        def execute(self):
+            return SimpleNamespace(data={
+                "event": _event_row("planning"),
+                "change_request": _change_request_row("approved"),
+            })
+
+    def rpc(function_name, params):
+        captured.update(params=params)
+        return FakeRPC()
+
+    monkeypatch.setattr(config, "get_user_client", lambda access_token: SimpleNamespace(rpc=rpc))
+
+    event_service.review_assigned_change_request("coordinator-token", COORDINATOR.id, EVENT_ID, "approve")
+
+    assert captured["params"]["p_cancel_booking_ids"] == []
+
+
+def test_venue_staff_are_told_about_bookings_cancelled_on_approval(monkeypatch):
+    sent = []
+
+    class FakeRPC:
+        def execute(self):
+            return SimpleNamespace(data={
+                "event": _event_row("planning"),
+                "change_request": _change_request_row("approved"),
+                "cancelled_bookings": [
+                    {"booking_id": "booking-1", "venue_name": "Hall A", "session_name": "Breakout A"},
+                ],
+            })
+
+    monkeypatch.setattr(
+        config, "get_user_client",
+        lambda access_token: SimpleNamespace(rpc=lambda name, params: FakeRPC()),
+    )
+    monkeypatch.setattr(
+        event_service.notification_service, "notify_role",
+        lambda role, notification_type, title, body, event_id=None: sent.append((role, notification_type, body, event_id)),
+    )
+
+    event_service.review_assigned_change_request("coordinator-token", COORDINATOR.id, EVENT_ID, "approve")
+
+    ((role, notification_type, body, event_id),) = sent
+    assert role == "venue_staff"
+    assert notification_type == "venue_booking_cancelled"
+    assert "Hall A" in body and "Breakout A" in body and "Annual Client Summit" in body
+    assert event_id == EVENT_ID
+
+
+def test_session_rule_rejections_on_approval_are_shown_as_written(monkeypatch):
+    message = "Breakout A: This session has already started and cannot be changed"
+
+    class FakeRPC:
+        def execute(self):
+            raise APIError({"message": message, "code": "22023", "details": None, "hint": None})
+
+    monkeypatch.setattr(
+        config, "get_user_client",
+        lambda access_token: SimpleNamespace(rpc=lambda name, params: FakeRPC()),
+    )
+
+    with pytest.raises(AuthError) as caught:
+        event_service.review_assigned_change_request("coordinator-token", COORDINATOR.id, EVENT_ID, "approve")
+
+    assert caught.value.status_code == 409
+    assert caught.value.message == message
 
 
 def test_coordinator_review_calls_atomic_rejection_rpc_with_reason(monkeypatch):
@@ -591,7 +665,7 @@ def test_coordinator_can_reject_change_request_and_notify_organiser(
     monkeypatch.setattr(
         event_service,
         "review_assigned_change_request",
-        lambda access_token, coordinator_id, event_id, decision, rejection: (
+        lambda access_token, coordinator_id, event_id, decision, rejection, approval: (
             reviewed_event,
             reviewed_request,
         ),
@@ -758,6 +832,50 @@ def test_approving_change_request_notifies_organiser_changes_were_applied(
         "approved and applied."
     )
     assert event_id == EVENT_ID
+
+
+def test_approve_route_passes_the_ticked_bookings(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+    captured = {}
+
+    def review(access_token, coordinator_id, event_id, decision, rejection, approval):
+        captured["approval"] = approval
+        return Event(**_event_row("planning")), EventChangeRequest(**_change_request_row("approved"))
+
+    monkeypatch.setattr(event_service, "review_assigned_change_request", review)
+    monkeypatch.setattr("routes.events.notification_service.notify", lambda *args: None)
+
+    response = client.post(
+        f"/events/review/{EVENT_ID}/change-request/approve",
+        json={"cancel_booking_ids": ["booking-1", "booking-2"]},
+        headers={"Authorization": "Bearer coordinator-token"},
+    )
+
+    assert response.status_code == 200
+    assert captured["approval"].cancel_booking_ids == ["booking-1", "booking-2"]
+
+
+def test_organiser_is_told_when_a_confirmed_event_returns_to_planning(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+    approved = EventChangeRequest(**{
+        **_change_request_row("approved"), "event_status_before_request": "confirmed",
+    })
+    monkeypatch.setattr(
+        event_service, "review_assigned_change_request",
+        lambda *args: (Event(**_event_row("planning")), approved),
+    )
+    captured = {}
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: captured.setdefault("notification", args),
+    )
+
+    client.post(
+        f"/events/review/{EVENT_ID}/change-request/approve",
+        headers={"Authorization": "Bearer coordinator-token"},
+    )
+
+    assert "back in Planning and needs a new safety check" in captured["notification"][3]
 
 
 def test_rejecting_change_request_notification_names_the_event(
