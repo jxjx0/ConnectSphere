@@ -124,6 +124,8 @@ export default function EquipmentRequestsPage() {
         items: [],
       }, token)
       const submittedRequest = {
+        // The save returns no timestamp, so show it as submitted just now.
+        created_at: new Date().toISOString(),
         ...data.request,
         event: selectedEvent,
         session: selectedSession,
