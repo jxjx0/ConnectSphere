@@ -12,6 +12,7 @@ import {
 
 } from '../api/events'
 import AppShell from '../components/AppShell'
+import CancelArrangementForm from '../components/CancelArrangementForm'
 import EquipmentRequestCard from '../components/EquipmentRequestCard'
 import SessionList from '../components/SessionList'
 import { useAuth } from '../context/AuthContext'
@@ -24,8 +25,9 @@ import {
   readableStatus,
   sessionsOf,
 } from '../eventDisplay'
-import { getVenueBookingsForEvent } from '../api/venues'
-import { getEventEquipmentRequests } from '../api/equipmentRequests'
+import { cancelVenueBooking, getVenueBookingsForEvent } from '../api/venues'
+import { cancelEquipmentRequest, getEventEquipmentRequests } from '../api/equipmentRequests'
+import { canCancelEquipmentRequest, canCancelVenueBooking } from '../cancelArrangements'
 import { sessionsWithoutEquipmentRequest } from '../equipmentRequestEligibility'
 
 import { requestSafetyCheck } from '../api/events'
@@ -237,6 +239,26 @@ export default function EventReviewDetailPage() {
 
 
 
+  // T7-282. The database returns the bare row, so keep the venue and
+  // session names already on screen.
+  async function cancelBooking(booking, reason) {
+    const data = await cancelVenueBooking(booking.booking_id, reason, token)
+    setVenueBookings((current) => current.map((item) => (
+      item.booking_id === booking.booking_id
+        ? { ...item, ...data.booking, venues: item.venues, session: item.session }
+        : item
+    )))
+  }
+
+  async function cancelRequest(request, reason) {
+    const data = await cancelEquipmentRequest(request.id, reason, token)
+    setEquipmentRequests((current) => current.map((item) => (
+      item.id === request.id
+        ? { ...item, ...data.request, event: item.event, session: item.session, items: item.items, equipment_bookings: [] }
+        : item
+    )))
+  }
+
   if (loading) {
     return (
       <AppShell>
@@ -266,11 +288,26 @@ export default function EventReviewDetailPage() {
   // session has one (or while we can't tell because loading them failed).
   const canRequestEquipment = !equipmentRequestError
     && sessionsWithoutEquipmentRequest(event, equipmentRequests).length > 0
+  // A cancelled request no longer belongs to its session, which can
+  // request again; it is listed separately (T7-282).
   const equipmentRequestFor = (sessionId) => (
-    equipmentRequests.find((request) => request.session_id === sessionId)
+    equipmentRequests.find((request) => request.session_id === sessionId
+      && request.status !== 'Cancelled')
   )
+  const cancelledRequests = equipmentRequests.filter((request) => request.status === 'Cancelled')
   // Requests made before sessions existed are for the whole event.
-  const eventLevelRequests = equipmentRequests.filter((request) => !request.session_id)
+  const eventLevelRequests = equipmentRequests.filter((request) => !request.session_id
+    && request.status !== 'Cancelled')
+  const sessionName = (sessionId) => (
+    sessionsOf(event).find((session) => session.id === sessionId)?.name || 'Whole event'
+  )
+  const equipmentCancelAction = (request) => canCancelEquipmentRequest(event, request) && (
+    <CancelArrangementForm
+      label="Cancel equipment request"
+      confirmMessage="Cancel this equipment request? Any equipment reserved for it will be released."
+      onCancel={(reason) => cancelRequest(request, reason)}
+    />
+  )
 
   return (
     <AppShell>
@@ -466,6 +503,20 @@ export default function EventReviewDetailPage() {
                         <strong>Rejection Reason:</strong> {booking.rejection_reason}
                       </div>
                     )}
+                    {booking.status === 'CANCELLED' && booking.cancellation_reason && (
+                      <p className="note" style={{ marginTop: 'var(--space-3)' }}>
+                        <strong>Cancellation reason:</strong> {booking.cancellation_reason}
+                      </p>
+                    )}
+                    {canCancelVenueBooking(event, booking) && (
+                      <div className="form-actions" style={{ marginTop: 'var(--space-3)' }}>
+                        <CancelArrangementForm
+                          label="Cancel booking"
+                          confirmMessage="Cancel this venue booking? The venue will be released for other events."
+                          onCancel={(reason) => cancelBooking(booking, reason)}
+                        />
+                      </div>
+                    )}
                   </li>
                 )
               })}
@@ -494,21 +545,35 @@ export default function EventReviewDetailPage() {
                           request={request}
                           timing={session}
                           needs={session.equipment_requirements}
-                          actions={canRequest && (
+                          actions={canRequest ? (
                             <Link
                               to={`/equipment-requests?eventId=${encodeURIComponent(eventId)}&sessionId=${encodeURIComponent(session.id)}`}
                               className="button button--secondary"
                             >
                               Request equipment for this session
                             </Link>
-                          )}
+                          ) : request && equipmentCancelAction(request)}
                         />
                       </li>
                     )
                   })}
                   {eventLevelRequests.map((request) => (
                     <li key={request.id}>
-                      <EquipmentRequestCard title="Whole event" request={request} timing={event} />
+                      <EquipmentRequestCard
+                        title="Whole event"
+                        request={request}
+                        timing={event}
+                        actions={equipmentCancelAction(request)}
+                      />
+                    </li>
+                  ))}
+                  {cancelledRequests.map((request) => (
+                    <li key={request.id}>
+                      <EquipmentRequestCard
+                        title={`${sessionName(request.session_id)} (cancelled)`}
+                        request={request}
+                        timing={request.session || event}
+                      />
                     </li>
                   ))}
                 </ul>

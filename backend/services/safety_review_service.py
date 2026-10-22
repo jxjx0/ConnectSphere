@@ -310,7 +310,11 @@ def _safety_check_blockers(client, event: dict) -> list[str]:
             .eq("event_id", event["id"])
             .execute()
         ).data or []
-        requested_sessions = {request.get("session_id") for request in equipment_requests}
+        # A cancelled request counts as none, so the session must request again (T7-282).
+        requested_sessions = {
+            request.get("session_id") for request in equipment_requests
+            if request.get("status") != "Cancelled"
+        }
         missing = [
             session.get("name") or "a session" for session in sessions
             if (session.get("equipment_requirements") or "").strip()
@@ -429,7 +433,7 @@ def _release_event_arrangements(client, event_id: str, reason: str) -> None:
         client.table("equipment_requests")
         .select("id")
         .eq("event_id", event_id)
-        .neq("status", "Rejected")
+        .in_("status", ["Pending Technical Approval", "Approved"])
         .execute()
     ).data or []
     request_ids = [request["id"] for request in equipment_requests]

@@ -178,7 +178,8 @@ def test_rejection_releases_equipment_bookings_and_requests(database):
     decide("rejected", "Unsafe crowd flow")
 
     (request_query,) = database.calls_to("equipment_requests", "select")
-    assert ("neq", "status", "Rejected") in request_query.filters
+    # Rejected and cancelled requests are left as they are (T7-282).
+    assert ("in_", "status", ["Pending Technical Approval", "Approved"]) in request_query.filters
     (equipment_delete,) = database.calls_to("equipment_bookings", "delete")
     assert equipment_delete.filters == [("in_", "request_id", ["req-1", "req-2"])]
     (request_update,) = database.calls_to("equipment_requests", "update")

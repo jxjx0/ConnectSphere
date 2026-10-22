@@ -51,3 +51,12 @@ test('an event with every session requested has none left', () => {
   const event = { id: 'event', sessions: [{ id: 'only' }] }
   assert.deepEqual(sessionsWithoutEquipmentRequest(event, [{ session_id: 'only' }]), [])
 })
+
+test('a session whose request was cancelled can request again', () => {
+  const event = { id: 'event', sessions: [{ id: 'main', start_time: '2099-01-01T09:00:00Z' }] }
+  assert.deepEqual(
+    sessionsWithoutEquipmentRequest(event, [{ session_id: 'main', status: 'Cancelled' }])
+      .map((session) => session.id),
+    ['main'],
+  )
+})

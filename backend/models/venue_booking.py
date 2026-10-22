@@ -56,3 +56,16 @@ class VenueBookingReviewRequest(BaseModel):
         if self.status == "REJECTED" and not (self.rejection_reason or "").strip():
             raise ValueError("a reason must be provided when rejecting a booking request")
         return self
+
+class VenueBookingCancelRequest(BaseModel):
+    """The body of PATCH /venues/bookings/{booking_id}/cancel (T7-282)."""
+
+    reason: str = Field(min_length=1, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def strip_reason(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("give a reason for cancelling this booking")
+        return stripped

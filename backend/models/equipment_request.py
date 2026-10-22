@@ -3,7 +3,7 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class EquipmentRequestItemSubmit(BaseModel):
@@ -36,3 +36,17 @@ class EquipmentRequestSubmit(BaseModel):
 
 class EquipmentRequestReview(BaseModel):
     decision: Literal["Approved", "Rejected"]
+
+
+class EquipmentRequestCancel(BaseModel):
+    """The body of PATCH /equipment-requests/{request_id}/cancel (T7-282)."""
+
+    reason: str = Field(min_length=1, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def strip_reason(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Give a reason for cancelling this equipment request.")
+        return stripped

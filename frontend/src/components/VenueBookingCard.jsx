@@ -90,6 +90,12 @@ export default function VenueBookingCard({ booking, validationError, actions }) 
         </div>
       )}
 
+      {booking.status === 'CANCELLED' && booking.cancellation_reason && (
+        <p className={`note ${styles.rejectionError}`}>
+          <strong>Cancellation reason:</strong> {booking.cancellation_reason}
+        </p>
+      )}
+
       {actions && <div className={`form-actions ${styles.actions}`}>{actions}</div>}
     </div>
   )

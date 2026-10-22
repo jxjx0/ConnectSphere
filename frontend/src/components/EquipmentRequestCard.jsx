@@ -70,6 +70,12 @@ export default function EquipmentRequestCard({ title, eventName, request, timing
         )}
       </div>
 
+      {request?.status === 'Cancelled' && request.cancellation_reason && (
+        <p className={`note ${styles.rejectionError}`}>
+          <strong>Cancellation reason:</strong> {request.cancellation_reason}
+        </p>
+      )}
+
       {request?.status === 'Pending Technical Approval' && (
         <p className={`note ${styles.rejectionError}`}>
           Technical Support is checking availability and allocating suitable equipment.
