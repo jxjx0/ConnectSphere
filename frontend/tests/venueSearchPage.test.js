@@ -319,6 +319,7 @@ test('event details offer contextual Find Venue only in Planning', async () => {
       },
       '../api/events': {},
       '../components/AppShell': { __esModule: true, default: ({ children }) => React.createElement('main', null, children) },
+      '../components/SessionList': { __esModule: true, default: () => null },
       '../context/AuthContext': { useAuth: () => ({ token: 'token' }) },
       '../eventCategories': eventCategories,
       '../eventDisplay': eventDisplay,

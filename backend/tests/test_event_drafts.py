@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
+from postgrest import APIError as PostgrestAPIError
 from pydantic import ValidationError
 
 import config
@@ -10,6 +11,7 @@ from models.event import Event, EventDraftRequest, EventStatus, EventSubmitReque
 from models.profile import Profile, Role
 from services import auth_service, event_service
 from services.auth_service import AuthError
+from fake_supabase import FakeDatabase
 
 DRAFT_ID = "44444444-4444-4444-4444-444444444444"
 
@@ -35,6 +37,25 @@ def _in_days(days: int, hours: int = 0) -> str:
 
 
 def complete_event() -> dict:
+    """A request body for submitting a draft: the event and its sessions."""
+    return {
+        "name": "Annual Client Summit",
+        "description": "A full-day summit for our regional clients.",
+        "purpose": "Client relationship building",
+        "category": "conference",
+        "sessions": [
+            {
+                "name": "Main programme",
+                "start_time": _in_days(30),
+                "end_time": _in_days(30, hours=8),
+                "expected_attendance": 120,
+            }
+        ],
+    }
+
+
+def complete_event_row() -> dict:
+    """A submitted events row; the database fills the times from the sessions."""
     return {
         "name": "Annual Client Summit",
         "description": "A full-day summit for our regional clients.",
@@ -58,7 +79,7 @@ UNDER_REVIEW_ROW = {
     "id": DRAFT_ID,
     "organiser_id": ORGANISER.id,
     "status": "under_review",
-    **complete_event(),
+    **complete_event_row(),
 }
 
 
@@ -115,8 +136,6 @@ def fake_events_table(monkeypatch, rows):
     return calls
 
 
-def call_named(calls, name):
-    return next(call for call in calls if call[0] == name)
 
 
 # --- Model validation ------------------------------------------------------
@@ -125,8 +144,8 @@ def call_named(calls, name):
 def test_a_draft_needs_only_a_name():
     draft = EventDraftRequest(name="Summit")
 
-    assert draft.start_time is None
-    assert draft.expected_attendance is None
+    assert draft.sessions == []
+    assert draft.description is None
 
 
 def test_a_draft_without_a_name_is_rejected():
@@ -134,32 +153,171 @@ def test_a_draft_without_a_name_is_rejected():
         EventDraftRequest(name="   ")
 
 
-def test_what_a_draft_fills_in_is_still_checked():
+def test_a_draft_session_may_be_half_filled_in():
+    """Untouched inputs arrive as "" and mean not filled in yet."""
+    draft = EventDraftRequest(
+        name="Summit",
+        sessions=[{"name": "", "start_time": _in_days(5), "end_time": "",
+                   "expected_attendance": ""}],
+    )
+
+    session = draft.sessions[0]
+    assert session.name is None
+    assert session.end_time is None
+    assert session.expected_attendance is None
+
+
+def test_what_a_draft_session_fills_in_is_still_checked():
     with pytest.raises(ValidationError) as caught:
         EventDraftRequest(
-            name="Summit", start_time=_in_days(5), end_time=_in_days(4)
+            name="Summit",
+            sessions=[{"name": "Breakout A", "start_time": _in_days(5),
+                       "end_time": _in_days(4)}],
         )
 
-    assert "End time must be after the start time" in str(caught.value)
+    assert "Breakout A: End time must be after the start time" in str(
+        caught.value
+    )
+
+
+def test_a_draft_session_in_the_past_can_still_be_saved():
+    """"Must be in the future" is checked on submit, not while drafting."""
+    draft = EventDraftRequest(
+        name="Summit",
+        sessions=[{"name": "Kick-off", "start_time": _in_days(-3),
+                   "end_time": _in_days(-3, hours=2)}],
+    )
+
+    assert draft.sessions[0].name == "Kick-off"
 
 
 # --- Service ---------------------------------------------------------------
 
 
+def saved_session_rows(query) -> list[dict]:
+    """What replace_draft_sessions returns for the sessions it was given."""
+    return [
+        {"id": f"session-{index}", "event_id": query.payload["p_event_id"], **session}
+        for index, session in enumerate(query.payload["p_sessions"])
+    ]
+
+
+def draft_database(monkeypatch, responses) -> FakeDatabase:
+    database = FakeDatabase(
+        {("rpc:replace_draft_sessions", "rpc"): saved_session_rows, **responses}
+    )
+    monkeypatch.setattr(
+        config, "get_user_client", lambda access_token: database.client
+    )
+    return database
+
+
 def test_creating_a_draft_sets_the_organiser_and_status_itself(monkeypatch):
-    calls = fake_events_table(monkeypatch, [DRAFT_ROW])
+    database = draft_database(monkeypatch, {("events", "insert"): [DRAFT_ROW]})
 
     event_service.create_draft(
         "organiser-token", ORGANISER.id, EventDraftRequest(name="Summit")
     )
 
-    inserted = call_named(calls, "insert")[1]
+    inserted = database.calls_to("events", "insert")[0].payload
     assert inserted["organiser_id"] == ORGANISER.id
     assert inserted["status"] == "draft"
+    assert "sessions" not in inserted
 
 
-def test_submitting_changes_only_my_draft_to_under_review(monkeypatch):
-    calls = fake_events_table(monkeypatch, [UNDER_REVIEW_ROW])
+def test_creating_a_draft_saves_its_sessions(monkeypatch):
+    database = draft_database(monkeypatch, {("events", "insert"): [DRAFT_ROW]})
+    request = EventDraftRequest(
+        name="Summit",
+        sessions=[{"name": "Main programme"}, {"name": "Breakout A"}],
+    )
+
+    draft = event_service.create_draft("organiser-token", ORGANISER.id, request)
+
+    saved = database.calls_to("rpc:replace_draft_sessions", "rpc")[0].payload
+    assert saved["p_event_id"] == DRAFT_ID
+    assert [session["name"] for session in saved["p_sessions"]] == [
+        "Main programme",
+        "Breakout A",
+    ]
+    assert [session.name for session in draft.sessions] == [
+        "Main programme",
+        "Breakout A",
+    ]
+
+
+def test_a_draft_whose_sessions_fail_to_save_is_removed(monkeypatch):
+    """Otherwise the form, which never got the id, would create a duplicate."""
+    database = draft_database(monkeypatch, {
+        ("events", "insert"): [DRAFT_ROW],
+        ("rpc:replace_draft_sessions", "rpc"): PostgrestAPIError(
+            {"message": "boom", "code": "XX000"}
+        ),
+    })
+
+    with pytest.raises(AuthError):
+        event_service.create_draft(
+            "organiser-token",
+            ORGANISER.id,
+            EventDraftRequest(name="Summit", sessions=[{"name": "Main"}]),
+        )
+
+    deleted = database.calls_to("events", "delete")
+    assert len(deleted) == 1
+    assert ("eq", "status", "draft") in deleted[0].filters
+
+
+def test_updating_a_draft_replaces_its_sessions(monkeypatch):
+    """A session removed in the form is removed from the draft too."""
+    database = draft_database(monkeypatch, {("events", "update"): [DRAFT_ROW]})
+
+    draft = event_service.update_draft(
+        "organiser-token",
+        ORGANISER.id,
+        DRAFT_ID,
+        EventDraftRequest(name="Summit", sessions=[{"name": "Only one left"}]),
+    )
+
+    update = database.calls_to("events", "update")[0]
+    assert "sessions" not in update.payload
+    assert ("eq", "status", "draft") in update.filters
+    saved = database.calls_to("rpc:replace_draft_sessions", "rpc")[0].payload
+    assert [session["name"] for session in saved["p_sessions"]] == [
+        "Only one left"
+    ]
+    assert [session.name for session in draft.sessions] == ["Only one left"]
+
+
+def test_opening_a_draft_returns_its_sessions_in_time_order(monkeypatch):
+    database = draft_database(monkeypatch, {
+        ("events", "select"): [DRAFT_ROW],
+        ("event_sessions", "select"): [
+            {"id": "session-1", "event_id": DRAFT_ID, "name": "Morning"},
+        ],
+    })
+
+    draft = event_service.get_my_draft("organiser-token", ORGANISER.id, DRAFT_ID)
+
+    read = database.calls_to("event_sessions", "select")[0]
+    assert read.filters == [
+        ("in_", "event_id", [DRAFT_ID]),
+        ("order", "start_time"),
+        ("order", "created_at"),
+    ]
+    assert [session.name for session in draft.sessions] == ["Morning"]
+
+
+def test_submitting_saves_the_sessions_then_changes_only_my_draft(monkeypatch):
+    database = FakeDatabase({
+        ("rpc:replace_draft_sessions", "rpc"): lambda query: [
+            {"id": "session-1", "event_id": DRAFT_ID, **session}
+            for session in query.payload["p_sessions"]
+        ],
+        ("events", "update"): [UNDER_REVIEW_ROW],
+    })
+    monkeypatch.setattr(
+        config, "get_user_client", lambda access_token: database.client
+    )
 
     event = event_service.submit_draft(
         "organiser-token",
@@ -168,10 +326,40 @@ def test_submitting_changes_only_my_draft_to_under_review(monkeypatch):
         EventSubmitRequest(**complete_event()),
     )
 
-    assert call_named(calls, "update")[1]["status"] == "under_review"
-    assert ("eq", "organiser_id", ORGANISER.id) in calls
-    assert ("eq", "status", "draft") in calls
+    saved, update = database.calls
+    assert (saved.table, saved.payload["p_event_id"]) == (
+        "rpc:replace_draft_sessions",
+        DRAFT_ID,
+    )
+    assert update.payload["status"] == "under_review"
+    assert "sessions" not in update.payload
+    assert ("eq", "organiser_id", ORGANISER.id) in update.filters
+    assert ("eq", "status", "draft") in update.filters
     assert event.status is EventStatus.UNDER_REVIEW
+    assert [session.name for session in event.sessions] == ["Main programme"]
+
+
+def test_sessions_for_someone_elses_draft_are_not_found(monkeypatch):
+    """Row-level security refuses the sessions; answer 404 like any missing draft."""
+    database = FakeDatabase({
+        ("rpc:replace_draft_sessions", "rpc"): PostgrestAPIError(
+            {"message": "new row violates row-level security", "code": "42501"}
+        ),
+    })
+    monkeypatch.setattr(
+        config, "get_user_client", lambda access_token: database.client
+    )
+
+    with pytest.raises(AuthError) as caught:
+        event_service.submit_draft(
+            "organiser-token",
+            ORGANISER.id,
+            DRAFT_ID,
+            EventSubmitRequest(**complete_event()),
+        )
+
+    assert caught.value.status_code == 404
+    assert database.calls_to("events", "update") == []
 
 
 def test_deleting_touches_only_my_draft(monkeypatch):

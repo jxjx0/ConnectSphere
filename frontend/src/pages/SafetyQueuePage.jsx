@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
+import { formatSessionSummary } from '../eventDisplay'
 import { getSafetyQueue } from '../api/events'
 import { useAuth } from '../context/AuthContext'
 
@@ -158,7 +159,12 @@ export default function SafetyQueuePage() {
                     <tr key={item.id}>
                       <th scope="row">{item.name}</th>
                       <td>{item.category ? formatStatus(item.category) : 'General'}</td>
-                      <td>{eventTiming}</td>
+                      <td>
+                        <div>{eventTiming}</div>
+                        <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '2px' }}>
+                          {formatSessionSummary(item)}
+                        </div>
+                      </td>
                       <td>
                         <div>{readyDate.date}</div>
                         {relativeTime && (

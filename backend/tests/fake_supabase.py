@@ -55,12 +55,24 @@ class FakeQuery:
 
 
 class FakeDatabase:
-    """Responses are keyed by (table, operation); a callable receives the query."""
+    """Responses are keyed by (table, operation); a callable receives the query.
+
+    A database function call is recorded as table "rpc:<name>" with
+    operation "rpc" and its parameters as the payload.
+    """
 
     def __init__(self, responses=None):
         self.responses = dict(responses or {})
         self.calls = []
-        self.client = SimpleNamespace(table=lambda name: FakeQuery(self, name))
+        self.client = SimpleNamespace(
+            table=lambda name: FakeQuery(self, name),
+            rpc=self._rpc,
+        )
+
+    def _rpc(self, name, params):
+        query = FakeQuery(self, f"rpc:{name}")
+        query.operation, query.payload = "rpc", params
+        return query
 
     def calls_to(self, table, operation):
         return [call for call in self.calls if call.table == table and call.operation == operation]

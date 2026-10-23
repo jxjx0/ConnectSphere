@@ -16,6 +16,9 @@ from models.event import (
     EventDraftRequest,
     EventOrganiser,
     EventReviewSummary,
+    EventSession,
+    EventSessionDraft,
+    EventSessionSubmit,
     EventStatus,
     EventSubmitRequest,
 )
@@ -119,17 +122,22 @@ def submit_event(
     organiser_id: str,
     request: EventSubmitRequest,
 ) -> Event:
-    """Store a submitted event request for the signed-in Organiser.
+    """Store a submitted event request and its sessions for the signed-in Organiser.
 
     organiser_id and status are set here rather than taken from the request
     body, so a caller cannot submit a request in someone else's name or
     skip the event straight to a later status. The database enforces the
     same rule again through row-level security.
+
+    Sessions can only be written while an event is a draft, so the request
+    is saved in three steps: insert it as a draft, save its sessions, then
+    submit it. If the second or third step fails, the half-saved draft is
+    removed so the Organiser is not left with a stray draft.
     """
     client = config.get_user_client(access_token)
-    event = request.model_dump(mode="json")
+    event = request.model_dump(mode="json", exclude={"sessions"})
     event["organiser_id"] = organiser_id
-    event["status"] = EventStatus.UNDER_REVIEW.value
+    event["status"] = EventStatus.DRAFT.value
 
     try:
         result = client.table("events").insert(event).execute()
@@ -138,7 +146,69 @@ def submit_event(
 
     if not result.data:
         raise AuthError("Event request was not submitted.", status_code=502)
-    return Event(**result.data[0])
+    event_id = result.data[0]["id"]
+
+    try:
+        sessions = _save_sessions(client, event_id, request.sessions)
+        submitted = _update_my_draft(
+            client,
+            organiser_id,
+            event_id,
+            {"status": EventStatus.UNDER_REVIEW.value},
+        )
+    except AuthError:
+        _discard_unsubmitted_draft(client, organiser_id, event_id)
+        raise
+
+    return submitted.model_copy(update={"sessions": sessions})
+
+
+def _save_sessions(
+    client,
+    event_id: str,
+    sessions: list[EventSessionSubmit] | list[EventSessionDraft],
+) -> list[EventSession]:
+    """Replace all of a draft's sessions with these, in one database call.
+
+    replace_draft_sessions deletes and inserts in a single transaction, so a
+    failure never leaves a draft with only some of its sessions. Row-level
+    security only lets the Organiser change sessions of their own draft.
+    """
+    try:
+        result = client.rpc(
+            "replace_draft_sessions",
+            {
+                "p_event_id": event_id,
+                "p_sessions": [
+                    session.model_dump(mode="json") for session in sessions
+                ],
+            },
+        ).execute()
+    except PostgrestAPIError as error:
+        # Row-level security refuses sessions for anything but the
+        # Organiser's own draft: the same answer as a missing draft.
+        if error.code in {"42501", "PGRST301"}:
+            raise AuthError(DRAFT_NOT_FOUND, status_code=404) from error
+        raise _database_error(error) from error
+
+    if len(result.data or []) != len(sessions):
+        raise AuthError("Event sessions were not saved.", status_code=502)
+    return [EventSession(**row) for row in result.data]
+
+
+def _discard_unsubmitted_draft(client, organiser_id: str, event_id: str) -> None:
+    """Best-effort clean-up after a submission failed part-way through."""
+    try:
+        (
+            client.table("events")
+            .delete()
+            .eq("id", event_id)
+            .eq("organiser_id", organiser_id)
+            .eq("status", EventStatus.DRAFT.value)
+            .execute()
+        )
+    except PostgrestAPIError:
+        pass
 
 
 def list_my_events(access_token: str, organiser_id: str) -> list[Event]:
@@ -165,7 +235,7 @@ def list_my_events(access_token: str, organiser_id: str) -> list[Event]:
         raise _database_error(error) from error
 
     events = [Event(**event) for event in result.data]
-    return _with_coordinator_names(client, events)
+    return _with_sessions(client, _with_coordinator_names(client, events))
 
 
 def _with_coordinator_names(client, events: list[Event]) -> list[Event]:
@@ -227,7 +297,8 @@ def get_my_event(access_token: str, organiser_id: str, event_id: str) -> Event:
     if not result.data:
         raise AuthError("Event request was not found.", status_code=404)
     event = _with_coordinator_names(client, [Event(**result.data[0])])[0]
-    return _with_change_request(client, [event])[0]
+    event = _with_change_request(client, [event])[0]
+    return _with_sessions(client, [event])[0]
 
 
 def _with_change_request(client, events: list[Event]) -> list[Event]:
@@ -330,7 +401,7 @@ def create_draft(
     from the request body.
     """
     client = config.get_user_client(access_token)
-    draft = request.model_dump(mode="json")
+    draft = request.model_dump(mode="json", exclude={"sessions"})
     draft["organiser_id"] = organiser_id
     draft["status"] = EventStatus.DRAFT.value
 
@@ -341,7 +412,15 @@ def create_draft(
 
     if not result.data:
         raise AuthError("Draft was not saved.", status_code=502)
-    return Event(**result.data[0])
+    saved = Event(**result.data[0])
+    try:
+        sessions = _save_sessions(client, saved.id, request.sessions)
+    except AuthError:
+        # The form never learnt this draft's id, so the next save would
+        # create a second draft; remove this one instead.
+        _discard_unsubmitted_draft(client, organiser_id, saved.id)
+        raise
+    return saved.model_copy(update={"sessions": sessions})
 
 
 def list_my_drafts(access_token: str, organiser_id: str) -> list[Event]:
@@ -379,7 +458,39 @@ def get_my_draft(access_token: str, organiser_id: str, draft_id: str) -> Event:
 
     if not result.data:
         raise AuthError(DRAFT_NOT_FOUND, status_code=404)
-    return Event(**result.data[0])
+    return _with_sessions(client, [Event(**result.data[0])])[0]
+
+
+def _with_sessions(client, events: list[Event]) -> list[Event]:
+    """Attach each event's sessions, earliest first; unscheduled ones last.
+
+    One query for the whole list, so a page of events costs one extra read
+    rather than one per event. Row-level security on event_sessions follows
+    the events rules, so a caller only ever gets sessions of events they can
+    already see.
+    """
+    if not events:
+        return events
+
+    try:
+        result = (
+            client.table("event_sessions")
+            .select("*")
+            .in_("event_id", [event.id for event in events])
+            .order("start_time")
+            .order("created_at")
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+
+    sessions_by_event: dict[str, list[EventSession]] = {}
+    for row in result.data:
+        sessions_by_event.setdefault(row["event_id"], []).append(EventSession(**row))
+    return [
+        event.model_copy(update={"sessions": sessions_by_event.get(event.id, [])})
+        for event in events
+    ]
 
 
 def _update_my_draft(client, organiser_id: str, draft_id: str, values: dict):
@@ -415,12 +526,18 @@ def update_draft(
     """Save the form as it now stands over an existing draft.
 
     Every field is written, so a field cleared in the form is cleared in
-    the draft too.
+    the draft too. The sessions are replaced the same way: a session
+    removed in the form is removed from the draft.
     """
     client = config.get_user_client(access_token)
-    return _update_my_draft(
-        client, organiser_id, draft_id, request.model_dump(mode="json")
+    saved = _update_my_draft(
+        client,
+        organiser_id,
+        draft_id,
+        request.model_dump(mode="json", exclude={"sessions"}),
     )
+    sessions = _save_sessions(client, draft_id, request.sessions)
+    return saved.model_copy(update={"sessions": sessions})
 
 
 def submit_draft(
@@ -429,16 +546,21 @@ def submit_draft(
     draft_id: str,
     request: EventSubmitRequest,
 ) -> Event:
-    """Save the final details and submit the draft, in one update.
+    """Save the final sessions and details, then submit the draft.
 
     The request has passed the same EventSubmitRequest checks as a brand
     new submission, so a draft cannot be submitted incomplete. The database
     checks this again (events_complete_unless_draft).
+
+    Sessions are saved first, while the event is still a draft. If the
+    final update fails, the draft simply keeps its new sessions.
     """
     client = config.get_user_client(access_token)
-    values = request.model_dump(mode="json")
+    sessions = _save_sessions(client, draft_id, request.sessions)
+    values = request.model_dump(mode="json", exclude={"sessions"})
     values["status"] = EventStatus.UNDER_REVIEW.value
-    return _update_my_draft(client, organiser_id, draft_id, values)
+    submitted = _update_my_draft(client, organiser_id, draft_id, values)
+    return submitted.model_copy(update={"sessions": sessions})
 
 
 def delete_draft(access_token: str, organiser_id: str, draft_id: str) -> None:
@@ -472,7 +594,7 @@ def list_assigned_events(
     try:
         result = (
             client.table("events")
-            .select("id, name, start_time, end_time, status, safety_status, equipment_requirements, venue_bookings(status), equipment_requests(status)")
+            .select("id, name, start_time, end_time, expected_attendance, status, safety_status, equipment_requirements, venue_bookings(status), equipment_requests(status), sessions:event_sessions(id)")
             .eq("coordinator_id", coordinator_id)
             .neq("status", EventStatus.DRAFT.value)
             .order("start_time")
@@ -503,7 +625,8 @@ def get_assigned_event(
     if not result.data:
         raise AuthError("Event request was not found.", status_code=404)
     event = Event(**result.data[0])
-    return _with_change_request(client, [event])[0]
+    event = _with_change_request(client, [event])[0]
+    return _with_sessions(client, [event])[0]
 
 
 def review_assigned_change_request(

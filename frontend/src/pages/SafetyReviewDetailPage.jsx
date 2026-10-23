@@ -4,7 +4,13 @@ import { getSafetyEventDetails, submitSafetyDecision } from '../api/events'
 import AppShell from '../components/AppShell'
 import { useAuth } from '../context/AuthContext'
 import { categoryLabel } from '../eventCategories'
-import { formatDateRange, formatDateTime, optional } from '../eventDisplay'
+import {
+  formatDateRange,
+  formatDateTime,
+  formatSessionSummary,
+  optional,
+} from '../eventDisplay'
+import SessionList from '../components/SessionList'
 
 function Answer({ label, value }) {
   return (
@@ -152,7 +158,7 @@ export default function SafetyReviewDetailPage() {
             <span className="record-head__dot" aria-hidden="true">·</span>
             {formatDateRange(event.start_time, event.end_time)}
             <span className="record-head__dot" aria-hidden="true">·</span>
-            {event.expected_attendance} expected
+            {formatSessionSummary(event)}
             <span className="record-head__dot" aria-hidden="true">·</span>
             <span className="tag tag--orange">Safety Review Pending</span>
           </p>
@@ -181,8 +187,8 @@ export default function SafetyReviewDetailPage() {
               value={`${formatDateTime(event.start_time)} – ${formatDateTime(event.end_time)}`}
             />
             <Answer
-              label="Expected Attendance"
-              value={event.expected_attendance ? `${event.expected_attendance} people` : ''}
+              label="Sessions and attendance"
+              value={formatSessionSummary(event)}
             />
             <Answer
               label="Coordinator in Charge"
@@ -194,6 +200,15 @@ export default function SafetyReviewDetailPage() {
             />
           </dl>
         </section>
+
+        {/* Each session's own time, attendance and needs (T7-277). These
+            are the Organiser's requests; the booked venue and equipment
+            follow in their own sections. */}
+        <SessionList
+          event={event}
+          title="Sessions requested"
+          note="What the Organiser asked for. The venue and equipment actually booked are shown below."
+        />
 
         {/* Venue Profile & Requested Layout Section */}
         <section className="stack stack--tight">

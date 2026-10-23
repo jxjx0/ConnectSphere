@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import AppShell from '../components/AppShell'
+import { formatSessionSummary } from '../eventDisplay'
 import {
   getUnassignedEventsQueue,
   getCoordinatorsList,
@@ -198,7 +199,12 @@ export default function UnassignedQueuePage() {
                     <tr key={item.id}>
                       <th scope="row">{item.name}</th>
                       <td>{item.category ? formatStatus(item.category) : 'N/A'}</td>
-                      <td>{schedule.date} {schedule.time && `at ${schedule.time}`}</td>
+                      <td>
+                        <div>{schedule.date} {schedule.time && `at ${schedule.time}`}</div>
+                        <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '2px' }}>
+                          {formatSessionSummary(item)}
+                        </div>
+                      </td>
                       <td>
                         <div>{submitted.date}</div>
                         {relativeTime && (

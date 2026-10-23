@@ -308,6 +308,26 @@ a:hover {
   gap: var(--space-3);
 }
 
+/* One session of an event request: a card on the form and the review. */
+.session-card {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.session-card legend,
+.session-card h3 {
+  margin: 0;
+  font-weight: 600;
+}
+
+.session-card .button {
+  justify-self: start;
+}
+
 .booking-calendar__nav {
   display: flex;
   align-items: center;
@@ -1318,6 +1338,9 @@ a:hover {
   font-size: 0.75rem;
   font-weight: 500;
   color: var(--ink-muted);
+  /* A status label stays on one line; in a narrow table column it would
+     otherwise wrap and spill outside its rounded border. */
+  white-space: nowrap;
 }
 
 .form-card {

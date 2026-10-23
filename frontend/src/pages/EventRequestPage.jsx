@@ -11,13 +11,21 @@ import {
 } from '../api/events'
 import AppShell from '../components/AppShell'
 import { useAuth } from '../context/AuthContext'
-import { EVENT_CATEGORIES, OTHER_CATEGORY } from '../eventCategories'
+import { formatDateRange, optional } from '../eventDisplay'
 import {
-  validateCategoryOther,
-  validateEventDetails,
-  validateEventTimes,
-  validateExpectedAttendance,
-} from '../validation'
+  categoryLabel,
+  EVENT_CATEGORIES,
+  OTHER_CATEGORY,
+} from '../eventCategories'
+import {
+  emptySession,
+  sessionFromSaved,
+  sessionLabel,
+  sessionToPayload,
+  sortSessionsByStart,
+  validateSessions,
+} from '../eventSessions'
+import { validateCategoryOther, validateEventDetails } from '../validation'
 
 function emptyForm() {
   return {
@@ -26,49 +34,29 @@ function emptyForm() {
     purpose: '',
     category: '',
     categoryOther: '',
-    startTime: '',
-    endTime: '',
-    expectedAttendance: '',
-    locationPreference: '',
-    layoutPreference: '',
     accessibilityRequirements: '',
-    equipmentRequirements: '',
+    sessions: [emptySession()],
   }
 }
 
-// The datetime-local input wants "2026-10-03T14:30" in the browser's local
-// time, so a stored UTC timestamp is converted back before it is shown.
-function toDateTimeInput(value) {
-  if (!value) return ''
-  const date = new Date(value)
-  const pad = (part) => String(part).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-    + `T${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
 // A saved draft back into form state. Anything not filled in yet comes
-// back as null, which the inputs show as empty.
+// back as null, which the inputs show as empty. A draft saved with no
+// sessions still opens with one empty session to fill in.
 function formFromDraft(draft) {
+  const sessions = (draft.sessions ?? []).map(sessionFromSaved)
   return {
     name: draft.name ?? '',
     description: draft.description ?? '',
     purpose: draft.purpose ?? '',
     category: draft.category ?? '',
     categoryOther: draft.category_other ?? '',
-    startTime: toDateTimeInput(draft.start_time),
-    endTime: toDateTimeInput(draft.end_time),
-    expectedAttendance:
-      draft.expected_attendance == null ? '' : String(draft.expected_attendance),
-    locationPreference: draft.location_preference ?? '',
-    layoutPreference: draft.layout_preference ?? '',
     accessibilityRequirements: draft.accessibility_requirements ?? '',
-    equipmentRequirements: draft.equipment_requirements ?? '',
+    sessions: sessions.length ? sessions : [emptySession()],
   }
 }
 
 // Form state into the body the backend expects. Used for both saving a
-// draft and submitting, so empty inputs are sent as null rather than
-// failing to convert.
+// draft and submitting.
 function toPayload(form) {
   return {
     name: form.name,
@@ -77,17 +65,8 @@ function toPayload(form) {
     category: form.category || null,
     category_other:
       form.category === OTHER_CATEGORY ? form.categoryOther : null,
-    // The datetime-local input has no timezone, so send the browser's
-    // local time as an explicit UTC timestamp.
-    start_time: form.startTime ? new Date(form.startTime).toISOString() : null,
-    end_time: form.endTime ? new Date(form.endTime).toISOString() : null,
-    expected_attendance: form.expectedAttendance
-      ? Number(form.expectedAttendance)
-      : null,
-    location_preference: form.locationPreference,
-    layout_preference: form.layoutPreference,
     accessibility_requirements: form.accessibilityRequirements,
-    equipment_requirements: form.equipmentRequirements,
+    sessions: form.sessions.map(sessionToPayload),
   }
 }
 
@@ -108,6 +87,9 @@ export default function EventRequestPage() {
   // The draft this form is saved into. Null until the first save, so the
   // first save creates a draft and later saves update that same one.
   const [draftId, setDraftId] = useState(params.draftId ?? null)
+  // True while the Organiser checks their details before sending them
+  // (T7-215: review all sessions before submitting).
+  const [reviewing, setReviewing] = useState(false)
   // Holds the event the backend created, which is what the confirmation
   // message is built from. Null until a request has been submitted.
   const [submitted, setSubmitted] = useState(null)
@@ -122,6 +104,26 @@ export default function EventRequestPage() {
 
   function updateField(field) {
     return (event) => setForm({ ...form, [field]: event.target.value })
+  }
+
+  function updateSessionField(index, field) {
+    return (event) => {
+      const sessions = form.sessions.map((session, position) =>
+        position === index ? { ...session, [field]: event.target.value } : session,
+      )
+      setForm({ ...form, sessions })
+    }
+  }
+
+  function addSession() {
+    setForm({ ...form, sessions: [...form.sessions, emptySession()] })
+  }
+
+  function removeSession(index) {
+    setForm({
+      ...form,
+      sessions: form.sessions.filter((_, position) => position !== index),
+    })
   }
 
   async function handleSaveDraft() {
@@ -165,7 +167,9 @@ export default function EventRequestPage() {
     }
   }
 
-  async function handleSubmit(event) {
+  // The form's own submit button checks everything, then shows the review
+  // screen. Nothing is sent until the Organiser confirms there.
+  function handleReview(event) {
     event.preventDefault()
     setError('')
     setSavedMessage('')
@@ -173,13 +177,18 @@ export default function EventRequestPage() {
     const validationError =
       validateEventDetails(form) ||
       validateCategoryOther(form.category, form.categoryOther) ||
-      validateExpectedAttendance(form.expectedAttendance) ||
-      validateEventTimes(form.startTime, form.endTime)
+      validateSessions(form.sessions)
     if (validationError) {
       setError(validationError)
       return
     }
 
+    setReviewing(true)
+    window.scrollTo(0, 0)
+  }
+
+  async function handleSubmit() {
+    setError('')
     setSubmitting(true)
 
     try {
@@ -236,6 +245,7 @@ export default function EventRequestPage() {
               onClick={() => {
                 setForm(emptyForm())
                 setDraftId(null)
+                setReviewing(false)
                 setSubmitted(null)
                 navigate('/my-events/new')
               }}
@@ -246,6 +256,107 @@ export default function EventRequestPage() {
               View my requests
             </Link>
             <Link to="/dashboard">Back to dashboard</Link>
+          </div>
+        </div>
+      </AppShell>
+    )
+  }
+
+  if (reviewing) {
+    const sessions = sortSessionsByStart(form.sessions)
+    return (
+      <AppShell>
+        <div className="content">
+          <div className="content__header">
+            <h1>Review your request</h1>
+            <p className="lead">
+              Check the details below. Nothing has been sent yet.
+            </p>
+          </div>
+
+          <section className="stack stack--tight">
+            <h2 className="section-title">Event details</h2>
+            <dl className="detail-list">
+              <div className="detail-list__row">
+                <dt>Event name</dt>
+                <dd>{form.name}</dd>
+              </div>
+              <div className="detail-list__row">
+                <dt>Category</dt>
+                <dd>{categoryLabel(form.category, form.categoryOther)}</dd>
+              </div>
+              <div className="detail-list__row">
+                <dt>Purpose</dt>
+                <dd>{form.purpose}</dd>
+              </div>
+              <div className="detail-list__row">
+                <dt>Description</dt>
+                <dd>{form.description}</dd>
+              </div>
+              <div className="detail-list__row">
+                <dt>Accessibility</dt>
+                <dd>{optional(form.accessibilityRequirements)}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="stack stack--tight">
+            <h2 className="section-title">Sessions ({sessions.length})</h2>
+            {sessions.map((session) => (
+              <div className="session-card" key={session.formKey}>
+                <h3>{session.name}</h3>
+                <dl className="detail-list">
+                  <div className="detail-list__row">
+                    <dt>When</dt>
+                    <dd>{formatDateRange(session.startTime, session.endTime)}</dd>
+                  </div>
+                  <div className="detail-list__row">
+                    <dt>Attendance</dt>
+                    <dd>{session.expectedAttendance}</dd>
+                  </div>
+                  <div className="detail-list__row">
+                    <dt>Location</dt>
+                    <dd>{optional(session.locationPreference)}</dd>
+                  </div>
+                  <div className="detail-list__row">
+                    <dt>Layout</dt>
+                    <dd>{optional(session.layoutPreference)}</dd>
+                  </div>
+                  <div className="detail-list__row">
+                    <dt>Equipment</dt>
+                    <dd>{optional(session.equipmentRequirements)}</dd>
+                  </div>
+                </dl>
+              </div>
+            ))}
+          </section>
+
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+
+          <div className="form-actions form-actions--wide">
+            <button
+              type="button"
+              className="button"
+              onClick={handleSubmit}
+              disabled={submitting}
+            >
+              {submitting ? 'Submitting…' : 'Submit request'}
+            </button>
+            <button
+              type="button"
+              className="button button--secondary"
+              onClick={() => {
+                setError('')
+                setReviewing(false)
+              }}
+              disabled={submitting}
+            >
+              Back to edit
+            </button>
           </div>
         </div>
       </AppShell>
@@ -264,7 +375,7 @@ export default function EventRequestPage() {
           </p>
         </div>
 
-        <form className="form" onSubmit={handleSubmit}>
+        <form className="form" onSubmit={handleReview}>
           <section className="stack stack--tight">
             <h2 className="section-title">Event details</h2>
 
@@ -335,79 +446,6 @@ export default function EventRequestPage() {
                 required
               />
             </div>
-          </section>
-
-          <section className="stack stack--tight">
-            <h2 className="section-title">When and how many</h2>
-
-            <div className="field">
-              <label htmlFor="startTime">Starts</label>
-              <input
-                id="startTime"
-                name="startTime"
-                type="datetime-local"
-                value={form.startTime}
-                onChange={updateField('startTime')}
-                required
-              />
-            </div>
-
-            <div className="field">
-              <label htmlFor="endTime">Ends</label>
-              <input
-                id="endTime"
-                name="endTime"
-                type="datetime-local"
-                value={form.endTime}
-                onChange={updateField('endTime')}
-                required
-              />
-            </div>
-
-            <div className="field">
-              <label htmlFor="expectedAttendance">Expected attendance</label>
-              <input
-                id="expectedAttendance"
-                name="expectedAttendance"
-                type="number"
-                min={1}
-                value={form.expectedAttendance}
-                onChange={updateField('expectedAttendance')}
-                required
-              />
-            </div>
-          </section>
-
-          <section className="stack stack--tight">
-            <h2 className="section-title">Preferences and requirements</h2>
-
-            <div className="field">
-              <label htmlFor="locationPreference">Preferred location</label>
-              <input
-                id="locationPreference"
-                name="locationPreference"
-                aria-describedby="location-hint"
-                value={form.locationPreference}
-                onChange={updateField('locationPreference')}
-              />
-              <p className="field__hint" id="location-hint">
-                Optional. Your Coordinator selects the actual venue.
-              </p>
-            </div>
-
-            <div className="field">
-              <label htmlFor="layoutPreference">Preferred room layout</label>
-              <input
-                id="layoutPreference"
-                name="layoutPreference"
-                aria-describedby="layout-hint"
-                value={form.layoutPreference}
-                onChange={updateField('layoutPreference')}
-              />
-              <p className="field__hint" id="layout-hint">
-                Optional. For example: theatre, classroom, banquet.
-              </p>
-            </div>
 
             <div className="field">
               <label htmlFor="accessibilityRequirements">
@@ -417,27 +455,141 @@ export default function EventRequestPage() {
                 id="accessibilityRequirements"
                 name="accessibilityRequirements"
                 rows={3}
+                aria-describedby="accessibility-hint"
                 value={form.accessibilityRequirements}
                 onChange={updateField('accessibilityRequirements')}
               />
-            </div>
-
-            <div className="field">
-              <label htmlFor="equipmentRequirements">
-                Equipment requirements
-              </label>
-              <textarea
-                id="equipmentRequirements"
-                name="equipmentRequirements"
-                rows={3}
-                aria-describedby="equipment-hint"
-                value={form.equipmentRequirements}
-                onChange={updateField('equipmentRequirements')}
-              />
-              <p className="field__hint" id="equipment-hint">
-                Optional. Describe what you need &mdash; Technical Support
-                will match it to available equipment.
+              <p className="field__hint" id="accessibility-hint">
+                Optional. Applies to the whole event.
               </p>
+            </div>
+          </section>
+
+          <section className="stack stack--tight">
+            <h2 className="section-title">Sessions</h2>
+            <p className="field__hint">
+              Add a session for each block of time or each space you need.
+              Sessions can run at the same time &mdash; for example a main
+              programme and breakout rooms.
+            </p>
+
+            {form.sessions.map((session, index) => {
+              // Ids must be unique on the page, so they carry the session's
+              // place on the form.
+              const id = (field) => `session-${index}-${field}`
+              return (
+                <fieldset className="session-card" key={session.formKey}>
+                  <legend>{sessionLabel(session, index)}</legend>
+
+                  <div className="field">
+                    <label htmlFor={id('name')}>Session name</label>
+                    <input
+                      id={id('name')}
+                      maxLength={200}
+                      placeholder="For example: Main programme, Breakout A"
+                      value={session.name}
+                      onChange={updateSessionField(index, 'name')}
+                      required
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor={id('start')}>Starts</label>
+                    <input
+                      id={id('start')}
+                      type="datetime-local"
+                      value={session.startTime}
+                      onChange={updateSessionField(index, 'startTime')}
+                      required
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor={id('end')}>Ends</label>
+                    <input
+                      id={id('end')}
+                      type="datetime-local"
+                      value={session.endTime}
+                      onChange={updateSessionField(index, 'endTime')}
+                      required
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor={id('attendance')}>Expected attendance</label>
+                    <input
+                      id={id('attendance')}
+                      type="number"
+                      min={1}
+                      value={session.expectedAttendance}
+                      onChange={updateSessionField(index, 'expectedAttendance')}
+                      required
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor={id('location')}>Preferred location</label>
+                    <input
+                      id={id('location')}
+                      aria-describedby={id('location-hint')}
+                      value={session.locationPreference}
+                      onChange={updateSessionField(index, 'locationPreference')}
+                    />
+                    <p className="field__hint" id={id('location-hint')}>
+                      Optional. Your Coordinator selects the actual venue.
+                    </p>
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor={id('layout')}>Preferred room layout</label>
+                    <input
+                      id={id('layout')}
+                      aria-describedby={id('layout-hint')}
+                      value={session.layoutPreference}
+                      onChange={updateSessionField(index, 'layoutPreference')}
+                    />
+                    <p className="field__hint" id={id('layout-hint')}>
+                      Optional. For example: theatre, classroom, banquet.
+                    </p>
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor={id('equipment')}>Equipment requirements</label>
+                    <textarea
+                      id={id('equipment')}
+                      rows={3}
+                      aria-describedby={id('equipment-hint')}
+                      value={session.equipmentRequirements}
+                      onChange={updateSessionField(index, 'equipmentRequirements')}
+                    />
+                    <p className="field__hint" id={id('equipment-hint')}>
+                      Optional. Describe what you need &mdash; Technical
+                      Support will match it to available equipment.
+                    </p>
+                  </div>
+
+                  {/* An event always keeps at least one session. */}
+                  {form.sessions.length > 1 && (
+                    <button
+                      type="button"
+                      className="button button--secondary button--small"
+                      onClick={() => removeSession(index)}
+                    >
+                      Remove {sessionLabel(session, index)}
+                    </button>
+                  )}
+                </fieldset>
+              )
+            })}
+
+            <div>
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={addSession}
+              >
+                + Add session
+              </button>
             </div>
           </section>
 
@@ -458,9 +610,9 @@ export default function EventRequestPage() {
             <button
               type="submit"
               className="button"
-              disabled={submitting || saving || deleting}
+              disabled={saving || deleting}
             >
-              {submitting ? 'Submitting…' : 'Submit request'}
+              Review request
             </button>
             {/* type="button" so saving skips the browser's required-field
                 checks: a draft may be incomplete. */}
@@ -468,7 +620,7 @@ export default function EventRequestPage() {
               type="button"
               className="button button--secondary"
               onClick={handleSaveDraft}
-              disabled={submitting || saving || deleting}
+              disabled={saving || deleting}
             >
               {saving ? 'Saving…' : 'Save as draft'}
             </button>
@@ -478,7 +630,7 @@ export default function EventRequestPage() {
                 type="button"
                 className="button button--danger"
                 onClick={handleDeleteDraft}
-                disabled={submitting || saving || deleting}
+                disabled={saving || deleting}
               >
                 {deleting ? 'Deleting…' : 'Delete draft'}
               </button>

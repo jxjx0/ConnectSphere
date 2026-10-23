@@ -98,12 +98,82 @@ def _as_utc(value: datetime) -> datetime:
     return value
 
 
+class EventSessionSubmit(BaseModel):
+    """One session of a submitted event request (T7-273).
+
+    Each session is a block of time with its own space and equipment needs,
+    e.g. "Main programme" and "Breakout A" at the same time in different
+    rooms. Sessions may overlap. The Organiser describes needs in free text;
+    the Coordinator books the actual venue and equipment for each session.
+    """
+
+    name: str = Field(min_length=1, max_length=200)
+    start_time: datetime
+    end_time: datetime
+    expected_attendance: int = Field(gt=0)
+    location_preference: str | None = None
+    layout_preference: str | None = None
+    equipment_requirements: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Give every session a name")
+        return stripped
+
+    @field_validator(
+        "location_preference", "layout_preference", "equipment_requirements"
+    )
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @model_validator(mode="after")
+    def validate_session_times(self) -> "EventSessionSubmit":
+        """Reject backwards session times and sessions that have already started.
+
+        The session name leads each message, so the Organiser can tell which
+        session of several needs fixing.
+        """
+        if _as_utc(self.end_time) <= _as_utc(self.start_time):
+            raise ValueError(f"{self.name}: End time must be after the start time")
+        if _as_utc(self.start_time) <= datetime.now(timezone.utc):
+            raise ValueError(f"{self.name}: Start time must be in the future")
+        return self
+
+
+class EventSession(BaseModel):
+    """A row of the `event_sessions` table.
+
+    The details are optional because a draft's sessions may be incomplete.
+    """
+
+    id: str
+    event_id: str
+    name: str | None = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    expected_attendance: int | None = None
+    location_preference: str | None = None
+    layout_preference: str | None = None
+    equipment_requirements: str | None = None
+    created_at: datetime | None = None
+
+
 class EventSubmitRequest(BaseModel):
-    """The body of POST /events.
+    """The body of POST /events and POST /events/drafts/<id>/submit.
 
     The Organiser describes what they need in free text. They do not pick a
     venue or specific equipment -- the Coordinator and Technical Support do
     that later, so there are no venue or equipment ids here.
+
+    Times, attendance and space and equipment needs belong to each session
+    (section 9.1 of the scope doc). Accessibility stays event-level.
     """
 
     name: str = Field(min_length=1, max_length=200)
@@ -111,13 +181,8 @@ class EventSubmitRequest(BaseModel):
     purpose: str = Field(min_length=1)
     category: EventCategory
     category_other: str | None = Field(default=None, max_length=120)
-    start_time: datetime
-    end_time: datetime
-    expected_attendance: int = Field(gt=0)
-    location_preference: str | None = None
-    layout_preference: str | None = None
     accessibility_requirements: str | None = None
-    equipment_requirements: str | None = None
+    sessions: list[EventSessionSubmit]
 
     @field_validator("name", "description", "purpose")
     @classmethod
@@ -127,13 +192,16 @@ class EventSubmitRequest(BaseModel):
             raise ValueError("This field must not be blank")
         return stripped
 
-    @field_validator(
-        "category_other",
-        "location_preference",
-        "layout_preference",
-        "accessibility_requirements",
-        "equipment_requirements",
-    )
+    @field_validator("sessions")
+    @classmethod
+    def require_a_session(
+        cls, value: list[EventSessionSubmit]
+    ) -> list[EventSessionSubmit]:
+        if not value:
+            raise ValueError("Add at least one session")
+        return value
+
+    @field_validator("category_other", "accessibility_requirements")
     @classmethod
     def strip_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -159,23 +227,64 @@ class EventSubmitRequest(BaseModel):
             )
         return self
 
+
+class EventSessionDraft(BaseModel):
+    """One session of a draft (T7-275): every field may still be empty.
+
+    Whatever has been filled in is checked, so a draft never holds a session
+    that could not be submitted later. "Start time must be in the future" is
+    left to submission, as for the rest of a draft.
+    """
+
+    name: str | None = Field(default=None, max_length=200)
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    expected_attendance: int | None = Field(default=None, gt=0)
+    location_preference: str | None = None
+    layout_preference: str | None = None
+    equipment_requirements: str | None = None
+
+    @field_validator(
+        "name",
+        "location_preference",
+        "layout_preference",
+        "equipment_requirements",
+    )
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator(
+        "start_time", "end_time", "expected_attendance", mode="before"
+    )
+    @classmethod
+    def empty_means_not_filled_in(cls, value):
+        """An untouched form input arrives as "", which means not filled in."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @model_validator(mode="after")
-    def validate_event_times(self) -> "EventSubmitRequest":
-        """Reject backwards event times and events that have already started."""
-        if _as_utc(self.end_time) <= _as_utc(self.start_time):
-            raise ValueError("End time must be after the start time")
-        if _as_utc(self.start_time) <= datetime.now(timezone.utc):
-            raise ValueError("Start time must be in the future")
+    def validate_filled_in_times(self) -> "EventSessionDraft":
+        if (
+            self.start_time
+            and self.end_time
+            and _as_utc(self.end_time) <= _as_utc(self.start_time)
+        ):
+            label = self.name or "A session"
+            raise ValueError(f"{label}: End time must be after the start time")
         return self
 
 
 class EventDraftRequest(BaseModel):
     """The body of POST /events/drafts and PUT /events/drafts/<id>.
 
-    A draft may be incomplete, so only name is required. Whatever has been
-    filled in is still checked, so a draft never holds data that could not
-    be submitted later. "Start time must be in the future" is left to
-    submission: a draft saved today may be finished next week.
+    A draft may be incomplete, so only name is required, and it may have no
+    sessions yet. Whatever has been filled in is still checked, so a draft
+    never holds data that could not be submitted later.
     """
 
     name: str = Field(min_length=1, max_length=200)
@@ -183,13 +292,8 @@ class EventDraftRequest(BaseModel):
     purpose: str | None = None
     category: EventCategory | None = None
     category_other: str | None = Field(default=None, max_length=120)
-    start_time: datetime | None = None
-    end_time: datetime | None = None
-    expected_attendance: int | None = Field(default=None, gt=0)
-    location_preference: str | None = None
-    layout_preference: str | None = None
     accessibility_requirements: str | None = None
-    equipment_requirements: str | None = None
+    sessions: list[EventSessionDraft] = []
 
     @field_validator("name")
     @classmethod
@@ -203,10 +307,7 @@ class EventDraftRequest(BaseModel):
         "description",
         "purpose",
         "category_other",
-        "location_preference",
-        "layout_preference",
         "accessibility_requirements",
-        "equipment_requirements",
     )
     @classmethod
     def strip_optional_text(cls, value: str | None) -> str | None:
@@ -215,10 +316,7 @@ class EventDraftRequest(BaseModel):
         stripped = value.strip()
         return stripped or None
 
-    @field_validator(
-        "category", "start_time", "end_time", "expected_attendance",
-        mode="before",
-    )
+    @field_validator("category", mode="before")
     @classmethod
     def empty_means_not_filled_in(cls, value):
         """An untouched form input arrives as "", which means not filled in."""
@@ -232,12 +330,6 @@ class EventDraftRequest(BaseModel):
             raise ValueError(
                 "Only choose a category description when the category is Other"
             )
-        if (
-            self.start_time
-            and self.end_time
-            and _as_utc(self.end_time) <= _as_utc(self.start_time)
-        ):
-            raise ValueError("End time must be after the start time")
         return self
 
 
@@ -351,6 +443,10 @@ class Event(BaseModel):
     The details are optional because a draft may be incomplete. The
     database guarantees they are all present on any event that is not a
     draft (events_complete_unless_draft).
+
+    start_time, end_time and expected_attendance are kept up to date by the
+    database from the event's sessions: earliest start, latest end and
+    largest session attendance. sessions is filled in by the service.
     """
 
     id: str
@@ -375,6 +471,7 @@ class Event(BaseModel):
     coordinator_name: str | None = None
     has_pending_change_request: bool = False
     change_request: EventChangeRequest | None = None
+    sessions: list[EventSession] = []
 
     @classmethod
     def format_lead_overview(cls, raw_events):
@@ -409,23 +506,30 @@ class Event(BaseModel):
                 "coordinator_id": evt.get("coordinator_id"),
                 "coordinator_name": coordinator.get("full_name", "Unassigned"),
                 "expected_attendance": evt.get("expected_attendance", 0),
+                "sessions": evt.get("sessions") or [],
             })
 
         return formatted_events
 
 
 class EventReviewSummary(BaseModel):
-    """The fields needed to render the Coordinator's review list."""
+    """The fields needed to render the Coordinator's review list.
+
+    sessions holds only each session's id: the list shows how many there
+    are, not their details.
+    """
 
     id: str
     name: str
     start_time: datetime
     end_time: datetime
+    expected_attendance: int | None = None
     status: EventStatus
     safety_status: str = "not_requested"
     equipment_requirements: str | None = None
     venue_bookings: list[dict] = Field(default_factory=list)
     equipment_requests: list[dict] = Field(default_factory=list)
+    sessions: list[dict] = Field(default_factory=list)
 
 
 class EventOrganiser(BaseModel):

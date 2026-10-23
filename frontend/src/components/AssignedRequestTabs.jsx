@@ -3,7 +3,11 @@
 
 import { Link, useSearchParams } from 'react-router-dom'
 
-import { formatDateRange, readableStatus } from '../eventDisplay'
+import {
+  formatDateRange,
+  formatSessionSummary,
+  readableStatus,
+} from '../eventDisplay'
 
 const TABS = [
   // {
@@ -272,6 +276,8 @@ export default function AssignedRequestTabs({ events }) {
                   <span className="choice__title">{event.name}</span>
                   <span className="choice__description" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap', marginTop: 'var(--space-1)' }}>
                     <span>{formatDateRange(event.start_time, event.end_time)}</span>
+                    <span aria-hidden="true">·</span>
+                    <span>{formatSessionSummary(event)}</span>
                     <span aria-hidden="true">·</span>
                     <span className="tag">{readableStatus(event.status)}</span>
                     <span className="tag" style={venueBadge.style}>

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
+from postgrest import APIError as PostgrestAPIError
 from pydantic import ValidationError
 
 import config
@@ -17,6 +18,7 @@ from models.event import (
 from models.profile import Profile, Role
 from services import auth_service, event_service
 from services.auth_service import AuthError
+from fake_supabase import FakeDatabase
 
 
 def _in_days(days: int, hours: int = 0) -> str:
@@ -25,7 +27,37 @@ def _in_days(days: int, hours: int = 0) -> str:
     return moment.isoformat()
 
 
+def valid_session(name: str = "Main programme") -> dict:
+    return {
+        "name": name,
+        "start_time": _in_days(30),
+        "end_time": _in_days(30, hours=8),
+        "expected_attendance": 120,
+        "location_preference": "Somewhere central, near an MRT station",
+        "layout_preference": "Theatre",
+        "equipment_requirements": "Two projectors and four handheld mics",
+    }
+
+
 def valid_event() -> dict:
+    """A request body for POST /events."""
+    return {
+        "name": "Annual Client Summit",
+        "description": "A full-day summit for our regional clients.",
+        "purpose": "Client relationship building",
+        "category": "conference",
+        "accessibility_requirements": "Step-free access to the stage",
+        "sessions": [valid_session()],
+    }
+
+
+def event_row() -> dict:
+    """An events row as the database stores it.
+
+    start_time, end_time and expected_attendance are kept in step with the
+    sessions by the database. Events created before sessions existed also
+    keep their event-level location, layout and equipment.
+    """
     return {
         "name": "Annual Client Summit",
         "description": "A full-day summit for our regional clients.",
@@ -59,7 +91,7 @@ EVENT_RESPONSE = Event(
     id="33333333-3333-3333-3333-333333333333",
     organiser_id=ORGANISER_PROFILE.id,
     status=EventStatus.UNDER_REVIEW,
-    **valid_event(),
+    **event_row(),
 )
 
 
@@ -80,7 +112,8 @@ def test_a_valid_event_request_passes_validation():
     request = EventSubmitRequest(**valid_event())
 
     assert request.name == "Annual Client Summit"
-    assert request.expected_attendance == 120
+    assert request.sessions[0].name == "Main programme"
+    assert request.sessions[0].expected_attendance == 120
 
 
 @pytest.mark.parametrize("field", ["name", "description", "purpose"])
@@ -92,44 +125,83 @@ def test_required_text_fields_must_not_be_blank(field):
         EventSubmitRequest(**payload)
 
 
-def test_expected_attendance_must_be_positive():
+def test_an_event_request_needs_at_least_one_session():
     payload = valid_event()
-    payload["expected_attendance"] = 0
+    payload["sessions"] = []
+
+    with pytest.raises(ValidationError) as caught:
+        EventSubmitRequest(**payload)
+
+    assert "Add at least one session" in str(caught.value)
+
+
+def test_a_session_needs_a_name():
+    payload = valid_event()
+    payload["sessions"][0]["name"] = "   "
+
+    with pytest.raises(ValidationError) as caught:
+        EventSubmitRequest(**payload)
+
+    assert "Give every session a name" in str(caught.value)
+
+
+def test_session_attendance_must_be_positive():
+    payload = valid_event()
+    payload["sessions"][0]["expected_attendance"] = 0
 
     with pytest.raises(ValidationError):
         EventSubmitRequest(**payload)
 
 
-def test_end_time_must_be_after_start_time():
+def test_session_end_time_must_be_after_its_start_time():
     payload = valid_event()
-    payload["end_time"] = payload["start_time"]
+    payload["sessions"][0]["end_time"] = payload["sessions"][0]["start_time"]
 
     with pytest.raises(ValidationError) as caught:
         EventSubmitRequest(**payload)
 
-    assert "End time must be after the start time" in str(caught.value)
+    assert "Main programme: End time must be after the start time" in str(
+        caught.value
+    )
 
 
-def test_start_time_must_be_in_the_future():
+def test_every_session_must_start_in_the_future():
     payload = valid_event()
-    payload["start_time"] = _in_days(-2)
-    payload["end_time"] = _in_days(-2, hours=3)
+    past = valid_session("Breakout A")
+    past["start_time"] = _in_days(-2)
+    past["end_time"] = _in_days(-2, hours=3)
+    payload["sessions"].append(past)
 
     with pytest.raises(ValidationError) as caught:
         EventSubmitRequest(**payload)
 
-    assert "Start time must be in the future" in str(caught.value)
+    assert "Breakout A: Start time must be in the future" in str(caught.value)
+
+
+def test_sessions_may_run_at_the_same_time():
+    """Parallel rooms are separate sessions at the same time (W7 change 3)."""
+    payload = valid_event()
+    payload["sessions"].append(valid_session("Breakout A"))
+
+    request = EventSubmitRequest(**payload)
+
+    assert [session.name for session in request.sessions] == [
+        "Main programme",
+        "Breakout A",
+    ]
 
 
 def test_blank_optional_preferences_become_none():
     payload = valid_event()
-    payload["location_preference"] = "  "
-    payload["equipment_requirements"] = ""
+    payload["accessibility_requirements"] = " "
+    payload["sessions"][0]["location_preference"] = "  "
+    payload["sessions"][0]["equipment_requirements"] = ""
 
     request = EventSubmitRequest(**payload)
 
-    assert request.location_preference is None
-    assert request.equipment_requirements is None
+    assert request.accessibility_requirements is None
+    assert request.sessions[0].location_preference is None
+    assert request.sessions[0].equipment_requirements is None
 
 
 def test_a_category_outside_the_fixed_set_is_rejected():
@@ -174,35 +246,101 @@ def test_a_description_without_choosing_other_is_rejected():
 # --- Service ---------------------------------------------------------------
 
 
+def saved_session_rows(params) -> list[dict]:
+    """What replace_draft_sessions returns for the sessions it was given."""
+    return [
+        {"id": f"session-{index}", "event_id": params["p_event_id"], **session}
+        for index, session in enumerate(params["p_sessions"])
+    ]
+
+
+def submit_database(monkeypatch, overrides=None) -> FakeDatabase:
+    """A fake database where every step of a submission succeeds."""
+    draft = {**EVENT_RESPONSE.model_dump(mode="json"), "status": "draft"}
+    responses = {
+        ("events", "insert"): [draft],
+        ("rpc:replace_draft_sessions", "rpc"): (
+            lambda query: saved_session_rows(query.payload)
+        ),
+        ("events", "update"): [EVENT_RESPONSE.model_dump(mode="json")],
+    }
+    responses.update(overrides or {})
+    database = FakeDatabase(responses)
+    monkeypatch.setattr(
+        config, "get_user_client", lambda access_token: database.client
+    )
+    return database
+
+
 def test_service_sets_the_organiser_and_status_itself(monkeypatch):
     """The caller cannot choose whose event this is, or skip ahead a status."""
-    captured = {}
+    database = submit_database(monkeypatch)
 
-    class FakeTable:
-        def insert(self, row):
-            captured.update(row)
-            return self
-
-        def execute(self):
-            return SimpleNamespace(
-                data=[EVENT_RESPONSE.model_dump(mode="json")]
-            )
-
-    monkeypatch.setattr(
-        config,
-        "get_user_client",
-        lambda access_token: SimpleNamespace(table=lambda name: FakeTable()),
+    event_service.submit_event(
+        "organiser-token",
+        ORGANISER_PROFILE.id,
+        EventSubmitRequest(**valid_event()),
     )
 
-    request = EventSubmitRequest(**valid_event())
+    inserted = database.calls_to("events", "insert")[0].payload
+    assert inserted["organiser_id"] == ORGANISER_PROFILE.id
+    assert "sessions" not in inserted
+
+
+def test_submitting_saves_a_draft_then_its_sessions_then_submits(monkeypatch):
+    """Sessions can only be written on a draft, so the order matters."""
+    database = submit_database(monkeypatch)
+    payload = valid_event()
+    payload["sessions"].append(valid_session("Breakout A"))
 
     event = event_service.submit_event(
-        "organiser-token", ORGANISER_PROFILE.id, request
+        "organiser-token", ORGANISER_PROFILE.id, EventSubmitRequest(**payload)
     )
 
-    assert captured["organiser_id"] == ORGANISER_PROFILE.id
-    assert captured["status"] == "under_review"
+    steps = [(call.table, call.operation) for call in database.calls]
+    assert steps == [
+        ("events", "insert"),
+        ("rpc:replace_draft_sessions", "rpc"),
+        ("events", "update"),
+    ]
+    assert database.calls[0].payload["status"] == "draft"
+    saved = database.calls[1].payload
+    assert saved["p_event_id"] == EVENT_RESPONSE.id
+    assert [session["name"] for session in saved["p_sessions"]] == [
+        "Main programme",
+        "Breakout A",
+    ]
+    assert database.calls[2].payload == {
+        "status": "under_review",
+        "updated_at": database.calls[2].payload["updated_at"],
+    }
     assert event.status is EventStatus.UNDER_REVIEW
+    assert [session.name for session in event.sessions] == [
+        "Main programme",
+        "Breakout A",
+    ]
+
+
+def test_a_failed_submission_removes_the_half_saved_draft(monkeypatch):
+    database = submit_database(
+        monkeypatch,
+        {("rpc:replace_draft_sessions", "rpc"): PostgrestAPIError(
+            {"message": "boom", "code": "XX000"}
+        )},
+    )
+
+    with pytest.raises(AuthError):
+        event_service.submit_event(
+            "organiser-token",
+            ORGANISER_PROFILE.id,
+            EventSubmitRequest(**valid_event()),
+        )
+
+    deleted = database.calls_to("events", "delete")
+    assert len(deleted) == 1
+    assert ("eq", "id", EVENT_RESPONSE.id) in deleted[0].filters
+    assert ("eq", "status", "draft") in deleted[0].filters
+    assert database.calls_to("events", "update") == []
 
 
 # --- Route -----------------------------------------------------------------
@@ -303,7 +441,8 @@ def test_submit_without_a_token_is_rejected(client):
 def test_invalid_event_returns_plain_error_sentences(client, monkeypatch):
     authenticate_as(monkeypatch, ORGANISER_PROFILE)
     payload = valid_event()
-    payload["end_time"] = payload["start_time"]
+    session = payload["sessions"][0]
+    session["end_time"] = session["start_time"]
 
     response = client.post(
         "/events",
@@ -313,7 +452,7 @@ def test_invalid_event_returns_plain_error_sentences(client, monkeypatch):
 
     assert response.status_code == 400
     assert response.get_json()["errors"] == [
-        "End time must be after the start time"
+        "Main programme: End time must be after the start time"
     ]
 
 
@@ -380,6 +519,71 @@ def test_listing_my_events_filters_to_me_and_skips_drafts(monkeypatch):
     assert ("neq", "status", "draft") in calls
     assert ("order", "start_time") in calls
     assert len(events) == 1
+
+
+def session_row(event_id: str, name: str) -> dict:
+    return {"id": f"{event_id}-{name}", "event_id": event_id, "name": name}
+
+
+def test_my_events_come_back_with_their_own_sessions(monkeypatch):
+    """One read for every event's sessions, then each event gets only its own."""
+    other = {**EVENT_RESPONSE.model_dump(mode="json"), "id": "other-event"}
+    calls = []
+    fake_client(
+        monkeypatch,
+        {
+            "events": [EVENT_RESPONSE.model_dump(mode="json"), other],
+            "event_sessions": [
+                session_row(EVENT_RESPONSE.id, "Main programme"),
+                session_row(EVENT_RESPONSE.id, "Breakout A"),
+                session_row("other-event", "Only session"),
+            ],
+        },
+        calls,
+    )
+
+    events = event_service.list_my_events(
+        "organiser-token", ORGANISER_PROFILE.id
+    )
+
+    assert ("in", "event_id", (EVENT_RESPONSE.id, "other-event")) in calls
+    assert [session.name for session in events[0].sessions] == [
+        "Main programme",
+        "Breakout A",
+    ]
+    assert [session.name for session in events[1].sessions] == ["Only session"]
+
+
+def test_an_event_without_sessions_has_an_empty_list(monkeypatch):
+    """Events created by older code have no sessions; that must not fail."""
+    fake_client(
+        monkeypatch,
+        {"events": [EVENT_RESPONSE.model_dump(mode="json")]},
+        [],
+    )
+
+    event = event_service.get_my_event(
+        "organiser-token", ORGANISER_PROFILE.id, EVENT_RESPONSE.id
+    )
+
+    assert event.sessions == []
+
+
+def test_opening_one_of_my_events_includes_its_sessions(monkeypatch):
+    fake_client(
+        monkeypatch,
+        {
+            "events": [EVENT_RESPONSE.model_dump(mode="json")],
+            "event_sessions": [session_row(EVENT_RESPONSE.id, "Main programme")],
+        },
+        [],
+    )
+
+    event = event_service.get_my_event(
+        "organiser-token", ORGANISER_PROFILE.id, EVENT_RESPONSE.id
+    )
+
+    assert [session.name for session in event.sessions] == ["Main programme"]
 
 
 def test_an_assigned_coordinators_name_replaces_their_id(monkeypatch):
@@ -567,6 +771,46 @@ def test_coordinator_list_includes_assigned_events_of_every_status(monkeypatch):
         {"status": "Pending Technical Approval"}
     ]
     assert events[1].equipment_requests == [{"status": "Approved"}]
+
+
+def test_coordinator_list_carries_each_events_session_count(monkeypatch):
+    assigned = EVENT_RESPONSE.model_dump(mode="json")
+    assigned["sessions"] = [{"id": "s1"}, {"id": "s2"}]
+    fake_client(monkeypatch, {"events": [assigned]}, [])
+
+    [event] = event_service.list_assigned_events(
+        "coordinator-token", COORDINATOR_PROFILE.id
+    )
+
+    assert len(event.sessions) == 2
+    assert event.expected_attendance == 120
+
+
+def test_coordinator_detail_includes_the_events_sessions(monkeypatch):
+    assigned = EVENT_RESPONSE.model_dump(mode="json")
+    assigned["coordinator_id"] = COORDINATOR_PROFILE.id
+    fake_client(
+        monkeypatch,
+        {
+            "events": [assigned],
+            "event_sessions": [session_row(EVENT_RESPONSE.id, "Breakout A")],
+        },
+        [],
+    )
+
+    event = event_service.get_assigned_event(
+        "coordinator-token", COORDINATOR_PROFILE.id, EVENT_RESPONSE.id
+    )
+
+    assert [session.name for session in event.sessions] == ["Breakout A"]
+
+
+def test_lead_overview_keeps_each_events_sessions():
+    [event] = Event.format_lead_overview(
+        [{"id": "event-1", "status": "planning", "sessions": [{"id": "s1"}]}]
+    )
+
+    assert event["sessions"] == [{"id": "s1"}]
 
 
 def test_coordinator_detail_filters_by_id_and_assignment(monkeypatch):
