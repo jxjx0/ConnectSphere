@@ -81,6 +81,27 @@ export function formatSessionSummary(event) {
   return `${sessions} · ${attendees}`
 }
 
+// Venue requests that still hold, or may soon hold, a venue. Mirrors
+// LIVE_BOOKING_STATUSES in backend/services/venue_booking_service.py: a
+// session has at most one of these (T7-278).
+const LIVE_VENUE_BOOKING_STATUSES = ['PENDING_VENUE_APPROVAL', 'APPROVED']
+
+export function liveBookingFor(sessionId, bookings) {
+  return (bookings || []).find((booking) =>
+    booking.session_id === sessionId
+    && LIVE_VENUE_BOOKING_STATUSES.includes(booking.status))
+}
+
+// "Breakout A · 15 Dec 2026, 9:00 AM – 5:00 PM · Room 3-1 (pending)", for
+// choosing which session to find a venue for.
+export function sessionPickerLabel(session, bookings) {
+  const booking = liveBookingFor(session.id, bookings)
+  const venue = booking
+    ? `${booking.venues?.name || 'Venue'} (${booking.status === 'APPROVED' ? 'approved' : 'pending'})`
+    : 'no venue yet'
+  return `${session.name} · ${formatDateRange(session.start_time, session.end_time)} · ${venue}`
+}
+
 function formatDate(date) {
   return `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`
 }

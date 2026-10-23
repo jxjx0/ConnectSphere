@@ -283,7 +283,9 @@ export default function EventReviewDetailPage() {
           </p>
 
           {venueError && <p role="alert">Unable to load venue arrangements. Please refresh and try again.</p>}
-          {hasActiveHold && ['under_review', 'change_requested', 'confirmed'].includes(event.status) && (
+          {/* Venues are requested only after the request is approved: an
+              Under review event can be held by Venue Staff but not booked. */}
+          {hasActiveHold && ['change_requested', 'confirmed'].includes(event.status) && (
             <div className="form-actions">
               <Link to={`/venues/search?eventId=${encodeURIComponent(eventId)}`} className="button">
                 Find / Request Venue
@@ -374,6 +376,7 @@ export default function EventReviewDetailPage() {
           </div>
         )}
 
+        {event.status !== 'under_review' && (
         <section className="stack stack--tight">
           <h2 className="section-title">
             Venue Booking Requests ({venueBookings.length})
@@ -414,6 +417,12 @@ export default function EventReviewDetailPage() {
                         fontSize: '0.8125rem',
                       }}
                     >
+                      {booking.session?.name && (
+                        <div>
+                          <span className="note" style={{ display: 'block' }}>Session:</span>
+                          <span style={{ color: 'var(--ink)' }}>{booking.session.name}</span>
+                        </div>
+                      )}
                       <div>
                         <span className="note" style={{ display: 'block' }}>Requested Layout:</span>
                         <span style={{ color: 'var(--ink)' }}>{booking.room_layout}</span>
@@ -454,6 +463,7 @@ export default function EventReviewDetailPage() {
             </ul>
           )}
         </section>
+        )}
 
         {(event.status === 'planning' || equipmentRequest || equipmentRequestError) && (
           <section className="stack stack--tight">

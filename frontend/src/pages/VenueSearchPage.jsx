@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
-import { getVenues, searchVenues } from '../api/venues'
+import { getVenueBookingsForEvent, getVenues, searchVenues } from '../api/venues'
 import { getAssignedEventRequest } from '../api/events'
-import { formatDateRange } from '../eventDisplay'
+import {
+  formatDateRange, liveBookingFor, sessionPickerLabel, sessionsOf,
+} from '../eventDisplay'
 import AppShell from '../components/AppShell'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -33,6 +35,16 @@ export default function VenueSearchPage() {
   const [result, setResult] = useState(INITIAL_VENUE_SEARCH)
   const [layouts, setLayouts] = useState({ options: [], accessibilityOptions: [], facilityOptions: [], loading: true, error: '' })
   const [context, setContext] = useState({ eventId, phase: eventId === null ? 'standalone' : 'loading', event: null, error: '' })
+  // Venues are booked per session (T7-278): which session this search is
+  // for, and the event's existing requests so each session shows its venue.
+  const [sessionId, setSessionId] = useState(searchParams.get('sessionId'))
+  const [eventBookings, setEventBookings] = useState([])
+  const sessions = context.event ? sessionsOf(context.event) : []
+  const session = sessions.find((item) => item.id === sessionId) || null
+  const sessionBooking = session ? liveBookingFor(session.id, eventBookings) : null
+  // Venues are requested only once the request is approved (Planning);
+  // an Under review event can be searched for but not booked.
+  const bookingClosed = context.event?.status === 'under_review'
   const searchGeneration = useRef(0)
   const contextBlocked = eventId !== null && (context.eventId !== eventId || context.phase !== 'success')
   const loading = result.phase === 'loading'
@@ -79,22 +91,43 @@ export default function VenueSearchPage() {
         .then(([data, catalogueData]) => {
           if (!active) return
           if (!data.event || data.event.id !== eventId) throw new Error('The requested event could not be loaded.')
-          setForm(savedFilters || eventVenueFilters(data.event, catalogueData.options))
+          // Search for the session named in the address, else the first.
+          const eventSessions = sessionsOf(data.event)
+          const chosen = eventSessions.find((item) => item.id === searchParams.get('sessionId')) || eventSessions[0]
+          setSessionId(chosen.id)
+          setForm(savedFilters || eventVenueFilters(chosen, catalogueData.options))
           setContext({ eventId, phase: 'success', event: data.event, error: '' })
           resumeSearch()
         })
         .catch((error) => {
           if (active) setContext({ eventId, phase: 'error', event: null, error: error.message || 'Unable to load this assigned event.' })
         })
+      getVenueBookingsForEvent(eventId, token)
+        .then((data) => { if (active) setEventBookings(data.bookings || []) })
+        .catch(() => { if (active) setEventBookings([]) })
     } else {
       catalogue.then(() => { if (active) resumeSearch() })
     }
     return () => { active = false; searchGeneration.current += 1 }
   }, [eventId, token])
 
-  function rememberFilters(filters, resume = false) {
+  // Choosing another session refills the filters from that session's own
+  // time, attendance and layout.
+  function chooseSession(nextId) {
+    const next = sessions.find((item) => item.id === nextId)
+    if (!next) return
+    searchGeneration.current += 1
+    const filters = eventVenueFilters(next, layouts.options)
+    setSessionId(next.id)
+    setForm(filters)
+    rememberFilters(filters, false, next.id)
+    setResult(INITIAL_VENUE_SEARCH)
+  }
+
+  function rememberFilters(filters, resume = false, chosenSessionId = sessionId) {
     const params = new URLSearchParams()
     if (eventId !== null) params.set('eventId', eventId)
+    if (eventId !== null && chosenSessionId) params.set('sessionId', chosenSessionId)
     params.set('filters', '1')
     if (resume) params.set('resume', '1')
     for (const [field, value] of Object.entries(filters)) if (value) params.set(field, value)
@@ -163,12 +196,38 @@ export default function VenueSearchPage() {
         {eventId !== null && !contextBlocked && (
           <div className="notice">
             <p>Searching venues for: <strong>{context.event.name}</strong></p>
-            <p>{formatDateRange(context.event.start_time, context.event.end_time)} · {context.event.expected_attendance} expected</p>
-            {context.event.layout_preference && <p>Preferred layout: {context.event.layout_preference}</p>}
-            {context.event.layout_preference && !layouts.options.some((name) => name.toLowerCase() === context.event.layout_preference.trim().toLowerCase()) && (
-              <p className="note">The preferred layout is not available in the catalogue. Choose a layout to filter by it.</p>
+            {bookingClosed && (
+              <p className="note">
+                This event request is still under review. Approve it before requesting a venue;
+                Venue Staff can hold a room for it in the meantime.
+              </p>
             )}
-            {context.event.location_preference && <p>Preferred location: {context.event.location_preference}</p>}
+            <div className="field">
+              <label htmlFor="searchSession">Session</label>
+              <select id="searchSession" value={sessionId || ''}
+                onChange={(event) => chooseSession(event.target.value)}>
+                {sessions.map((item) => (
+                  <option key={item.id} value={item.id}>{sessionPickerLabel(item, eventBookings)}</option>
+                ))}
+              </select>
+            </div>
+            {session && (
+              <>
+                <p>{formatDateRange(session.start_time, session.end_time)} · {session.expected_attendance} expected</p>
+                {session.layout_preference && <p>Preferred layout: {session.layout_preference}</p>}
+                {session.layout_preference && !layouts.options.some((name) => name.toLowerCase() === session.layout_preference.trim().toLowerCase()) && (
+                  <p className="note">The preferred layout is not available in the catalogue. Choose a layout to filter by it.</p>
+                )}
+                {session.location_preference && <p>Preferred location: {session.location_preference}</p>}
+                {sessionBooking && (
+                  <p className="note">
+                    This session already has a venue request ({sessionBooking.venues?.name || 'venue'},
+                    {' '}{sessionBooking.status === 'APPROVED' ? 'approved' : 'pending'}). Each session has
+                    one venue; a new request is possible once that one is rejected or cancelled.
+                  </p>
+                )}
+              </>
+            )}
             {context.event.accessibility_requirements && <p>Accessibility needs: {context.event.accessibility_requirements}</p>}
             <p className="note">Editing search filters does not change this event.</p>
           </div>
@@ -303,8 +362,9 @@ export default function VenueSearchPage() {
                           <button
                             type="button"
                             className="button button--primary button--small"
-                            disabled={!venue.requested_start || venue.availability_status === 'conflict'}
-                            title={!venue.requested_start ? 'Enter search date & times to enable quick booking' : ''}
+                            disabled={bookingClosed || !venue.requested_start || venue.availability_status === 'conflict'}
+                            title={bookingClosed ? 'Approve the event request before requesting a venue'
+                              : !venue.requested_start ? 'Enter search date & times to enable quick booking' : ''}
                             onClick={() => setQuickBookingVenue(venue)}>
                             Quick Book
                           </button>
@@ -324,20 +384,25 @@ export default function VenueSearchPage() {
         <BookingForm
           venue={quickBookingVenue}
           eventId={eventId}
+          sessionId={session?.id}
           initialValues={{
             eventId: eventId || '',
             eventName: context.event?.name || '',
+            sessionName: session?.name || '',
             startDate: form.date || '',
             endDate: form.end_date || form.date || '',
             startTime: form.start_time || '',
             endTime: form.end_time || '',
-            layout: quickBookingVenue.selected_layout || form.required_layout || (context.event?.layout_preference || ''),
+            layout: quickBookingVenue.selected_layout || form.required_layout || (session?.layout_preference || ''),
           }}
           onClose={() => setQuickBookingVenue(null)}
           onCreated={() => {
             const venueName = quickBookingVenue.name
             setQuickBookingVenue(null) // Closes modal
             setSuccessMessage(`Booking request for ${venueName} successfully submitted!`)
+            getVenueBookingsForEvent(eventId, token)
+              .then((data) => setEventBookings(data.bookings || []))
+              .catch(() => {})
           }}
         />
       )}

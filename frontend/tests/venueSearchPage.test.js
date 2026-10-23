@@ -39,7 +39,11 @@ function pageHarness(result, form = searchHelpers.EMPTY_VENUE_FILTERS, search = 
       Link: ({ children, to, ...props }) => React.createElement('a', { ...props, href: to }, children),
       useSearchParams: () => [params, (next) => { params = next }],
     },
-    '../api/venues': { searchVenues: search, getVenues: options.getVenues || (async () => ({ venues: [{ layouts: [{ name: 'Theatre' }] }] })) },
+    '../api/venues': {
+      searchVenues: search,
+      getVenues: options.getVenues || (async () => ({ venues: [{ layouts: [{ name: 'Theatre' }] }] })),
+      getVenueBookingsForEvent: async () => ({ bookings: [] }),
+    },
     '../api/events': { getAssignedEventRequest: options.getEvent || (() => { assert.fail('standalone search must not load an event') }) },
     '../eventDisplay': eventDisplay,
     '../components/AppShell': { __esModule: true, default: ({ children }) => React.createElement('main', null, children) },

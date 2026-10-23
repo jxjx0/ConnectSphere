@@ -169,9 +169,11 @@ for (const status of ['under_review', 'change_requested', 'confirmed', 'rejected
       Page(); effects.forEach(fn => fn())
       await new Promise(resolve => setImmediate(resolve)); index = 0
       const markup = renderToStaticMarkup(Page())
-      const eligible = activeHold && ['under_review', 'change_requested', 'confirmed'].includes(status)
+      // Under review events can be held but not booked until approved.
+      const eligible = activeHold && ['change_requested', 'confirmed'].includes(status)
       assert.equal(markup.includes(`/venues/search?eventId=${event.id}`), eligible)
       assert.equal(markup.includes('Find / Request Venue'), eligible)
+      assert.equal(markup.includes('Venue Booking Requests'), status !== 'under_review')
     })
   }
 }

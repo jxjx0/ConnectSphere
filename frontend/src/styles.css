@@ -308,7 +308,8 @@ a:hover {
   gap: var(--space-3);
 }
 
-/* One session of an event request: a card on the form and the review. */
+/* One session of an event request: a card on the form, the review and
+   the event pages. */
 .session-card {
   display: grid;
   gap: var(--space-3);
@@ -316,16 +317,102 @@ a:hover {
   padding: var(--space-4);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
+  background: var(--surface);
 }
 
 .session-card legend,
 .session-card h3 {
   margin: 0;
+  font-size: 1rem;
   font-weight: 600;
 }
 
 .session-card .button {
   justify-self: start;
+}
+
+.session-card__head {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.session-card__meta {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+}
+
+.session-card__body {
+  display: grid;
+  gap: var(--space-4);
+}
+
+/* Requested and booked side by side, so they can be compared at a glance;
+   stacked on narrow screens. */
+@media (min-width: 720px) {
+  .session-card__body--split {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+.session-card__part {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* With a booked venue alongside, "Requested" and "Booked venue" are each a
+   small raised card of their own; the session card around them becomes an
+   outline on the page ground. */
+.session-card--split {
+  background: transparent;
+}
+
+.session-card__body--split .session-card__part {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+/* The inner cards are narrow, so each label sits above its value. */
+.session-card__body--split .detail-list__row {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.session-card__body--split .detail-list--compact .detail-list__row dt {
+  flex: none;
+}
+
+.session-card__label {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+
+/* Tighter key/value rows for use inside a card. */
+.detail-list--compact {
+  max-width: none;
+}
+
+.detail-list--compact .detail-list__row {
+  padding: var(--space-2) 0;
+}
+
+.detail-list--compact .detail-list__row dt {
+  flex-basis: 7.5rem;
+}
+
+.detail-list--compact .detail-list__row dd {
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
 }
 
 .booking-calendar__nav {

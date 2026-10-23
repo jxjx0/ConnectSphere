@@ -188,7 +188,7 @@ def test_get_safety_event_details_inner_exceptions_logged(monkeypatch):
 
     details = safety_review_service.get_safety_event_details(EVENT_ID, "token")
     assert details["event"]["id"] == EVENT_ID
-    assert details["venue_booking"] == {}
+    assert details["venue_bookings"] == []
     assert details["equipment_items"] == []
 
 

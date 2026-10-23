@@ -17,7 +17,7 @@ def get_event_booking_context(access_token, event_id):
     """Use existing booking RLS and current-assignee hold RLS for event context."""
     client = config.get_user_client(access_token)
     try:
-        bookings = (client.table("venue_bookings").select("*, venues(name)")
+        bookings = (client.table("venue_bookings").select("*, venues(name), session:event_sessions(name)")
                     .eq("event_id", event_id).order("created_at", desc=True).execute().data)
         holds = (client.table("venue_tentative_holds").select("hold_id")
                  .eq("event_id", event_id).is_("released_at", "null")
@@ -76,7 +76,7 @@ def get_pending_venue_bookings(access_token: str, venue_id: str | None = None) -
 
     query = (
         client.table("venue_bookings")
-        .select("*, venues(*), events(name, expected_attendance)")
+        .select("*, venues(*), events(name, expected_attendance), session:event_sessions(name, expected_attendance)")
         .eq("status", "PENDING_VENUE_APPROVAL")
     )
 
@@ -107,16 +107,87 @@ def check_schedule_conflict_details(client, venue_id: str, effective_start: str,
                             if overlaps(period.start_at, period.end_at, item)]
 
 
-def check_duplicate_event_booking(client, venue_id: str, event_id: str) -> None:
-    """Prevent a second live request for one venue and event; settled requests may be retried."""
-    if not event_id:
-        return
+def _parse_timestamp(value) -> datetime:
+    return value if isinstance(value, datetime) else datetime.fromisoformat(
+        value.replace("Z", "+00:00")
+    )
 
+
+def check_booking_session(client, request: VenueBookingCreateRequest) -> None:
+    """The booking's session must belong to its event and fit inside the booking.
+
+    A booking must cover the whole session (section 9.1 of the scope doc):
+    start no later than the session starts and end no earlier than it ends.
+    Setup and turnaround buffers are added around the booking separately.
+    """
+    try:
+        rows = (
+            client.table("event_sessions")
+            .select("id, event_id, name, start_time, end_time")
+            .eq("id", request.session_id)
+            .execute()
+            .data
+        )
+    except PostgrestAPIError as error:
+        raise AuthError("Unable to verify the event session.", status_code=502) from error
+
+    if not rows or rows[0].get("event_id") != request.event_id:
+        raise AuthError("That session does not belong to this event.", status_code=400)
+
+    session = rows[0]
+    if not session.get("start_time") or not session.get("end_time"):
+        raise AuthError("That session has no scheduled time yet.", status_code=400)
+
+    session_start = _parse_timestamp(session["start_time"])
+    session_end = _parse_timestamp(session["end_time"])
+    if request.start_at > session_start or request.end_at < session_end:
+        raise AuthError(
+            f"The booking must cover the whole of {session.get('name') or 'the session'} "
+            f"({_local_label(session_start)} – {_local_label(session_end)}).",
+            status_code=400,
+        )
+
+
+def _local_label(value: datetime) -> str:
+    """A time as Singapore staff read it, e.g. '7 Dec 2026, 09:00'."""
+    return value.astimezone(availability.VENUE_TIMEZONE).strftime("%d %b %Y, %H:%M")
+
+
+# Venues are requested only once the event request is approved. An Under
+# review event may be held by Venue Staff, but not booked.
+BOOKABLE_EVENT_STATUSES = ("planning", "change_requested", "confirmed")
+
+
+def check_event_is_bookable(client, event_id: str) -> None:
+    """Refuse venue requests for events that are not approved, or not assigned.
+
+    Row-level security only returns events assigned to the signed-in
+    Coordinator, so an event that is not theirs comes back as not found.
+    """
+    try:
+        rows = client.table("events").select("status").eq("id", event_id).execute().data
+    except PostgrestAPIError as error:
+        raise AuthError("Unable to verify the event request.", status_code=502) from error
+
+    if not rows:
+        raise AuthError("Event request was not found.", status_code=404)
+    if rows[0].get("status") not in BOOKABLE_EVENT_STATUSES:
+        raise AuthError(
+            "Approve this event request before requesting a venue.",
+            status_code=409,
+        )
+
+
+def check_duplicate_session_booking(client, session_id: str) -> None:
+    """One live venue request per session; settled requests may be retried.
+
+    Per session rather than per venue and event, so the same venue can be
+    booked for different sessions of one event (W9).
+    """
     existing = (
         client.table("venue_bookings")
         .select("booking_id, status")
-        .eq("venue_id", venue_id)
-        .eq("event_id", event_id)
+        .eq("session_id", session_id)
         .in_("status", list(LIVE_BOOKING_STATUSES))
         .execute()
         .data
@@ -124,7 +195,8 @@ def check_duplicate_event_booking(client, venue_id: str, event_id: str) -> None:
 
     if existing:
         raise AuthError(
-            "A booking request for this venue and event has already been submitted.",
+            "This session already has a venue booking request. Each session "
+            "has one venue; a rejected or cancelled request can be replaced.",
             status_code=409,
         )
 
@@ -140,7 +212,7 @@ def review_venue_booking(
 
     booking_res = (
         client.table("venue_bookings")
-        .select("*, venues(*), events(name, expected_attendance)")
+        .select("*, venues(*), events(name, expected_attendance), session:event_sessions(name, expected_attendance)")
         .eq("booking_id", booking_id)
         .execute()
     )
@@ -161,7 +233,15 @@ def review_venue_booking(
             supported_layouts = [{"name": k, "capacity": v} for k, v in supported_layouts.items()]
 
         requested_layout = booking.get("room_layout", "")
-        expected_attendance = event.get("expected_attendance") or booking.get("expected_attendance") or 0
+        # Each venue is checked against its own session (W7 change 3);
+        # bookings from before sessions fall back to the event's attendance.
+        session = booking.get("session") or {}
+        expected_attendance = (
+            session.get("expected_attendance")
+            or event.get("expected_attendance")
+            or booking.get("expected_attendance")
+            or 0
+        )
 
         layout_match = next(
             (
@@ -302,7 +382,9 @@ def create_venue_booking(
         )
 
     if request.event_id:
-        check_duplicate_event_booking(client, venue_id, request.event_id)
+        check_event_is_bookable(client, request.event_id)
+        check_booking_session(client, request)
+        check_duplicate_session_booking(client, request.session_id)
 
     effective_start_iso = effective_start.isoformat()
     effective_end_iso = effective_end.isoformat()
@@ -320,6 +402,7 @@ def create_venue_booking(
         "venue_id": venue_id,
         "coordinator_id": coordinator_id,
         "event_id": request.event_id,
+        "session_id": request.session_id,
         "room_layout": request.room_layout,
         "start_at": request.start_at.isoformat(),
         "end_at": request.end_at.isoformat(),

@@ -61,7 +61,10 @@ export function validateBookingRequest(booking) {
     }
 
     const requestedLayoutName = booking.room_layout
-    const attendance = booking.events?.expected_attendance || booking.expected_attendance || 0
+    // Checked against the booking's own session (T7-278); bookings from
+    // before sessions fall back to the event's attendance.
+    const attendance = booking.session?.expected_attendance
+        || booking.events?.expected_attendance || booking.expected_attendance || 0
 
     // Case-insensitive match on layout name
     const layoutMatch = supportedLayouts.find(

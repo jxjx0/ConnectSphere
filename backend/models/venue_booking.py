@@ -10,6 +10,9 @@ class VenueBookingCreateRequest(BaseModel):
     """The body of POST /venues/{venue_id}/bookings."""
 
     event_id: Optional[str] = None
+    # The session of that event this venue is for (T7-278). Required
+    # whenever the booking is for an event.
+    session_id: Optional[str] = None
     room_layout: str = Field(min_length=1, max_length=100)
     start_at: datetime
     end_at: datetime
@@ -33,6 +36,12 @@ class VenueBookingCreateRequest(BaseModel):
     def validate_times(self) -> "VenueBookingCreateRequest":
         if self.start_at >= self.end_at:
             raise ValueError("booking end time must be after start time")
+        return self
+
+    @model_validator(mode="after")
+    def require_session_for_event(self) -> "VenueBookingCreateRequest":
+        if self.event_id and not self.session_id:
+            raise ValueError("choose which session of the event this booking is for")
         return self
 
 

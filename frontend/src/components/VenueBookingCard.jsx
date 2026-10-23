@@ -20,7 +20,10 @@ export default function VenueBookingCard({ booking, validationError, actions }) 
   if (!booking) return null
 
   const statusClass = getStatusClass(booking.status)
-  const attendance = booking.events?.expected_attendance || booking.expected_attendance
+  // A venue is checked against its own session's attendance (T7-278);
+  // bookings from before sessions fall back to the event's.
+  const attendance = booking.session?.expected_attendance
+    || booking.events?.expected_attendance || booking.expected_attendance
 
   return (
     <div className={`${styles.card} ${statusClass}`}>
@@ -32,6 +35,12 @@ export default function VenueBookingCard({ booking, validationError, actions }) 
       </div>
 
       <div className={styles.grid}>
+        {booking.session?.name && (
+          <div>
+            <span className={`note ${styles.label}`}>Session:</span>
+            <span className={styles.value}>{booking.session.name}</span>
+          </div>
+        )}
         <div>
           <span className={`note ${styles.label}`}>Requested Layout:</span>
           <span className={styles.value}>{booking.room_layout}</span>
