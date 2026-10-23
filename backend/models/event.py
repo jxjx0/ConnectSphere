@@ -515,8 +515,9 @@ class Event(BaseModel):
 class EventReviewSummary(BaseModel):
     """The fields needed to render the Coordinator's review list.
 
-    sessions holds only each session's id: the list shows how many there
-    are, not their details.
+    sessions holds each session's id, name, times and equipment needs: the
+    list shows how many there are, and the equipment request form uses them
+    to pick a session (T7-279).
     """
 
     id: str

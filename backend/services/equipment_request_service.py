@@ -9,6 +9,7 @@ from services.auth_service import AuthError
 _REQUEST_SELECT = (
     "*, "
     "event:events(id,name,start_time,end_time), "
+    "session:event_sessions(id,name,start_time,end_time,equipment_requirements), "
     "items:equipment_request_items("
     "id,equipment_id,quantity,equipment:equipment(id,name,type)), "
     "equipment_bookings(id,equipment_id,start_at,end_at,"
@@ -52,6 +53,7 @@ def submit_equipment_request(
             "submit_equipment_request",
             {
                 "p_event_id": str(equipment_request.event_id),
+                "p_session_id": str(equipment_request.session_id),
                 "p_request_details": equipment_request.request_details,
                 "p_items": [
                     item.model_dump(mode="json")
@@ -62,7 +64,7 @@ def submit_equipment_request(
     except PostgrestAPIError as error:
         if error.code == "P0001":
             raise AuthError(
-                "An equipment request has already been submitted for this event.",
+                "An equipment request has already been submitted for this session.",
                 status_code=409,
             ) from error
         raise _database_error(error) from error
@@ -76,6 +78,7 @@ def submit_equipment_request(
     return {
         "id": str(request_id),
         "event_id": str(equipment_request.event_id),
+        "session_id": str(equipment_request.session_id),
         "coordinator_id": coordinator_id,
         "request_details": equipment_request.request_details,
         "status": "Pending Technical Approval",
@@ -123,8 +126,10 @@ def review_equipment_request(
     request_id: str,
     review: EquipmentRequestReview,
 ) -> dict:
-    """Record an approve or reject decision; approval does not check bookings."""
+    """Record an approve or reject decision; approval needs at least one booking."""
     client = config.get_user_client(access_token)
+    if review.decision == "Approved":
+        _require_allocated_equipment(client, request_id)
     try:
         result = client.rpc(
             "review_equipment_request",
@@ -146,7 +151,7 @@ def review_equipment_request(
             ) from error
         if error.code == "P0001":
             raise AuthError(
-                "Allocate every requested equipment item before approving this request.",
+                "This equipment request has already been reviewed.",
                 status_code=409,
             ) from error
         raise _database_error(error) from error
@@ -155,3 +160,26 @@ def review_equipment_request(
     if not isinstance(reviewed_request, dict) or not reviewed_request.get("status"):
         raise AuthError("Unable to review the equipment request.", status_code=502)
     return reviewed_request
+
+
+def _require_allocated_equipment(client, request_id: str) -> None:
+    """Refuse approval until Technical Support has allocated at least one item.
+
+    The review database function does not check bookings, so an approved
+    request could otherwise hold no equipment.
+    """
+    try:
+        bookings = (
+            client.table("equipment_bookings")
+            .select("id")
+            .eq("request_id", request_id)
+            .limit(1)
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+    if not bookings.data:
+        raise AuthError(
+            "Allocate at least one item of equipment before approving this request.",
+            status_code=409,
+        )

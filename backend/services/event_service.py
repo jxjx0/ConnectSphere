@@ -594,7 +594,7 @@ def list_assigned_events(
     try:
         result = (
             client.table("events")
-            .select("id, name, start_time, end_time, expected_attendance, status, safety_status, equipment_requirements, venue_bookings(status), equipment_requests(status), sessions:event_sessions(id)")
+            .select("id, name, start_time, end_time, expected_attendance, status, safety_status, equipment_requirements, venue_bookings(status), equipment_requests(status, session_id), sessions:event_sessions(id, name, start_time, end_time, equipment_requirements)")
             .eq("coordinator_id", coordinator_id)
             .neq("status", EventStatus.DRAFT.value)
             .order("start_time")

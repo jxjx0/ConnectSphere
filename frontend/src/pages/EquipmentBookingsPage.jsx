@@ -360,8 +360,12 @@ export default function EquipmentBookingsPage() {
               {pendingRequests.map((request) => (
                 <option key={request.id} value={request.id}>
                   {request.event?.name || 'Event'}
+                  {request.session && ` · ${request.session.name}`}
                   {' · '}
-                  {formatDateRange(request.event?.start_time, request.event?.end_time)}
+                  {formatDateRange(
+                    (request.session || request.event)?.start_time,
+                    (request.session || request.event)?.end_time,
+                  )}
                 </option>
               ))}
             </select>
@@ -403,7 +407,7 @@ export default function EquipmentBookingsPage() {
                         : !functional
                           ? `Unavailable: this item is ${item.maintenance_status.toLowerCase()}. Submit to notify the Coordinator.`
                         : availabilityChecked
-                          ? 'Available for the complete event time, including setup and teardown.'
+                          ? 'Available for the whole time this request needs.'
                           : 'Availability has not been checked.')}
             </p>
           )}

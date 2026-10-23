@@ -384,3 +384,47 @@ def test_each_venue_is_checked_against_its_own_sessions_attendance(monkeypatch):
         "Breakout A",
         "Main programme",
     ]
+
+
+# --- Equipment per session (T7-279) ------------------------------------------
+
+SESSIONS_NEEDING_EQUIPMENT = [
+    {**CONFERENCE_SESSIONS[0], "equipment_requirements": "2 projectors"},
+    {**CONFERENCE_SESSIONS[1], "equipment_requirements": "  "},
+]
+BOTH_VENUES = [
+    {"status": "APPROVED", "session_id": "ses-main"},
+    {"status": "APPROVED", "session_id": "ses-a"},
+]
+
+
+def test_request_is_refused_until_each_session_needing_equipment_has_a_request(monkeypatch):
+    _, updates = fake_database(monkeypatch, {
+        "events": [PLANNING_EVENT],
+        "venue_bookings": BOTH_VENUES,
+        "event_sessions": SESSIONS_NEEDING_EQUIPMENT,
+    })
+
+    with pytest.raises(AuthError) as caught:
+        safety_review_service.request_safety_check(EVENT_ID, "token")
+
+    assert caught.value.status_code == 409
+    assert (
+        "every session that needs equipment needs an equipment request (Main programme has none)"
+        in caught.value.message
+    )
+    assert updates == []
+
+
+def test_sessions_without_equipment_needs_do_not_need_a_request(monkeypatch):
+    """Breakout A lists no equipment, so only Main programme needs a request."""
+    _, updates = fake_database(monkeypatch, {
+        "events": [PLANNING_EVENT],
+        "venue_bookings": BOTH_VENUES,
+        "event_sessions": SESSIONS_NEEDING_EQUIPMENT,
+        "equipment_requests": [{"status": "Approved", "session_id": "ses-main"}],
+    })
+
+    safety_review_service.request_safety_check(EVENT_ID, "token")
+
+    assert updates

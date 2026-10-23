@@ -191,9 +191,18 @@ function getSafetyBadge(event) {
   return null
 }
 
+// An event has one equipment request per session (T7-279). Any pending
+// request makes the event pending, then any rejected one makes it rejected.
 function getEquipmentBadge(equipmentRequests) {
-  const status = equipmentRequests?.[0]?.status?.toLowerCase()
-  if (!status) return null
+  const statuses = (equipmentRequests || []).map(
+    (request) => request.status?.toLowerCase(),
+  )
+  if (statuses.length === 0) return null
+  const status = statuses.every((value) => value === 'approved')
+    ? 'approved'
+    : statuses.includes('rejected') && !statuses.includes('pending technical approval')
+      ? 'rejected'
+      : 'pending'
 
   if (status === 'approved') {
     return {

@@ -34,6 +34,7 @@ ATTENDEE = Profile(
 
 VALID_REQUEST = {
     "event_id": "33333333-3333-3333-3333-333333333333",
+    "session_id": "77777777-7777-7777-7777-777777777777",
     "request_details": "Two projectors and a wireless microphone",
     "items": [
         {
@@ -66,6 +67,7 @@ SAVED_REQUEST = {
 
 REQUEST_SELECT = (
     "*, event:events(id,name,start_time,end_time), "
+    "session:event_sessions(id,name,start_time,end_time,equipment_requirements), "
     "items:equipment_request_items("
     "id,equipment_id,quantity,equipment:equipment(id,name,type)), "
     "equipment_bookings(id,equipment_id,start_at,end_at,equipment:equipment(id,name))"
@@ -81,7 +83,7 @@ def authenticate_as(monkeypatch, profile):
 
 def query_returning(rows):
     query = Mock()
-    for method in ("select", "eq", "order"):
+    for method in ("select", "eq", "order", "limit"):
         getattr(query, method).return_value = query
     query.execute.return_value = SimpleNamespace(data=rows)
     return query
@@ -151,6 +153,24 @@ def test_submission_requires_nonblank_request_details(
     response = client.post(
         "/equipment-requests",
         json={**VALID_REQUEST, "request_details": request_details},
+        headers={"Authorization": "Bearer coordinator-token"},
+    )
+
+    assert response.status_code == 400, response.get_json()
+    submit.assert_not_called()
+
+
+def test_submission_requires_a_session(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+    submit = Mock(side_effect=AssertionError("invalid request must not be saved"))
+    monkeypatch.setattr(
+        equipment_request_service, "submit_equipment_request", submit
+    )
+    payload = {key: value for key, value in VALID_REQUEST.items() if key != "session_id"}
+
+    response = client.post(
+        "/equipment-requests",
+        json=payload,
         headers={"Authorization": "Bearer coordinator-token"},
     )
 
@@ -409,6 +429,7 @@ def test_service_returns_submit_result_without_a_post_save_read(
         "submit_equipment_request",
         {
             "p_event_id": VALID_REQUEST["event_id"],
+            "p_session_id": VALID_REQUEST["session_id"],
             "p_request_details": VALID_REQUEST["request_details"],
             "p_items": VALID_REQUEST["items"],
         },
@@ -417,6 +438,7 @@ def test_service_returns_submit_result_without_a_post_save_read(
     assert result == {
         "id": SAVED_REQUEST["id"],
         "event_id": VALID_REQUEST["event_id"],
+        "session_id": VALID_REQUEST["session_id"],
         "coordinator_id": COORDINATOR.id,
         "request_details": VALID_REQUEST["request_details"],
         "status": "Pending Technical Approval",
@@ -459,7 +481,7 @@ def test_service_reports_missing_rpc_result(
         (
             "P0001",
             409,
-            "An equipment request has already been submitted for this event.",
+            "An equipment request has already been submitted for this session.",
         ),
         (
             "22023",
@@ -603,6 +625,88 @@ def test_service_maps_review_database_errors(
 
     assert caught.value.status_code == status
     assert "Private database detail" not in caught.value.message
+
+
+def test_service_says_when_a_request_was_already_reviewed(
+    equipment_request_database,
+):
+    client, _ = equipment_request_database
+    rpc_query = Mock()
+    rpc_query.execute.side_effect = PostgrestAPIError(
+        {"code": "P0001", "message": "Private database detail"}
+    )
+    client.rpc.return_value = rpc_query
+
+    with pytest.raises(AuthError) as caught:
+        equipment_request_service.review_equipment_request(
+            "staff-token",
+            SAVED_REQUEST["id"],
+            EquipmentRequestReview(decision="Approved"),
+        )
+
+    assert caught.value.message == "This equipment request has already been reviewed."
+
+
+def test_service_refuses_approval_until_equipment_is_allocated(
+    equipment_request_database,
+):
+    client, _ = equipment_request_database
+    bookings = query_returning([])
+    client.table.return_value = bookings
+
+    with pytest.raises(AuthError) as caught:
+        equipment_request_service.review_equipment_request(
+            "staff-token",
+            SAVED_REQUEST["id"],
+            EquipmentRequestReview(decision="Approved"),
+        )
+
+    client.table.assert_called_once_with("equipment_bookings")
+    bookings.eq.assert_called_once_with("request_id", SAVED_REQUEST["id"])
+    client.rpc.assert_not_called()
+    assert caught.value.status_code == 409
+    assert caught.value.message == (
+        "Allocate at least one item of equipment before approving this request."
+    )
+
+
+def test_service_approves_once_equipment_is_allocated(
+    equipment_request_database,
+):
+    client, _ = equipment_request_database
+    client.table.return_value = query_returning([{"id": "booking-1"}])
+    rpc_query = Mock()
+    rpc_query.execute.return_value = SimpleNamespace(
+        data={"id": SAVED_REQUEST["id"], "status": "Approved"}
+    )
+    client.rpc.return_value = rpc_query
+
+    result = equipment_request_service.review_equipment_request(
+        "staff-token",
+        SAVED_REQUEST["id"],
+        EquipmentRequestReview(decision="Approved"),
+    )
+
+    assert result == {"id": SAVED_REQUEST["id"], "status": "Approved"}
+
+
+def test_service_rejects_without_checking_allocations(
+    equipment_request_database,
+):
+    client, _ = equipment_request_database
+    rpc_query = Mock()
+    rpc_query.execute.return_value = SimpleNamespace(
+        data={"id": SAVED_REQUEST["id"], "status": "Rejected"}
+    )
+    client.rpc.return_value = rpc_query
+
+    equipment_request_service.review_equipment_request(
+        "staff-token",
+        SAVED_REQUEST["id"],
+        EquipmentRequestReview(decision="Rejected"),
+    )
+
+    client.table.assert_not_called()
 
 
 def test_service_maps_database_errors_while_listing_requests(
