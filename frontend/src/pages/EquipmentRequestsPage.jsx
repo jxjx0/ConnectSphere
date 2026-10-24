@@ -278,6 +278,10 @@ export default function EquipmentRequestsPage() {
             <p className="form-error" role="alert">{reviewErrors[request.id]}</p>
           )}
 
+          {pending && bookedEquipment.length === 0 && (
+            <p className="note">Allocate at least one item of equipment before approving this request.</p>
+          )}
+
           {pending && (
             <div className="form-actions">
               <Link
@@ -289,7 +293,7 @@ export default function EquipmentRequestsPage() {
               <button
                 className="button"
                 type="button"
-                disabled={reviewingRequestId === request.id}
+                disabled={reviewingRequestId === request.id || bookedEquipment.length === 0}
                 onClick={() => handleReview(request.id, 'Approved')}
               >
                 {reviewingRequestId === request.id ? 'Saving…' : 'Approve request'}

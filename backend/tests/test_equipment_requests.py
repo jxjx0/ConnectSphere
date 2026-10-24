@@ -83,7 +83,7 @@ def authenticate_as(monkeypatch, profile):
 
 def query_returning(rows):
     query = Mock()
-    for method in ("select", "eq", "order"):
+    for method in ("select", "eq", "order", "limit"):
         getattr(query, method).return_value = query
     query.execute.return_value = SimpleNamespace(data=rows)
     return query
@@ -625,6 +625,88 @@ def test_service_maps_review_database_errors(
 
     assert caught.value.status_code == status
     assert "Private database detail" not in caught.value.message
+
+
+def test_service_says_when_a_request_was_already_reviewed(
+    equipment_request_database,
+):
+    client, _ = equipment_request_database
+    rpc_query = Mock()
+    rpc_query.execute.side_effect = PostgrestAPIError(
+        {"code": "P0001", "message": "Private database detail"}
+    )
+    client.rpc.return_value = rpc_query
+
+    with pytest.raises(AuthError) as caught:
+        equipment_request_service.review_equipment_request(
+            "staff-token",
+            SAVED_REQUEST["id"],
+            EquipmentRequestReview(decision="Approved"),
+        )
+
+    assert caught.value.message == "This equipment request has already been reviewed."
+
+
+def test_service_refuses_approval_until_equipment_is_allocated(
+    equipment_request_database,
+):
+    client, _ = equipment_request_database
+    bookings = query_returning([])
+    client.table.return_value = bookings
+
+    with pytest.raises(AuthError) as caught:
+        equipment_request_service.review_equipment_request(
+            "staff-token",
+            SAVED_REQUEST["id"],
+            EquipmentRequestReview(decision="Approved"),
+        )
+
+    client.table.assert_called_once_with("equipment_bookings")
+    bookings.eq.assert_called_once_with("request_id", SAVED_REQUEST["id"])
+    client.rpc.assert_not_called()
+    assert caught.value.status_code == 409
+    assert caught.value.message == (
+        "Allocate at least one item of equipment before approving this request."
+    )
+
+
+def test_service_approves_once_equipment_is_allocated(
+    equipment_request_database,
+):
+    client, _ = equipment_request_database
+    client.table.return_value = query_returning([{"id": "booking-1"}])
+    rpc_query = Mock()
+    rpc_query.execute.return_value = SimpleNamespace(
+        data={"id": SAVED_REQUEST["id"], "status": "Approved"}
+    )
+    client.rpc.return_value = rpc_query
+
+    result = equipment_request_service.review_equipment_request(
+        "staff-token",
+        SAVED_REQUEST["id"],
+        EquipmentRequestReview(decision="Approved"),
+    )
+
+    assert result == {"id": SAVED_REQUEST["id"], "status": "Approved"}
+
+
+def test_service_rejects_without_checking_allocations(
+    equipment_request_database,
+):
+    client, _ = equipment_request_database
+    rpc_query = Mock()
+    rpc_query.execute.return_value = SimpleNamespace(
+        data={"id": SAVED_REQUEST["id"], "status": "Rejected"}
+    )
+    client.rpc.return_value = rpc_query
+
+    equipment_request_service.review_equipment_request(
+        "staff-token",
+        SAVED_REQUEST["id"],
+        EquipmentRequestReview(decision="Rejected"),
+    )
+
+    client.table.assert_not_called()
 
 
 def test_service_maps_database_errors_while_listing_requests(
