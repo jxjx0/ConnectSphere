@@ -496,3 +496,10 @@ test('timed results show one summary warning and one requested period across mul
   assert.ok(!html.includes('No conflict found'))
   assert.ok(!renderPage({ ...empty, venues: [{ ...venue, requested_start: null, requested_end: null, availability_status: 'not_checked' }] }).includes('Availability is partially verified'))
 })
+
+test('a session layout preference picks the matching venue layout, ignoring case', () => {
+  assert.equal(searchHelpers.preferredLayout(' theatre ', ['Banquet', 'Theatre']), 'Theatre')
+  assert.equal(searchHelpers.preferredLayout('Boardroom', ['Banquet', 'Theatre']), '')
+  assert.equal(searchHelpers.preferredLayout('', ['Theatre']), '')
+  assert.equal(searchHelpers.preferredLayout(null, ['Theatre']), '')
+})

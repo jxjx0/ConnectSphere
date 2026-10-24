@@ -5,9 +5,12 @@ export function equipmentRequestEligibleEvents(events) {
 }
 
 // The sessions of this event that have no equipment request yet, in time
-// order. Each session gets its own request (T7-279).
+// order. Each session gets its own request (T7-279); a cancelled one counts
+// as none, so the session can request again (T7-282).
 export function sessionsWithoutEquipmentRequest(event, requests) {
-  const requested = new Set(requests.map((request) => request.session_id))
+  const requested = new Set(requests
+    .filter((request) => request.status !== 'Cancelled')
+    .map((request) => request.session_id))
   return [...(event.sessions || [])]
     .filter((session) => !requested.has(session.id))
     .sort((first, second) => new Date(first.start_time) - new Date(second.start_time))

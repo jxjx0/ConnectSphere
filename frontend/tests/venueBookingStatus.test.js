@@ -8,6 +8,8 @@ import * as jsxRuntime from 'react/jsx-runtime'
 import * as display from '../src/eventDisplay.js'
 import * as categories from '../src/eventCategories.js'
 import * as eligibility from '../src/equipmentRequestEligibility.js'
+import * as cancelRules from '../src/cancelArrangements.js'
+import * as changeSessions from '../src/changeRequestSessions.js'
 
 async function compile(path, imports = {}) {
   const source = await readFile(new URL(path, import.meta.url), 'utf8')
@@ -112,6 +114,9 @@ test('Coordinator event page shows stored affected status and retains other appr
     '../context/AuthContext': { useAuth: () => ({ token: 'token' }) },
     '../components/AppShell': { default: ({ children }) => React.createElement('main', null, children), __esModule: true },
     '../components/SessionList': { default: () => null, __esModule: true },
+    '../components/CancelArrangementForm': { default: () => null, __esModule: true },
+    '../cancelArrangements': cancelRules,
+    '../changeRequestSessions': changeSessions,
     '../api/events': {
       getAssignedEventRequest: async () => ({ event, organiser: null }),
       getEventActivityLogs: async () => ({ logs: [] }),
@@ -169,6 +174,9 @@ for (const status of ['under_review', 'change_requested', 'confirmed', 'rejected
         '../context/AuthContext': { useAuth: () => ({ token: 'token' }) },
         '../components/AppShell': { default: ({ children }) => React.createElement('main', null, children), __esModule: true },
     '../components/SessionList': { default: () => null, __esModule: true },
+    '../components/CancelArrangementForm': { default: () => null, __esModule: true },
+    '../cancelArrangements': cancelRules,
+    '../changeRequestSessions': changeSessions,
         '../api/events': {
           getAssignedEventRequest: async () => ({ event: { ...event, status }, organiser: null }),
           getAssignedEventClarifications: async () => ({ clarifications: [] }),
@@ -204,6 +212,9 @@ async function renderCoordinatorPage(pageEvent, safetyDecision, bookings = []) {
     '../context/AuthContext': { useAuth: () => ({ token: 'token' }) },
     '../components/AppShell': { default: ({ children }) => React.createElement('main', null, children), __esModule: true },
     '../components/SessionList': { default: () => null, __esModule: true },
+    '../components/CancelArrangementForm': { default: () => null, __esModule: true },
+    '../cancelArrangements': cancelRules,
+    '../changeRequestSessions': changeSessions,
     '../api/events': {
       getAssignedEventRequest: async () => ({ event: pageEvent, organiser: null, safety_decision: safetyDecision }),
       getEventActivityLogs: async () => ({ logs: [] }),

@@ -24,11 +24,13 @@ def get_lead_coordinator_events(access_token: str):
                     id
                 ),
                 venue_bookings (
-                    venue_id,
+                    status,
                     venue:venues (
-                        id,
+                        name
+                    ),
+                    session:event_sessions (
                         name,
-                        location
+                        start_time
                     )
                 )
             """)

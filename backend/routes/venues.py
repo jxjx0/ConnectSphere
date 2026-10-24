@@ -13,7 +13,7 @@ from services import auth_service, venue_service, venue_block_service
 from services.auth_service import AuthError
 from services import venue_search_service
 from services import venue_availability_service
-from models.venue_booking import VenueBookingCreateRequest, VenueBookingReviewRequest
+from models.venue_booking import VenueBookingCancelRequest, VenueBookingCreateRequest, VenueBookingReviewRequest
 from services import venue_booking_service
 from models.venue_hold import VenueHoldCreateRequest
 from services import venue_hold_service
@@ -214,6 +214,28 @@ def review_venue_booking(booking_id: str):
         review=review_request,
     )
     return jsonify({"booking": updated_booking}), 200
+
+@venues_bp.patch("/bookings/<booking_id>/cancel")
+@require_auth
+def cancel_venue_booking(booking_id: str):
+    """Allow the event's Coordinator to cancel one of its bookings (T7-282)."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"errors": ["Cancellation must be a JSON object."]}), 400
+
+    try:
+        cancellation = VenueBookingCancelRequest(**payload)
+    except ValidationError as error:
+        return jsonify({"errors": _validation_messages(error)}), 400
+
+    _require_coordinator("Only Event Coordinators can cancel venue bookings.")
+
+    booking = venue_booking_service.cancel_venue_booking(
+        access_token=g.access_token,
+        booking_id=booking_id,
+        cancellation=cancellation,
+    )
+    return jsonify({"booking": booking}), 200
 
 @venues_bp.get("/bookings/event/<event_id>")
 @require_auth

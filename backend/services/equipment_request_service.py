@@ -3,7 +3,13 @@
 from postgrest import APIError as PostgrestAPIError
 
 import config
-from models.equipment_request import EquipmentRequestReview, EquipmentRequestSubmit
+from models.equipment_request import (
+    EquipmentRequestCancel,
+    EquipmentRequestReview,
+    EquipmentRequestSubmit,
+)
+from models.profile import Role
+from services import notification_service
 from services.auth_service import AuthError
 
 _REQUEST_SELECT = (
@@ -160,6 +166,61 @@ def review_equipment_request(
     if not isinstance(reviewed_request, dict) or not reviewed_request.get("status"):
         raise AuthError("Unable to review the equipment request.", status_code=502)
     return reviewed_request
+
+
+def cancel_equipment_request(
+    access_token: str,
+    request_id: str,
+    cancellation: EquipmentRequestCancel,
+) -> dict:
+    """Cancel one request and free the items reserved for it (T7-282).
+
+    The database function checks the Coordinator, the event status, the
+    request status and the session start, and removes the request's
+    equipment bookings, all in one transaction.
+    """
+    client = config.get_user_client(access_token)
+    try:
+        result = client.rpc(
+            "cancel_equipment_request",
+            {"p_request_id": request_id, "p_reason": cancellation.reason},
+        ).execute()
+    except PostgrestAPIError as error:
+        if error.code == "42501":
+            raise AuthError(
+                "Only Event Coordinators can cancel equipment requests.",
+                status_code=403,
+            ) from error
+        if error.code in {"P0002", "22P02"}:
+            raise AuthError(
+                "Equipment request was not found for an event assigned to you.",
+                status_code=404,
+            ) from error
+        if error.code == "22023":
+            raise AuthError(
+                "Give a reason for cancelling this equipment request.",
+                status_code=400,
+            ) from error
+        if error.code == "P0001":
+            # Written for the Coordinator, e.g. "only while the event is in Planning".
+            raise AuthError(error.message, status_code=409) from error
+        raise _database_error(error) from error
+
+    cancelled = result.data
+    if not isinstance(cancelled, dict) or cancelled.get("status") != "Cancelled":
+        raise AuthError("Unable to cancel the equipment request.", status_code=502)
+
+    session = f" ({cancelled['session_name']})" if cancelled.get("session_name") else ""
+    notification_service.notify_role(
+        Role.TECH_SUPPORT.value,
+        "equipment_request_cancelled",
+        "Equipment request cancelled",
+        f"The equipment request for '{cancelled.get('event_name') or 'an event'}'"
+        f"{session} was cancelled by the Coordinator. Any equipment reserved "
+        f"for it has been released. Reason: {cancelled.get('cancellation_reason')}",
+        cancelled.get("event_id"),
+    )
+    return cancelled
 
 
 def _require_allocated_equipment(client, request_id: str) -> None:

@@ -155,6 +155,7 @@ test('existing booking form includes assigned confirmed events for hold conversi
       { id: 'completed', name: 'Completed event', status: 'completed' },
     ] }) },
     '../api/venues': { createVenueBooking: async () => { writes++ } },
+    '../venueSearch': { preferredLayout: () => '' },
   }
   new Function('require', 'module', 'exports', code)(name => imports[name], module, module.exports)
   module.exports.default({ venue })

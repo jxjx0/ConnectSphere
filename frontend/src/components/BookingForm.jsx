@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getAssignedEventRequest, getAssignedEventRequests } from '../api/events'
 import { createVenueBooking } from '../api/venues'
 import { useAuth } from '../context/AuthContext'
+import { preferredLayout } from '../venueSearch'
 
 // A stored timestamp as the date and time inputs want it, in local time.
 function localParts(value) {
@@ -74,8 +75,15 @@ export default function BookingForm({ venue, eventId: initialEventId, sessionId:
     return () => { active = false }
   }, [fixedSessionId, selectedEventId, token])
 
+  // Fills in the session's own time, and its preferred layout when this
+  // venue offers it. Layout preferences belong to sessions (scope doc 9.1).
   function chooseSession(session) {
     setSelectedSessionId(session.id)
+    const layout = preferredLayout(
+      session.layout_preference,
+      (venue?.layouts || []).map((item) => item.name).filter(Boolean),
+    )
+    if (layout) setForm((prev) => ({ ...prev, roomLayout: layout }))
     if (!session.start_time || !session.end_time) return
     const start = localParts(session.start_time)
     const end = localParts(session.end_time)

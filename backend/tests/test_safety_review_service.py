@@ -132,7 +132,7 @@ def test_rejection_releases_only_live_venue_bookings(database):
     decide("rejected", "Unsafe crowd flow")
 
     (booking_query,) = database.calls_to("venue_bookings", "select")
-    assert ("in_", "status", ["PENDING_VENUE_APPROVAL", "APPROVED", "AFFECTED_BY_UNAVAILABILITY"]) in booking_query.filters
+    assert ("in_", "status", ["PENDING_VENUE_APPROVAL", "APPROVED", "AFFECTED_BY_UNAVAILABILITY", "AFFECTED_BY_SESSION_CHANGE"]) in booking_query.filters
     updates = database.calls_to("venue_bookings", "update")
     assert [update.filters for update in updates] == [
         [("eq", "booking_id", "bk-approved")],
@@ -178,7 +178,8 @@ def test_rejection_releases_equipment_bookings_and_requests(database):
     decide("rejected", "Unsafe crowd flow")
 
     (request_query,) = database.calls_to("equipment_requests", "select")
-    assert ("neq", "status", "Rejected") in request_query.filters
+    # Rejected and cancelled requests are left as they are (T7-282).
+    assert ("in_", "status", ["Pending Technical Approval", "Approved", "Affected by Session Change"]) in request_query.filters
     (equipment_delete,) = database.calls_to("equipment_bookings", "delete")
     assert equipment_delete.filters == [("in_", "request_id", ["req-1", "req-2"])]
     (request_update,) = database.calls_to("equipment_requests", "update")
@@ -253,3 +254,29 @@ def test_database_errors_are_reported(database):
 
     assert caught.value.status_code == 400
     assert database.calls_to("events", "update") == []
+
+
+# --- Large crowd counts sessions at the same time ---------------------------
+
+def _session(start_hour, end_hour, attendance):
+    return {
+        "start_time": f"2026-12-15T{start_hour:02d}:00:00+00:00",
+        "end_time": f"2026-12-15T{end_hour:02d}:00:00+00:00",
+        "expected_attendance": attendance,
+    }
+
+
+def test_overlapping_sessions_add_up_for_the_crowd_size():
+    event = {"expected_attendance": 300, "sessions": [_session(1, 9, 300), _session(5, 9, 300)]}
+
+    assert safety_review_service._peak_attendance(event) == 600
+
+
+def test_back_to_back_sessions_do_not_add_up():
+    event = {"expected_attendance": 300, "sessions": [_session(1, 5, 300), _session(5, 9, 300)]}
+
+    assert safety_review_service._peak_attendance(event) == 300
+
+
+def test_events_without_sessions_use_their_own_attendance():
+    assert safety_review_service._peak_attendance({"expected_attendance": 550}) == 550

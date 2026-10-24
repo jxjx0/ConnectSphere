@@ -79,9 +79,12 @@ export function rejectAssignedEvent(eventId, token) {
   })
 }
 
-export function approveAssignedChangeRequest(eventId, token) {
+// cancelBookingIds: pending venue bookings of moved or removed sessions to
+// cancel on approval (T7-281).
+export function approveAssignedChangeRequest(eventId, cancelBookingIds, token) {
   return request(`/events/review/${eventId}/change-request/approve`, {
     method: 'POST',
+    body: { cancel_booking_ids: cancelBookingIds },
     token,
   })
 }

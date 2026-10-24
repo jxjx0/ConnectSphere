@@ -10,6 +10,7 @@ import {
   updateDraft,
 } from '../api/events'
 import AppShell from '../components/AppShell'
+import SessionFields from '../components/SessionFields'
 import { useAuth } from '../context/AuthContext'
 import { formatDateRange, optional } from '../eventDisplay'
 import {
@@ -20,7 +21,6 @@ import {
 import {
   emptySession,
   sessionFromSaved,
-  sessionLabel,
   sessionToPayload,
   sortSessionsByStart,
   validateSessions,
@@ -104,26 +104,6 @@ export default function EventRequestPage() {
 
   function updateField(field) {
     return (event) => setForm({ ...form, [field]: event.target.value })
-  }
-
-  function updateSessionField(index, field) {
-    return (event) => {
-      const sessions = form.sessions.map((session, position) =>
-        position === index ? { ...session, [field]: event.target.value } : session,
-      )
-      setForm({ ...form, sessions })
-    }
-  }
-
-  function addSession() {
-    setForm({ ...form, sessions: [...form.sessions, emptySession()] })
-  }
-
-  function removeSession(index) {
-    setForm({
-      ...form,
-      sessions: form.sessions.filter((_, position) => position !== index),
-    })
   }
 
   async function handleSaveDraft() {
@@ -473,124 +453,10 @@ export default function EventRequestPage() {
               programme and breakout rooms.
             </p>
 
-            {form.sessions.map((session, index) => {
-              // Ids must be unique on the page, so they carry the session's
-              // place on the form.
-              const id = (field) => `session-${index}-${field}`
-              return (
-                <fieldset className="session-card" key={session.formKey}>
-                  <legend>{sessionLabel(session, index)}</legend>
-
-                  <div className="field">
-                    <label htmlFor={id('name')}>Session name</label>
-                    <input
-                      id={id('name')}
-                      maxLength={200}
-                      placeholder="For example: Main programme, Breakout A"
-                      value={session.name}
-                      onChange={updateSessionField(index, 'name')}
-                      required
-                    />
-                  </div>
-
-                  <div className="field">
-                    <label htmlFor={id('start')}>Starts</label>
-                    <input
-                      id={id('start')}
-                      type="datetime-local"
-                      value={session.startTime}
-                      onChange={updateSessionField(index, 'startTime')}
-                      required
-                    />
-                  </div>
-
-                  <div className="field">
-                    <label htmlFor={id('end')}>Ends</label>
-                    <input
-                      id={id('end')}
-                      type="datetime-local"
-                      value={session.endTime}
-                      onChange={updateSessionField(index, 'endTime')}
-                      required
-                    />
-                  </div>
-
-                  <div className="field">
-                    <label htmlFor={id('attendance')}>Expected attendance</label>
-                    <input
-                      id={id('attendance')}
-                      type="number"
-                      min={1}
-                      value={session.expectedAttendance}
-                      onChange={updateSessionField(index, 'expectedAttendance')}
-                      required
-                    />
-                  </div>
-
-                  <div className="field">
-                    <label htmlFor={id('location')}>Preferred location</label>
-                    <input
-                      id={id('location')}
-                      aria-describedby={id('location-hint')}
-                      value={session.locationPreference}
-                      onChange={updateSessionField(index, 'locationPreference')}
-                    />
-                    <p className="field__hint" id={id('location-hint')}>
-                      Optional. Your Coordinator selects the actual venue.
-                    </p>
-                  </div>
-
-                  <div className="field">
-                    <label htmlFor={id('layout')}>Preferred room layout</label>
-                    <input
-                      id={id('layout')}
-                      aria-describedby={id('layout-hint')}
-                      value={session.layoutPreference}
-                      onChange={updateSessionField(index, 'layoutPreference')}
-                    />
-                    <p className="field__hint" id={id('layout-hint')}>
-                      Optional. For example: theatre, classroom, banquet.
-                    </p>
-                  </div>
-
-                  <div className="field">
-                    <label htmlFor={id('equipment')}>Equipment requirements</label>
-                    <textarea
-                      id={id('equipment')}
-                      rows={3}
-                      aria-describedby={id('equipment-hint')}
-                      value={session.equipmentRequirements}
-                      onChange={updateSessionField(index, 'equipmentRequirements')}
-                    />
-                    <p className="field__hint" id={id('equipment-hint')}>
-                      Optional. Describe what you need &mdash; Technical
-                      Support will match it to available equipment.
-                    </p>
-                  </div>
-
-                  {/* An event always keeps at least one session. */}
-                  {form.sessions.length > 1 && (
-                    <button
-                      type="button"
-                      className="button button--secondary button--small"
-                      onClick={() => removeSession(index)}
-                    >
-                      Remove {sessionLabel(session, index)}
-                    </button>
-                  )}
-                </fieldset>
-              )
-            })}
-
-            <div>
-              <button
-                type="button"
-                className="button button--secondary"
-                onClick={addSession}
-              >
-                + Add session
-              </button>
-            </div>
+            <SessionFields
+              sessions={form.sessions}
+              onChange={(sessions) => setForm({ ...form, sessions })}
+            />
           </section>
 
           {error && (

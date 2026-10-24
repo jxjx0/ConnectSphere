@@ -11,6 +11,7 @@ function getStatusClass(status) {
     case 'Pending Technical Approval':
       return styles.pending
     case 'Rejected':
+    case 'Affected by Session Change':
       return styles.rejected
     default:
       return styles.defaultStatus
@@ -69,6 +70,19 @@ export default function EquipmentRequestCard({ title, eventName, request, timing
           </div>
         )}
       </div>
+
+      {request?.status === 'Affected by Session Change' && (
+        <p className="form-error" role="status">
+          Its session was moved or removed by an approved change request.
+          Cancel this request and request equipment again.
+        </p>
+      )}
+
+      {request?.status === 'Cancelled' && request.cancellation_reason && (
+        <p className={`note ${styles.rejectionError}`}>
+          <strong>Cancellation reason:</strong> {request.cancellation_reason}
+        </p>
+      )}
 
       {request?.status === 'Pending Technical Approval' && (
         <p className={`note ${styles.rejectionError}`}>

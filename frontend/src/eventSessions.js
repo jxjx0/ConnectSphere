@@ -35,6 +35,9 @@ export function toDateTimeInput(value) {
 export function sessionFromSaved(saved) {
   return {
     ...emptySession(),
+    // The saved session's id, so a change request can say which session it
+    // edits (T7-280). New sessions have none.
+    id: saved.id ?? null,
     name: saved.name ?? '',
     startTime: toDateTimeInput(saved.start_time),
     endTime: toDateTimeInput(saved.end_time),

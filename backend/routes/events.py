@@ -7,6 +7,7 @@ from flask import Blueprint, g, jsonify, request
 from pydantic import ValidationError
 
 from models.event import (
+    EventChangeRequestApproval,
     EventChangeRequestDecision,
     EventChangeRequestSubmit,
     EventClarificationRequest,
@@ -204,13 +205,18 @@ def get_assigned_event(event_id):
 
 def _review_change_request(event_id, decision):
     rejection = None
-    if decision == "reject":
-        try:
+    approval = None
+    try:
+        if decision == "reject":
             rejection = EventChangeRequestDecision(
                 **(request.get_json(silent=True) or {})
             )
-        except ValidationError as error:
-            return jsonify({"errors": _validation_messages(error)}), 400
+        else:
+            approval = EventChangeRequestApproval(
+                **(request.get_json(silent=True) or {})
+            )
+    except ValidationError as error:
+        return jsonify({"errors": _validation_messages(error)}), 400
 
     event, change_request = event_service.review_assigned_change_request(
         g.access_token,
@@ -218,8 +224,15 @@ def _review_change_request(event_id, decision):
         event_id,
         decision,
         rejection,
+        approval,
     )
     approved = decision == "approve"
+    # A material change to a Confirmed event sends it back to Planning (T7-281).
+    back_to_planning = (
+        approved
+        and change_request.event_status_before_request == EventStatus.CONFIRMED
+        and event.status == EventStatus.PLANNING
+    )
     notification_service.notify(
         change_request.organiser_id,
         "event_change_approved" if approved else "event_change_rejected",
@@ -227,6 +240,10 @@ def _review_change_request(event_id, decision):
         (
             f"The proposed changes to '{change_request.name}' have been "
             "approved and applied."
+            + (
+                " The event is back in Planning and needs a new safety check."
+                if back_to_planning else ""
+            )
             if approved
             else f"The proposed changes to '{change_request.name}' were rejected. "
             f"Reason: {change_request.rejection_reason}"

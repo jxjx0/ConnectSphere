@@ -813,6 +813,28 @@ def test_lead_overview_keeps_each_events_sessions():
     assert event["sessions"] == [{"id": "s1"}]
 
 
+def test_lead_overview_lists_each_sessions_venue_and_skips_settled_ones():
+    [event] = Event.format_lead_overview([{
+        "id": "event-1",
+        "status": "planning",
+        "venue_bookings": [
+            {"status": "APPROVED", "venue": {"name": "Hall B"},
+             "session": {"name": "Breakout A", "start_time": "2026-12-15T05:00:00+00:00"}},
+            {"status": "CANCELLED", "venue": {"name": "Old Hall"},
+             "session": {"name": "Main programme", "start_time": "2026-12-15T01:00:00+00:00"}},
+            {"status": "PENDING_VENUE_APPROVAL", "venue": {"name": "Hall A"},
+             "session": {"name": "Main programme", "start_time": "2026-12-15T01:00:00+00:00"}},
+            {"status": "AFFECTED_BY_SESSION_CHANGE", "venue": {"name": "Room 3"}, "session": None},
+        ],
+    }])
+
+    assert event["venues"] == [
+        {"session_name": "Removed session", "venue_name": "Room 3", "status": "AFFECTED_BY_SESSION_CHANGE"},
+        {"session_name": "Main programme", "venue_name": "Hall A", "status": "PENDING_VENUE_APPROVAL"},
+        {"session_name": "Breakout A", "venue_name": "Hall B", "status": "APPROVED"},
+    ]
+
+
 def test_coordinator_detail_filters_by_id_and_assignment(monkeypatch):
     calls = []
     assigned = EVENT_RESPONSE.model_dump(mode="json")

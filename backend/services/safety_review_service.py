@@ -17,7 +17,9 @@ DECISION_NEXT_STATUS = {
     "rejected": "planning",
 }
 # Bookings that still hold the venue and must be released when safety is rejected.
-RELEASABLE_BOOKING_STATUSES = ("PENDING_VENUE_APPROVAL", "APPROVED", "AFFECTED_BY_UNAVAILABILITY")
+RELEASABLE_BOOKING_STATUSES = (
+    "PENDING_VENUE_APPROVAL", "APPROVED", "AFFECTED_BY_UNAVAILABILITY", "AFFECTED_BY_SESSION_CHANGE",
+)
 SETTLED_BOOKING_STATUSES = ("CANCELLED", "REJECTED", "REJECTED_BY_SAFETY")
 
 
@@ -134,6 +136,27 @@ def _venue_flags(booking: dict, session: dict, event_attendance: int, accessibil
     return flags
 
 
+def _peak_attendance(event: dict) -> int:
+    """The most people at the event at any one time.
+
+    Sessions may run at the same time (scope doc 9.1), so the crowd is the
+    total of every session running at each session's start. Events without
+    timed sessions fall back to the event's own attendance.
+    """
+    sessions = [
+        session for session in (event.get("sessions") or [])
+        if session.get("start_time") and session.get("end_time")
+    ]
+    peak = 0
+    for session in sessions:
+        moment = datetime.fromisoformat(session["start_time"])
+        peak = max(peak, sum(
+            other.get("expected_attendance") or 0 for other in sessions
+            if datetime.fromisoformat(other["start_time"]) <= moment < datetime.fromisoformat(other["end_time"])
+        ))
+    return max(peak, event.get("expected_attendance") or 0)
+
+
 def get_safety_event_details(event_id: str, access_token: str) -> dict:
     """Retrieve full event, venue, equipment, and automated safety flags."""
     try:
@@ -227,12 +250,13 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
                     "message": f"Requested equipment '{equip.get('name', 'Item')}' is currently marked as '{m_status}'.",
                 })
 
-        # Flag 5: Large Crowd Safety Protocol
-        if expected_attendance >= 500:
+        # Flag 5: Large Crowd Safety Protocol. Counts everyone on site at
+        # once, so overlapping sessions add up.
+        if _peak_attendance(event) >= 500:
             flags.append({
                 "type": "LARGE_CROWD_PROTOCOL",
                 "severity": "MEDIUM",
-                "message": "Expected attendance exceeds 500. Requires First Aid & Crowd Management Plan.",
+                "message": "Up to 500 or more people are expected at the same time. Requires First Aid & Crowd Management Plan.",
             })
 
         return {
@@ -301,6 +325,9 @@ def _safety_check_blockers(client, event: dict) -> list[str]:
     ).data or []
     if any(request.get("status") == "Pending Technical Approval" for request in equipment_requests):
         blockers.append("pending equipment requests must be reviewed first")
+    elif any(request.get("status") == "Affected by Session Change" for request in equipment_requests):
+        # Its session moved or was removed (T7-281): cancel it and request again.
+        blockers.append("equipment requests affected by a session change must be cancelled and requested again")
     else:
         # Every session that lists equipment needs its own request (scope
         # doc 9.1). Sessions that need none count as done.
@@ -310,7 +337,11 @@ def _safety_check_blockers(client, event: dict) -> list[str]:
             .eq("event_id", event["id"])
             .execute()
         ).data or []
-        requested_sessions = {request.get("session_id") for request in equipment_requests}
+        # A cancelled request counts as none, so the session must request again (T7-282).
+        requested_sessions = {
+            request.get("session_id") for request in equipment_requests
+            if request.get("status") != "Cancelled"
+        }
         missing = [
             session.get("name") or "a session" for session in sessions
             if (session.get("equipment_requirements") or "").strip()
@@ -429,7 +460,7 @@ def _release_event_arrangements(client, event_id: str, reason: str) -> None:
         client.table("equipment_requests")
         .select("id")
         .eq("event_id", event_id)
-        .neq("status", "Rejected")
+        .in_("status", ["Pending Technical Approval", "Approved", "Affected by Session Change"])
         .execute()
     ).data or []
     request_ids = [request["id"] for request in equipment_requests]

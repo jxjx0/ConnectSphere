@@ -53,6 +53,15 @@ export function venueSearchPayload(form) {
   return payload
 }
 
+// The venue layout matching a session's free-text layout preference,
+// ignoring case and spaces, or '' when the venue has no such layout.
+// Never maps to a different layout.
+export function preferredLayout(preference, layoutNames) {
+  const wanted = (preference || '').trim().toLowerCase()
+  if (!wanted) return ''
+  return layoutNames.find((name) => name.toLowerCase() === wanted) || ''
+}
+
 export function eventVenueFilters(event, layoutOptions) {
   const start = new Date(event.start_time)
   const end = new Date(event.end_time)
@@ -62,13 +71,12 @@ export function eventVenueFilters(event, layoutOptions) {
   const pad = (value) => String(value).padStart(2, '0')
   const date = (value) => `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`
   const time = (value) => `${pad(value.getHours())}:${pad(value.getMinutes())}`
-  const preference = (event.layout_preference || '').trim().toLowerCase()
   return {
     ...EMPTY_VENUE_FILTERS,
     date: date(start), end_date: date(end) === date(start) ? '' : date(end),
     start_time: time(start), end_time: time(end),
     expected_attendance: String(event.expected_attendance),
-    required_layout: layoutOptions.find((name) => name.toLowerCase() === preference) || '',
+    required_layout: preferredLayout(event.layout_preference, layoutOptions),
   }
 }
 

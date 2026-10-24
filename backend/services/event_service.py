@@ -8,6 +8,7 @@ import config
 from models.event import (
     Event,
     EventChangeRequest,
+    EventChangeRequestApproval,
     EventChangeRequestDecision,
     EventChangeRequestSubmit,
     EventClarification,
@@ -22,6 +23,8 @@ from models.event import (
     EventStatus,
     EventSubmitRequest,
 )
+from models.profile import Role
+from services import notification_service
 from services.auth_service import AuthError
 
 
@@ -308,7 +311,7 @@ def _with_change_request(client, events: list[Event]) -> list[Event]:
     try:
         result = (
             client.table("event_change_requests")
-            .select("*")
+            .select("*, sessions:event_change_request_sessions(*)")
             .in_("event_id", [event.id for event in events])
             .order("created_at", desc=True)
             .execute()
@@ -318,6 +321,8 @@ def _with_change_request(client, events: list[Event]) -> list[Event]:
 
     latest_by_event = {}
     for row in result.data:
+        # Proposed sessions are shown in time order, like the event's own.
+        row["sessions"] = sorted(row.get("sessions") or [], key=lambda session: session["start_time"])
         latest_by_event.setdefault(row["event_id"], EventChangeRequest(**row))
     return [
         event.model_copy(
@@ -342,15 +347,16 @@ def submit_event_change_request(
     """Persist a proposed change and mark its event as change_requested.
 
     The database function performs ownership, event status, duplicate
-    pending request, and changed-values checks atomically.
+    pending request, started-session and changed-values checks atomically
+    (T7-280). It signs the request with the caller's own id, so
+    organiser_id is not sent.
     """
     client = config.get_user_client(access_token)
     try:
         client.rpc(
-            "submit_event_change_request",
+            "submit_session_change_request",
             {
                 "p_event_id": event_id,
-                "p_organiser_id": organiser_id,
                 "p_changes": request.model_dump(mode="json"),
             },
         ).execute()
@@ -372,6 +378,10 @@ def submit_event_change_request(
                 "Change at least one event detail before submitting.",
                 status_code=400,
             ) from error
+        if error.code == "22023":
+            # Written for the Organiser and names the session, e.g.
+            # "Breakout A: This session has already started and cannot be changed".
+            raise AuthError(error.message, status_code=400) from error
         raise _database_error(error) from error
 
 
@@ -635,22 +645,30 @@ def review_assigned_change_request(
     event_id: str,
     decision: str,
     rejection: EventChangeRequestDecision | None = None,
+    approval: EventChangeRequestApproval | None = None,
 ) -> tuple[Event, EventChangeRequest]:
-    """Approve or reject the pending proposal through an atomic database RPC."""
+    """Approve or reject the pending proposal through an atomic database RPC.
+
+    Approving applies the proposed sessions (T7-281): moved or removed
+    sessions have their approved bookings and equipment requests flagged,
+    the pending bookings listed in `approval` are cancelled, and a material
+    change sends a Confirmed event back to Planning.
+    """
     if decision not in {"approve", "reject"}:
         raise AuthError("Invalid change request decision.", status_code=400)
     if decision == "reject" and rejection is None:
         raise AuthError("A rejection reason is required.", status_code=400)
 
     client = config.get_user_client(access_token)
-    function_name = (
-        "approve_event_change_request"
-        if decision == "approve"
-        else "reject_event_change_request"
-    )
-    params = {"p_event_id": event_id}
-    if rejection is not None:
-        params["p_rejection_reason"] = rejection.reason
+    if decision == "approve":
+        function_name = "approve_session_change_request"
+        params = {
+            "p_event_id": event_id,
+            "p_cancel_booking_ids": (approval or EventChangeRequestApproval()).cancel_booking_ids,
+        }
+    else:
+        function_name = "reject_event_change_request"
+        params = {"p_event_id": event_id, "p_rejection_reason": rejection.reason}
 
     try:
         result = client.rpc(function_name, params).execute()
@@ -671,6 +689,9 @@ def review_assigned_change_request(
                 "This change request has already been reviewed.",
                 status_code=409,
             ) from error
+        if error.code == "22023":
+            # e.g. "Breakout A: This session has already started and cannot be changed"
+            raise AuthError(error.message, status_code=409) from error
         raise _database_error(error) from error
 
     if not result.data:
@@ -678,9 +699,25 @@ def review_assigned_change_request(
             "The change request was reviewed but its details could not be loaded.",
             status_code=502,
         )
+    for booking in result.data.get("cancelled_bookings") or []:
+        _notify_booking_cancelled_by_change(result.data["event"], booking)
     return (
         Event(**result.data["event"]),
         EventChangeRequest(**result.data["change_request"]),
+    )
+
+
+def _notify_booking_cancelled_by_change(event: dict, booking: dict) -> None:
+    """Tell Venue Staff a pending booking was cancelled on approval (T7-281)."""
+    session = f" ({booking['session_name']})" if booking.get("session_name") else ""
+    notification_service.notify_role(
+        Role.VENUE_STAFF.value,
+        "venue_booking_cancelled",
+        "Venue booking cancelled",
+        f"The pending booking of '{booking.get('venue_name') or 'a venue'}' for "
+        f"'{event.get('name') or 'an event'}'{session} was cancelled because "
+        "its session was changed by an approved change request.",
+        event.get("id"),
     )
 
 

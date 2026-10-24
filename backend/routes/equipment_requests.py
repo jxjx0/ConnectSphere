@@ -5,7 +5,11 @@ from uuid import UUID
 from flask import Blueprint, g, jsonify, request
 from pydantic import ValidationError
 
-from models.equipment_request import EquipmentRequestReview, EquipmentRequestSubmit
+from models.equipment_request import (
+    EquipmentRequestCancel,
+    EquipmentRequestReview,
+    EquipmentRequestSubmit,
+)
 from models.profile import Role
 from routes.auth import require_auth
 from services import auth_service, equipment_request_service
@@ -103,3 +107,30 @@ def review_equipment_request(request_id):
         review,
     )
     return jsonify({"request": updated_request}), 200
+
+
+@equipment_requests_bp.patch("/equipment-requests/<request_id>/cancel")
+@require_auth
+def cancel_equipment_request(request_id):
+    """Allow the event's Coordinator to cancel one of its requests (T7-282)."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"errors": ["Cancellation must be a JSON object."]}), 400
+
+    try:
+        cancellation = EquipmentRequestCancel(**payload)
+    except ValidationError as error:
+        return jsonify({"errors": _validation_messages(error)}), 400
+
+    if _get_role() != Role.COORDINATOR:
+        raise AuthError(
+            "Only Event Coordinators can cancel equipment requests.",
+            status_code=403,
+        )
+
+    cancelled = equipment_request_service.cancel_equipment_request(
+        g.access_token,
+        request_id,
+        cancellation,
+    )
+    return jsonify({"request": cancelled}), 200

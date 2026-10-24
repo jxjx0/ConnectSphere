@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import AppShell from '../components/AppShell'
-import { formatSessionSummary } from '../eventDisplay'
+import { formatSessionSummary, readableStatus } from '../eventDisplay'
 import {
   getLeadCoordinatorEvents,
   getCoordinatorsList,
@@ -404,9 +404,16 @@ export default function LeadDashboardPage() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Venue</label>
+                  <label className="form-label">Venues</label>
+                  {/* One per session (T7-278); cancelled and rejected ones are left out. */}
                   <p className="form-input" style={{ background: '#f5f5f5' }}>
-                    {selectedEvent.venue_name || 'No venue assigned'}
+                    {selectedEvent.venues?.length
+                      ? selectedEvent.venues.map((venue) => (
+                        <span key={`${venue.session_name}-${venue.venue_name}`} style={{ display: 'block' }}>
+                          {venue.session_name}: {venue.venue_name} ({readableStatus(venue.status).toLowerCase()})
+                        </span>
+                      ))
+                      : 'No venue assigned'}
                   </p>
                 </div>
 

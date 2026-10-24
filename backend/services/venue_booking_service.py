@@ -5,10 +5,15 @@ from httpx import HTTPError
 from postgrest import APIError as PostgrestAPIError
 
 import config
-from models.venue_booking import VenueBookingCreateRequest, VenueBookingReviewRequest
+from models.profile import Role
+from models.venue_booking import (
+    VenueBookingCancelRequest,
+    VenueBookingCreateRequest,
+    VenueBookingReviewRequest,
+)
 from services import venue_availability_service as availability
 from services.auth_service import AuthError
-from services.notification_service import notify
+from services.notification_service import notify, notify_role
 from services.venue_availability_service import read_reservations, venue_buffers, effective_period
 from models.venue_search import OccupiedPeriod
 
@@ -422,3 +427,49 @@ def create_venue_booking(
         raise AuthError("Venue booking request was not created.", status_code=502)
 
     return result.data[0]
+
+
+def cancel_venue_booking(
+    access_token: str,
+    booking_id: str,
+    cancellation: VenueBookingCancelRequest,
+) -> dict:
+    """Cancel one booking and free its venue (T7-282).
+
+    The database function checks the Coordinator, the event status, the
+    booking status and the session start, and removes the calendar block,
+    all in one transaction.
+    """
+    client = config.get_user_client(access_token)
+    try:
+        result = client.rpc(
+            "cancel_venue_booking",
+            {"p_booking_id": booking_id, "p_reason": cancellation.reason},
+        ).execute()
+    except PostgrestAPIError as error:
+        if error.code == "42501":
+            raise AuthError("Only Event Coordinators can cancel venue bookings.", status_code=403) from error
+        if error.code in {"P0002", "22P02"}:
+            raise AuthError("Venue booking was not found for an event assigned to you.", status_code=404) from error
+        if error.code == "22023":
+            raise AuthError("Give a reason for cancelling this booking.", status_code=400) from error
+        if error.code == "P0001":
+            # Written for the Coordinator, e.g. "only while the event is in Planning".
+            raise AuthError(error.message, status_code=409) from error
+        raise AuthError("Unable to cancel the venue booking.", status_code=502) from error
+
+    booking = result.data
+    if not isinstance(booking, dict) or booking.get("status") != "CANCELLED":
+        raise AuthError("Unable to cancel the venue booking.", status_code=502)
+
+    session = f" ({booking['session_name']})" if booking.get("session_name") else ""
+    notify_role(
+        Role.VENUE_STAFF.value,
+        "venue_booking_cancelled",
+        "Venue booking cancelled",
+        f"The booking of '{booking.get('venue_name') or 'a venue'}' for "
+        f"'{booking.get('event_name') or 'an event'}'{session} was cancelled by "
+        f"the Coordinator. Reason: {booking.get('cancellation_reason')}",
+        booking.get("event_id"),
+    )
+    return booking

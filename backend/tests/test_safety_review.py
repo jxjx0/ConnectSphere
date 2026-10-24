@@ -416,6 +416,55 @@ def test_request_is_refused_until_each_session_needing_equipment_has_a_request(m
     assert updates == []
 
 
+def test_a_cancelled_equipment_request_counts_as_none(monkeypatch):
+    """T7-282: the session must request equipment again."""
+    _, updates = fake_database(monkeypatch, {
+        "events": [PLANNING_EVENT],
+        "venue_bookings": BOTH_VENUES,
+        "event_sessions": SESSIONS_NEEDING_EQUIPMENT,
+        "equipment_requests": [{"status": "Cancelled", "session_id": "ses-main"}],
+    })
+
+    with pytest.raises(AuthError) as caught:
+        safety_review_service.request_safety_check(EVENT_ID, "token")
+
+    assert "(Main programme has none)" in caught.value.message
+    assert updates == []
+
+
+def test_affected_equipment_requests_block_the_safety_check(monkeypatch):
+    """T7-281: a request whose session moved must be cancelled and requested again."""
+    _, updates = fake_database(monkeypatch, {
+        "events": [PLANNING_EVENT],
+        "venue_bookings": BOTH_VENUES,
+        "event_sessions": SESSIONS_NEEDING_EQUIPMENT,
+        "equipment_requests": [{"status": "Affected by Session Change", "session_id": "ses-main"}],
+    })
+
+    with pytest.raises(AuthError) as caught:
+        safety_review_service.request_safety_check(EVENT_ID, "token")
+
+    assert "affected by a session change" in caught.value.message
+    assert updates == []
+
+
+def test_venue_bookings_affected_by_a_session_change_block_the_safety_check(monkeypatch):
+    _, updates = fake_database(monkeypatch, {
+        "events": [PLANNING_EVENT],
+        "venue_bookings": [
+            {"status": "AFFECTED_BY_SESSION_CHANGE", "session_id": "ses-main"},
+            {"status": "APPROVED", "session_id": "ses-a"},
+        ],
+        "event_sessions": SESSIONS_NEEDING_EQUIPMENT,
+    })
+
+    with pytest.raises(AuthError) as caught:
+        safety_review_service.request_safety_check(EVENT_ID, "token")
+
+    assert "every venue booking must be approved first" in caught.value.message
+    assert updates == []
+
+
 def test_sessions_without_equipment_needs_do_not_need_a_request(monkeypatch):
     """Breakout A lists no equipment, so only Main programme needs a request."""
     _, updates = fake_database(monkeypatch, {

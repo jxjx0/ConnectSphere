@@ -11,6 +11,7 @@ import config
 from models.event import (
     Event,
     EventChangeRequest,
+    EventChangeRequestApproval,
     EventChangeRequestDecision,
     EventChangeRequestSubmit,
     EventStatus,
@@ -47,6 +48,23 @@ def _in_days(days: int, hours: int = 0) -> str:
     ).isoformat()
 
 
+MAIN_SESSION_ID = "55555555-5555-5555-5555-555555555555"
+
+
+def valid_session(**overrides) -> dict:
+    return {
+        "session_id": MAIN_SESSION_ID,
+        "name": "Main programme",
+        "start_time": _in_days(30),
+        "end_time": _in_days(30, hours=8),
+        "expected_attendance": 120,
+        "location_preference": "Central",
+        "layout_preference": "Theatre",
+        "equipment_requirements": None,
+        **overrides,
+    }
+
+
 def valid_change_request() -> dict:
     return {
         "name": "Annual Client Summit",
@@ -55,13 +73,8 @@ def valid_change_request() -> dict:
         "purpose": "Client relationship building",
         "category": "conference",
         "category_other": None,
-        "start_time": _in_days(30),
-        "end_time": _in_days(30, hours=8),
-        "expected_attendance": 120,
-        "location_preference": "Central",
-        "layout_preference": "Theatre",
-        "accessibility_requirements": "NIL",
-        "equipment_requirements": "Nil",
+        "accessibility_requirements": None,
+        "sessions": [valid_session()],
     }
 
 
@@ -106,19 +119,22 @@ class FakeQuery:
 
 
 def _event_row(status="under_review") -> dict:
-    event_details = valid_change_request()
-    event_details.pop("reason_for_change")
-    event_details["accessibility_requirements"] = None
-    event_details["equipment_requirements"] = None
     return Event(
         id=EVENT_ID,
         organiser_id=ORGANISER_ID,
         status=status,
-        **event_details,
+        name="Annual Client Summit",
+        description="A full-day summit for our regional clients.",
+        purpose="Client relationship building",
+        category="conference",
+        start_time=_in_days(30),
+        end_time=_in_days(30, hours=8),
+        expected_attendance=120,
     ).model_dump(mode="json")
 
 
 def _change_request_row(status="pending") -> dict:
+    session = valid_session()
     return EventChangeRequest(
         id="44444444-4444-4444-4444-444444444444",
         event_id=EVENT_ID,
@@ -129,20 +145,26 @@ def _change_request_row(status="pending") -> dict:
         rejection_reason="The revised date conflicts with the venue booking."
         if status == "rejected"
         else None,
-        **valid_change_request(),
+        name="Annual Client Summit",
+        description="A full-day summit for our regional clients.",
+        reason_for_change="The venue can only host us on the revised date.",
+        purpose="Client relationship building",
+        category="conference",
+        start_time=session["start_time"],
+        end_time=session["end_time"],
+        expected_attendance=session["expected_attendance"],
+        sessions=[{"id": "66666666-6666-6666-6666-666666666666", **session}],
     ).model_dump(mode="json")
 
 
 # Model validation ---------------------------------------------------------
 
-# Checks that a valid change request can be created and that "NIL"
-# requirements are converted to None.
-def test_valid_change_request_accepts_reason_and_nil_requirements():
+def test_valid_change_request_keeps_reason_and_sessions():
     request = EventChangeRequestSubmit(**valid_change_request())
 
     assert request.reason_for_change.startswith("The venue")
     assert request.accessibility_requirements is None
-    assert request.equipment_requirements is None
+    assert [session.session_id for session in request.sessions] == [MAIN_SESSION_ID]
 
 # Tests that name, description, purpose and reason for change cannot
 # just contain spaces.
@@ -154,56 +176,74 @@ def test_required_text_fields_reject_blank_values(field):
     with pytest.raises(ValidationError):
         EventChangeRequestSubmit(**payload)
 
-# Checks that category, start time, end time, and expected attendance 
-# cannot be missing.
-@pytest.mark.parametrize(
-    ("field", "empty_value"),
-    [
-        ("category", ""),
-        ("start_time", ""),
-        ("end_time", ""),
-        ("expected_attendance", None),
-    ],
-)
-def test_change_request_rejects_missing_required_structured_fields(
-    field, empty_value
-):
+
+def test_blank_optional_text_means_none():
     payload = valid_change_request()
-    payload[field] = empty_value
+    payload["accessibility_requirements"] = "   "
+    payload["sessions"] = [valid_session(location_preference=" ", layout_preference="")]
 
-    with pytest.raises(ValidationError):
-        EventChangeRequestSubmit(**payload)
-
-
-@pytest.mark.parametrize(
-    "field",
-    [
-        "location_preference",
-        "layout_preference",
-        "accessibility_requirements",
-        "equipment_requirements",
-    ],
-)
-
-# Tests that " " is invalid, " nIl " is accepted and converted to None
-def test_optional_requirement_fields_accept_nil_but_reject_blank(field):
-    payload = valid_change_request()
-    payload[field] = "   "
-
-    with pytest.raises(ValidationError):
-        EventChangeRequestSubmit(**payload)
-
-    payload[field] = " nIl "
     request = EventChangeRequestSubmit(**payload)
-    assert getattr(request, field) is None
 
-# Makes sure end time < start time
-def test_change_request_rejects_end_time_before_start_time():
+    assert request.accessibility_requirements is None
+    assert request.sessions[0].location_preference is None
+    assert request.sessions[0].layout_preference is None
+
+
+# --- Sessions (T7-280) -----------------------------------------------------
+
+def test_a_change_request_keeps_at_least_one_session():
     payload = valid_change_request()
-    payload["end_time"] = _in_days(29)
+    payload["sessions"] = []
 
-    with pytest.raises(ValidationError, match="End time must be after the start time"):
+    with pytest.raises(ValidationError, match="Keep at least one session"):
         EventChangeRequestSubmit(**payload)
+
+
+def test_a_session_cannot_be_listed_twice():
+    payload = valid_change_request()
+    payload["sessions"] = [valid_session(), valid_session(name="Copy")]
+
+    with pytest.raises(ValidationError, match="only be listed once"):
+        EventChangeRequestSubmit(**payload)
+
+
+def test_new_sessions_can_be_added_alongside_kept_ones():
+    payload = valid_change_request()
+    payload["sessions"] = [
+        valid_session(),
+        valid_session(session_id=None, name="Breakout A", expected_attendance=40),
+        valid_session(session_id=None, name="Breakout B", expected_attendance=40),
+    ]
+
+    request = EventChangeRequestSubmit(**payload)
+
+    assert [session.session_id for session in request.sessions] == [MAIN_SESSION_ID, None, None]
+
+
+def test_a_session_must_end_after_it_starts():
+    payload = valid_change_request()
+    payload["sessions"] = [valid_session(end_time=_in_days(29))]
+
+    with pytest.raises(ValidationError, match="Main programme: End time must be after the start time"):
+        EventChangeRequestSubmit(**payload)
+
+
+def test_a_new_session_must_start_in_the_future():
+    payload = valid_change_request()
+    payload["sessions"] = [valid_session(session_id=None, start_time=_in_days(-1), end_time=_in_days(-1, hours=2))]
+
+    with pytest.raises(ValidationError, match="Start time must be in the future"):
+        EventChangeRequestSubmit(**payload)
+
+
+def test_a_kept_session_that_has_started_is_left_to_the_database():
+    """Unchanged started sessions are allowed; the database compares them."""
+    payload = valid_change_request()
+    payload["sessions"] = [valid_session(start_time=_in_days(-1), end_time=_in_days(1))]
+
+    request = EventChangeRequestSubmit(**payload)
+
+    assert request.sessions[0].session_id == MAIN_SESSION_ID
 
 
 # Tests if event category is "other", category_other cannot be blank.
@@ -342,12 +382,12 @@ def test_service_sends_normalized_change_and_reason_to_atomic_rpc(monkeypatch):
         "organiser-token", ORGANISER_ID, EVENT_ID, request
     )
 
-    assert captured["function_name"] == "submit_event_change_request"
+    assert captured["function_name"] == "submit_session_change_request"
     assert captured["params"] == {
         "p_event_id": EVENT_ID,
-        "p_organiser_id": ORGANISER_ID,
         "p_changes": request.model_dump(mode="json"),
     }
+    assert captured["params"]["p_changes"]["sessions"][0]["session_id"] == MAIN_SESSION_ID
 
 
 @pytest.mark.parametrize(
@@ -404,6 +444,29 @@ def test_service_translates_database_rule_rejections(
     assert caught.value.status_code == status_code
     assert caught.value.message == expected_message
 
+def test_service_shows_session_rule_rejections_as_written(monkeypatch):
+    message = "Main programme: This session has already started and cannot be changed"
+
+    class FakeRPC:
+        def execute(self):
+            raise APIError({"message": message, "code": "22023", "details": None, "hint": None})
+
+    monkeypatch.setattr(
+        config,
+        "get_user_client",
+        lambda access_token: SimpleNamespace(rpc=lambda function_name, params: FakeRPC()),
+    )
+
+    with pytest.raises(AuthError) as caught:
+        event_service.submit_event_change_request(
+            "organiser-token", ORGANISER_ID, EVENT_ID,
+            EventChangeRequestSubmit(**valid_change_request()),
+        )
+
+    assert caught.value.status_code == 400
+    assert caught.value.message == message
+
+
 # Checks if event has a pending change request
 @pytest.mark.parametrize("pending_rows, expected", [([], False), ([{"event_id": EVENT_ID}], True)])
 def test_event_detail_reports_if_change_request_is_pending(
@@ -429,6 +492,9 @@ def test_event_detail_reports_if_change_request_is_pending(
 
     assert event.has_pending_change_request is expected
     assert (event.change_request is not None) is expected
+    assert ("select", ("*, sessions:event_change_request_sessions(*)",)) in calls
+    if expected:
+        assert event.change_request.sessions[0].session_id == MAIN_SESSION_ID
     assert ("eq", "organiser_id", ORGANISER_ID) in calls
     assert ("order", "created_at", True) in calls
 
@@ -464,14 +530,87 @@ def test_coordinator_review_calls_atomic_approval_rpc(monkeypatch):
     )
 
     result = event_service.review_assigned_change_request(
-        "coordinator-token", COORDINATOR.id, EVENT_ID, "approve"
+        "coordinator-token", COORDINATOR.id, EVENT_ID, "approve",
+        approval=EventChangeRequestApproval(cancel_booking_ids=["booking-1"]),
     )
 
+    # T7-281: approving applies the sessions and cancels the ticked bookings.
     assert captured == {
-        "function_name": "approve_event_change_request",
-        "params": {"p_event_id": EVENT_ID},
+        "function_name": "approve_session_change_request",
+        "params": {"p_event_id": EVENT_ID, "p_cancel_booking_ids": ["booking-1"]},
     }
     assert result[1].status == "approved"
+
+
+def test_approval_without_ticked_bookings_cancels_none(monkeypatch):
+    captured = {}
+
+    class FakeRPC:
+        def execute(self):
+            return SimpleNamespace(data={
+                "event": _event_row("planning"),
+                "change_request": _change_request_row("approved"),
+            })
+
+    def rpc(function_name, params):
+        captured.update(params=params)
+        return FakeRPC()
+
+    monkeypatch.setattr(config, "get_user_client", lambda access_token: SimpleNamespace(rpc=rpc))
+
+    event_service.review_assigned_change_request("coordinator-token", COORDINATOR.id, EVENT_ID, "approve")
+
+    assert captured["params"]["p_cancel_booking_ids"] == []
+
+
+def test_venue_staff_are_told_about_bookings_cancelled_on_approval(monkeypatch):
+    sent = []
+
+    class FakeRPC:
+        def execute(self):
+            return SimpleNamespace(data={
+                "event": _event_row("planning"),
+                "change_request": _change_request_row("approved"),
+                "cancelled_bookings": [
+                    {"booking_id": "booking-1", "venue_name": "Hall A", "session_name": "Breakout A"},
+                ],
+            })
+
+    monkeypatch.setattr(
+        config, "get_user_client",
+        lambda access_token: SimpleNamespace(rpc=lambda name, params: FakeRPC()),
+    )
+    monkeypatch.setattr(
+        event_service.notification_service, "notify_role",
+        lambda role, notification_type, title, body, event_id=None: sent.append((role, notification_type, body, event_id)),
+    )
+
+    event_service.review_assigned_change_request("coordinator-token", COORDINATOR.id, EVENT_ID, "approve")
+
+    ((role, notification_type, body, event_id),) = sent
+    assert role == "venue_staff"
+    assert notification_type == "venue_booking_cancelled"
+    assert "Hall A" in body and "Breakout A" in body and "Annual Client Summit" in body
+    assert event_id == EVENT_ID
+
+
+def test_session_rule_rejections_on_approval_are_shown_as_written(monkeypatch):
+    message = "Breakout A: This session has already started and cannot be changed"
+
+    class FakeRPC:
+        def execute(self):
+            raise APIError({"message": message, "code": "22023", "details": None, "hint": None})
+
+    monkeypatch.setattr(
+        config, "get_user_client",
+        lambda access_token: SimpleNamespace(rpc=lambda name, params: FakeRPC()),
+    )
+
+    with pytest.raises(AuthError) as caught:
+        event_service.review_assigned_change_request("coordinator-token", COORDINATOR.id, EVENT_ID, "approve")
+
+    assert caught.value.status_code == 409
+    assert caught.value.message == message
 
 
 def test_coordinator_review_calls_atomic_rejection_rpc_with_reason(monkeypatch):
@@ -526,7 +665,7 @@ def test_coordinator_can_reject_change_request_and_notify_organiser(
     monkeypatch.setattr(
         event_service,
         "review_assigned_change_request",
-        lambda access_token, coordinator_id, event_id, decision, rejection: (
+        lambda access_token, coordinator_id, event_id, decision, rejection, approval: (
             reviewed_event,
             reviewed_request,
         ),
@@ -693,6 +832,50 @@ def test_approving_change_request_notifies_organiser_changes_were_applied(
         "approved and applied."
     )
     assert event_id == EVENT_ID
+
+
+def test_approve_route_passes_the_ticked_bookings(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+    captured = {}
+
+    def review(access_token, coordinator_id, event_id, decision, rejection, approval):
+        captured["approval"] = approval
+        return Event(**_event_row("planning")), EventChangeRequest(**_change_request_row("approved"))
+
+    monkeypatch.setattr(event_service, "review_assigned_change_request", review)
+    monkeypatch.setattr("routes.events.notification_service.notify", lambda *args: None)
+
+    response = client.post(
+        f"/events/review/{EVENT_ID}/change-request/approve",
+        json={"cancel_booking_ids": ["booking-1", "booking-2"]},
+        headers={"Authorization": "Bearer coordinator-token"},
+    )
+
+    assert response.status_code == 200
+    assert captured["approval"].cancel_booking_ids == ["booking-1", "booking-2"]
+
+
+def test_organiser_is_told_when_a_confirmed_event_returns_to_planning(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+    approved = EventChangeRequest(**{
+        **_change_request_row("approved"), "event_status_before_request": "confirmed",
+    })
+    monkeypatch.setattr(
+        event_service, "review_assigned_change_request",
+        lambda *args: (Event(**_event_row("planning")), approved),
+    )
+    captured = {}
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: captured.setdefault("notification", args),
+    )
+
+    client.post(
+        f"/events/review/{EVENT_ID}/change-request/approve",
+        headers={"Authorization": "Bearer coordinator-token"},
+    )
+
+    assert "back in Planning and needs a new safety check" in captured["notification"][3]
 
 
 def test_rejecting_change_request_notification_names_the_event(

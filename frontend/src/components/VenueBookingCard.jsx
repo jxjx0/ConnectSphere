@@ -9,6 +9,7 @@ function getStatusClass(status) {
     case 'PENDING_VENUE_APPROVAL':
       return styles.pending
     case 'AFFECTED_BY_UNAVAILABILITY':
+    case 'AFFECTED_BY_SESSION_CHANGE':
     case 'REJECTED':
       return styles.rejected
     default:
@@ -77,6 +78,12 @@ export default function VenueBookingCard({ booking, validationError, actions }) 
         </p>
       )}
 
+      {booking.status === 'AFFECTED_BY_SESSION_CHANGE' && (
+        <p className="form-error" role="status">
+          Its session was moved or removed by an approved change request.
+        </p>
+      )}
+
       {/* Validation Failure Banner */}
       {validationError && (
         <div className={`form-error ${styles.rejectionError}`}>
@@ -88,6 +95,12 @@ export default function VenueBookingCard({ booking, validationError, actions }) 
         <div className={`form-error ${styles.rejectionError}`}>
           <strong>Rejection Reason:</strong> {booking.rejection_reason}
         </div>
+      )}
+
+      {booking.status === 'CANCELLED' && booking.cancellation_reason && (
+        <p className={`note ${styles.rejectionError}`}>
+          <strong>Cancellation reason:</strong> {booking.cancellation_reason}
+        </p>
       )}
 
       {actions && <div className={`form-actions ${styles.actions}`}>{actions}</div>}

@@ -42,6 +42,13 @@ export function reviewEquipmentRequest(requestId, decision, token) {
   })
 }
 
+export function cancelEquipmentRequest(requestId, reason, token) {
+  return request(`/equipment-requests/${requestId}/cancel`, token, {
+    method: 'PATCH',
+    body: { reason },
+  })
+}
+
 export function submitEquipmentRequest(equipmentRequest, token) {
   return request('/equipment-requests', token, {
     method: 'POST',

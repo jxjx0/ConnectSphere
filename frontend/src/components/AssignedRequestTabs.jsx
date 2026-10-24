@@ -72,9 +72,11 @@ const TABS = [
   },
 ]
 
-// Helper function to derive the venue status badge
-function getVenueBadge(venueBookings) {
-  if (!venueBookings || venueBookings.length === 0) {
+// Helper function to derive the venue status badge. Cancelled bookings
+// hold no venue, so they are left out (T7-282).
+function getVenueBadge(allVenueBookings) {
+  const venueBookings = (allVenueBookings || []).filter((b) => b.status !== 'CANCELLED')
+  if (venueBookings.length === 0) {
     return {
       label: 'No Venue',
       style: {
@@ -85,7 +87,7 @@ function getVenueBadge(venueBookings) {
     }
   }
 
-  if (venueBookings.some((b) => b.status === 'AFFECTED_BY_UNAVAILABILITY')) {
+  if (venueBookings.some((b) => ['AFFECTED_BY_UNAVAILABILITY', 'AFFECTED_BY_SESSION_CHANGE'].includes(b.status))) {
     return {
       label: 'Venue Affected',
       style: {
@@ -194,10 +196,22 @@ function getSafetyBadge(event) {
 // An event has one equipment request per session (T7-279). Any pending
 // request makes the event pending, then any rejected one makes it rejected.
 function getEquipmentBadge(equipmentRequests) {
-  const statuses = (equipmentRequests || []).map(
-    (request) => request.status?.toLowerCase(),
-  )
+  // Cancelled requests are left out (T7-282).
+  const statuses = (equipmentRequests || [])
+    .map((request) => request.status?.toLowerCase())
+    .filter((status) => status !== 'cancelled')
   if (statuses.length === 0) return null
+  // A session moved or was removed (T7-281); the request must be redone.
+  if (statuses.includes('affected by session change')) {
+    return {
+      label: 'Equipment Affected',
+      style: {
+        backgroundColor: 'var(--danger-faint)',
+        color: 'var(--danger)',
+        borderColor: 'var(--danger)',
+      },
+    }
+  }
   const status = statuses.every((value) => value === 'approved')
     ? 'approved'
     : statuses.includes('rejected') && !statuses.includes('pending technical approval')
