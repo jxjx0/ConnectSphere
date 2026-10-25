@@ -8,6 +8,8 @@ import config
 from models.event import (
     Event,
     EventArrangement,
+    EventCancellationRequest,
+    EventCancellationRequestSubmit,
     EventChangeRequest,
     EventChangeRequestApproval,
     EventChangeRequestDecision,
@@ -117,6 +119,20 @@ def _clarification_database_error(error: PostgrestAPIError) -> AuthError:
     }:
         return AuthError(
             "Clarification history is not available yet. Apply database/event_clarifications.sql, then refresh the API schema cache if needed.",
+            status_code=503,
+        )
+    return _database_error(error)
+
+
+def _cancellation_database_error(error: PostgrestAPIError) -> AuthError:
+    """Give a direct setup hint when the cancellation-request migration is missing."""
+    if error.code in {
+        "42P01", "42703", "PGRST202", "PGRST204", "PGRST205", "42883"
+    }:
+        return AuthError(
+            "Event cancellation requests are not available yet. Apply "
+            "database/event_cancellation_requests.sql, then refresh the API "
+            "schema cache if needed.",
             status_code=503,
         )
     return _database_error(error)
@@ -303,7 +319,97 @@ def get_my_event(access_token: str, organiser_id: str, event_id: str) -> Event:
         raise AuthError("Event request was not found.", status_code=404)
     event = _with_coordinator_names(client, [Event(**result.data[0])])[0]
     event = _with_change_request(client, [event])[0]
+    event = _with_cancellation_request(client, [event])[0]
     return _with_sessions(client, [event])[0]
+
+
+def _with_cancellation_request(client, events: list[Event]) -> list[Event]:
+    """Attach each event's latest cancellation request and pending state."""
+    if not events:
+        return events
+    try:
+        result = (
+            client.table("event_cancellation_requests")
+            .select("*")
+            .in_("event_id", [event.id for event in events])
+            .order("created_at", desc=True)
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise _cancellation_database_error(error) from error
+
+    latest_by_event = {}
+    for row in result.data:
+        latest_by_event.setdefault(
+            row["event_id"], EventCancellationRequest(**row)
+        )
+    return [
+        event.model_copy(
+            update={
+                "cancellation_request": latest_by_event.get(event.id),
+                "has_pending_cancellation_request": (
+                    latest_by_event.get(event.id) is not None
+                    and latest_by_event[event.id].status == "pending"
+                ),
+            }
+        )
+        for event in events
+    ]
+
+
+def submit_event_cancellation_request(
+    access_token: str,
+    organiser_id: str,
+    event_id: str,
+    request: EventCancellationRequestSubmit,
+) -> EventCancellationRequest:
+    """Persist a cancellation request and hold the event's previous status."""
+    client = config.get_user_client(access_token)
+    try:
+        result = client.rpc(
+            "submit_event_cancellation_request",
+            {
+                "p_event_id": event_id,
+                "p_reason": request.reason,
+            },
+        ).execute()
+        cancellation_id = result.data
+        saved = (
+            client.table("event_cancellation_requests")
+            .select("*")
+            .eq("id", cancellation_id)
+            .eq("organiser_id", organiser_id)
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        message = str(error).lower()
+        if "pending cancellation request" in message:
+            raise AuthError(
+                "A cancellation request is already waiting for review.",
+                status_code=409,
+            ) from error
+        if "event cannot be cancelled" in message:
+            raise AuthError(
+                "Cancellation requests are only available for events in "
+                "planning, awaiting clarification, awaiting a safety check, "
+                "with a change request or confirmed.",
+                status_code=409,
+            ) from error
+        if "event request was not found" in message:
+            raise AuthError("Event request was not found.", status_code=404) from error
+        if "only the signed-in organiser" in message:
+            raise AuthError(
+                "Only the event Organiser can request cancellation.",
+                status_code=403,
+            ) from error
+        raise _cancellation_database_error(error) from error
+
+    if not saved.data:
+        raise AuthError(
+            "The cancellation request was saved but its details could not be loaded.",
+            status_code=502,
+        )
+    return EventCancellationRequest(**saved.data[0])
 
 
 def _with_change_request(client, events: list[Event]) -> list[Event]:

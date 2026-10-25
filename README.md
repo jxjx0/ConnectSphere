@@ -174,6 +174,13 @@ availability is tracked by equipment row as an exclusive resource; it cannot
 verify that a requested quantity greater than one corresponds to enough
 physical units. Other SQL files in `database` document the existing schema.
 
+Before using the event cancellation request form, apply
+`database/event_cancellation_requests.sql` in the Supabase SQL Editor. It
+stores an Organiser's reason and previous event status, then atomically changes
+the event to `cancellation_requested`. The Coordinator's approval or rejection
+workflow is handled separately. If the original cancellation migration was
+already applied, apply `database/event_cancellation_request_status_transition.sql`.
+
 ---
 
 ## Running the app

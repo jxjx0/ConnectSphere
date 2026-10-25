@@ -85,7 +85,10 @@ create table public.events (
             'confirmed',
             'completed',
             'change_requested',
-            'awaiting_clarification'
+            'awaiting_clarification',
+            'awaiting_safety_check',
+            'cancellation_requested',
+            'cancelled'
         ))
 );
 

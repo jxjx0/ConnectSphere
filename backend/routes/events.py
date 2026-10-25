@@ -10,6 +10,7 @@ from models.event import (
     EventChangeRequestApproval,
     EventChangeRequestDecision,
     EventChangeRequestSubmit,
+    EventCancellationRequestSubmit,
     EventClarificationRequest,
     EventClarificationResponse,
     EventDraftRequest,
@@ -117,6 +118,54 @@ def get_my_event(event_id):
     _require_organiser()
     event = event_service.get_my_event(g.access_token, g.user_id, event_id)
     return jsonify({"event": event.model_dump(mode="json")}), 200
+
+
+@events_bp.post("/<event_id>/cancellation-requests")
+@require_auth
+def submit_event_cancellation_request(event_id):
+    try:
+        cancellation_request = EventCancellationRequestSubmit(
+            **(request.get_json(silent=True) or {})
+        )
+    except ValidationError as error:
+        return jsonify({"errors": _validation_messages(error)}), 400
+
+    organiser = _require_organiser()
+    saved_request = event_service.submit_event_cancellation_request(
+        g.access_token, g.user_id, event_id, cancellation_request
+    )
+    _notify_cancellation_request_submitted(
+        organiser, event_id, cancellation_request.reason
+    )
+    return jsonify(
+        {"cancellation_request": saved_request.model_dump(mode="json")}
+    ), 201
+
+
+def _notify_cancellation_request_submitted(organiser, event_id, reason) -> None:
+    """Tell the event's assigned Coordinator that cancellation was requested."""
+    try:
+        event = event_service.get_my_event(g.access_token, g.user_id, event_id)
+    except AuthError:
+        logger.exception(
+            "Cancellation request for event %s was saved but its notification failed",
+            event_id,
+        )
+        return
+
+    if not event.coordinator_id:
+        return
+
+    notification_service.notify(
+        event.coordinator_id,
+        "event_cancellation_requested",
+        "Event cancellation requested",
+        (
+            f"{organiser.full_name} has requested cancellation of "
+            f"'{event.name}'. Reason: {reason}"
+        ),
+        event_id,
+    )
 
 
 @events_bp.get("/<event_id>/clarifications")

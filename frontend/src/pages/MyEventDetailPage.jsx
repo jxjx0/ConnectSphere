@@ -5,6 +5,7 @@ import {
   getMyEvent,
   getMyEventClarifications,
   respondToEventClarification,
+  submitEventCancellationRequest,
 } from '../api/events'
 import AppShell from '../components/AppShell'
 import SessionList from '../components/SessionList'
@@ -12,6 +13,7 @@ import { useAuth } from '../context/AuthContext'
 import { categoryLabel } from '../eventCategories'
 import {
   CHANGEABLE_STATUSES,
+  CANCELLABLE_STATUSES,
   formatDateRange,
   formatDateTime,
   formatSessionSummary,
@@ -39,6 +41,10 @@ export default function MyEventDetailPage() {
   const [responseText, setResponseText] = useState('')
   const [responseError, setResponseError] = useState('')
   const [responding, setResponding] = useState(false)
+  const [cancellationReason, setCancellationReason] = useState('')
+  const [cancellationError, setCancellationError] = useState('')
+  const [cancellationFormOpen, setCancellationFormOpen] = useState(false)
+  const [cancellationSubmitting, setCancellationSubmitting] = useState(false)
   const [historyError, setHistoryError] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -73,6 +79,33 @@ export default function MyEventDetailPage() {
       setResponseError(caught.message)
     } finally {
       setResponding(false)
+    }
+  }
+
+  async function submitCancellationRequest(eventTarget) {
+    eventTarget.preventDefault()
+    const reason = cancellationReason.trim()
+    if (!reason) {
+      setCancellationError('A reason for cancellation is required.')
+      return
+    }
+
+    setCancellationError('')
+    setCancellationSubmitting(true)
+    try {
+      const data = await submitEventCancellationRequest(eventId, reason, token)
+      setEvent((current) => ({
+        ...current,
+        status: 'cancellation_requested',
+        cancellation_request: data.cancellation_request,
+        has_pending_cancellation_request: true,
+      }))
+      setCancellationReason('')
+      setCancellationFormOpen(false)
+    } catch (caught) {
+      setCancellationError(caught.message)
+    } finally {
+      setCancellationSubmitting(false)
     }
   }
 
@@ -122,18 +155,20 @@ export default function MyEventDetailPage() {
         </header>
 
         <section className="progress" aria-label="Request progress">
-          <ol className="track">
-            {progress.steps.map((step) => (
-              <li
-                key={step.status}
-                className={`track__step track__step--${step.state}`}
-                aria-current={step.state === 'current' ? 'step' : undefined}
-              >
-                <span className="track__dot" aria-hidden="true" />
-                <span className="track__label">{step.label}</span>
-              </li>
-            ))}
-          </ol>
+          {!['cancellation_requested', 'cancelled'].includes(event.status) && (
+            <ol className="track">
+              {progress.steps.map((step) => (
+                <li
+                  key={step.status}
+                  className={`track__step track__step--${step.state}`}
+                  aria-current={step.state === 'current' ? 'step' : undefined}
+                >
+                  <span className="track__dot" aria-hidden="true" />
+                  <span className="track__label">{step.label}</span>
+                </li>
+              ))}
+            </ol>
+          )}
 
           {progress.notice && <p className="notice">{progress.notice}</p>}
 
@@ -282,6 +317,72 @@ export default function MyEventDetailPage() {
             >
               Request for change
             </Link>
+          ) : null}
+        </section>
+
+        <section className="stack stack--tight">
+          {event.has_pending_cancellation_request ? (
+            <>
+              <h2 className="section-title">Cancellation request</h2>
+              <p className="notice" role="status">
+                Your cancellation request is waiting for the Coordinator.
+              </p>
+              <p><strong>Reason:</strong> {event.cancellation_request.reason}</p>
+            </>
+          ) : CANCELLABLE_STATUSES.includes(event.status) ? (
+            <>
+              {cancellationFormOpen ? (
+                <>
+                  <h2 className="section-title">Request cancellation</h2>
+                  <form
+                    className="stack stack--tight"
+                    onSubmit={submitCancellationRequest}
+                  >
+                    <label className="field">
+                      <span className="field__label">Reason for cancellation</span>
+                      <textarea
+                        value={cancellationReason}
+                        onChange={(change) => {
+                          setCancellationReason(change.target.value)
+                          setCancellationError('')
+                        }}
+                        rows={3}
+                        required
+                      />
+                    </label>
+                    {cancellationError && (
+                      <p className="form-error" role="alert">
+                        {cancellationError}
+                      </p>
+                    )}
+                    <div className="form-actions">
+                      <button className="button" disabled={cancellationSubmitting}>
+                        {cancellationSubmitting ? 'Submitting…' : 'Submit cancellation request'}
+                      </button>
+                      <button
+                        className="button button--secondary"
+                        type="button"
+                        disabled={cancellationSubmitting}
+                        onClick={() => {
+                          setCancellationFormOpen(false)
+                          setCancellationError('')
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </>
+              ) : (
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  onClick={() => setCancellationFormOpen(true)}
+                >
+                  Request cancellation
+                </button>
+              )}
+            </>
           ) : null}
         </section>
 

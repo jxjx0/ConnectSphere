@@ -4,7 +4,8 @@
 --
 -- Agreed statuses:
 --   draft, under_review, rejected, planning, confirmed, completed,
---   change_requested, awaiting_clarification
+--   change_requested, awaiting_clarification, awaiting_safety_check,
+--   cancellation_requested, cancelled
 --
 -- Design notes:
 --   * 'submitted' is gone: a request goes straight to 'under_review' when
@@ -12,7 +13,9 @@
 --   * 'approved' is gone: a Coordinator approving a request moves it to
 --     'planning'. 'approved' had been added to the live database by hand
 --     and the backend could not read those rows.
---   * 'cancelled' is not part of the supported lifecycle.
+--   * Cancellation is requested by moving the event to
+--     'cancellation_requested'; the Coordinator later moves it to
+--     'cancelled' or restores its saved previous status.
 --   * Change requests are allowed from under_review, planning and
 --     confirmed -- every stage from submission until the event happens.
 --   * The Coordinator policies at the bottom were created directly in
@@ -36,7 +39,10 @@ alter table public.events
         'confirmed',
         'completed',
         'change_requested',
-        'awaiting_clarification'
+        'awaiting_clarification',
+        'awaiting_safety_check',
+        'cancellation_requested',
+        'cancelled'
     ));
 
 alter table public.events alter column status set default 'under_review';

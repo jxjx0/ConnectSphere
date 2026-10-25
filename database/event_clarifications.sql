@@ -5,7 +5,8 @@
 alter table public.events drop constraint if exists events_status_valid;
 alter table public.events add constraint events_status_valid check (status in (
     'draft', 'under_review', 'rejected', 'planning', 'confirmed',
-    'completed', 'change_requested', 'awaiting_clarification'
+    'completed', 'change_requested', 'awaiting_clarification',
+    'awaiting_safety_check', 'cancellation_requested', 'cancelled'
 ));
 
 create table if not exists public.event_clarifications (
