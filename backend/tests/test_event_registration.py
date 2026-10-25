@@ -175,7 +175,37 @@ def test_organiser_can_list_their_event_arrangements(client, monkeypatch):
     }
 
 
+def test_non_organiser_cannot_list_event_arrangements(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+    response = client.get(
+        f"/events/{EVENT_ID}/arrangements",
+        headers={"Authorization": "Bearer coordinator-token"},
+    )
+    assert response.status_code == 403
+
+
 # --- Service -----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("code", "status_code", "expected_message"),
+    [
+        ("42501", 403, "You do not have permission to view the event's venue and equipment."),
+        ("XX000", 502, "Unable to load the event's venue and equipment."),
+    ],
+)
+def test_arrangement_read_failures_are_reported_plainly(
+    monkeypatch, code, status_code, expected_message
+):
+    error = APIError({"message": "boom", "code": code, "details": None, "hint": None})
+    database = FakeDatabase({("rpc:list_event_arrangements", "rpc"): error})
+    monkeypatch.setattr(config, "get_user_client", lambda access_token: database.client)
+
+    with pytest.raises(AuthError) as caught:
+        event_service.list_event_arrangements("organiser-token", EVENT_ID)
+
+    assert caught.value.status_code == status_code
+    assert caught.value.message == expected_message
 
 
 def test_service_sends_registration_to_the_database_function(monkeypatch):

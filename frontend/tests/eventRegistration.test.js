@@ -72,6 +72,10 @@ test('a new registration suggests the expected attendance, within the venue', ()
   assert.equal(registrationFormFrom(event(), []).capacity, '150')
 })
 
+test('capacity starts blank when there is nothing to suggest', () => {
+  assert.equal(registrationFormFrom(event({ expected_attendance: null }), []).capacity, '')
+})
+
 test('saved settings are shown for editing', () => {
   const saved = event({
     registration_opens_at: '2026-11-01T09:00:00',
@@ -138,6 +142,13 @@ test('the preview shows each session with its venue', () => {
   assert.equal(session.venueName, 'Community Hall')
   assert.equal(session.venueLocation, 'Campus West')
   assert.equal(session.venueConfirmed, true)
+})
+
+test('a session with no venue yet is shown without one', () => {
+  const [session] = previewSessions(event(), [])
+  assert.equal(session.venueName, null)
+  assert.equal(session.venueLocation, null)
+  assert.equal(session.venueConfirmed, false)
 })
 
 test('a confirmed event with everything approved has nothing pending', () => {
