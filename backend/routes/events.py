@@ -13,6 +13,7 @@ from models.event import (
     EventClarificationRequest,
     EventClarificationResponse,
     EventDraftRequest,
+    EventRegistrationRequest,
     EventStatus,
     EventSubmitRequest,
 )
@@ -128,6 +129,33 @@ def list_my_event_clarifications(event_id):
     return jsonify(
         {"clarifications": [item.model_dump(mode="json") for item in clarifications]}
     ), 200
+
+
+@events_bp.get("/<event_id>/arrangements")
+@require_auth
+def list_my_event_arrangements(event_id):
+    _require_organiser()
+    arrangements = event_service.list_event_arrangements(g.access_token, event_id)
+    return jsonify(
+        {"arrangements": [item.model_dump(mode="json") for item in arrangements]}
+    ), 200
+
+
+@events_bp.put("/<event_id>/registration")
+@require_auth
+def save_event_registration(event_id):
+    try:
+        registration = EventRegistrationRequest(
+            **(request.get_json(silent=True) or {})
+        )
+    except ValidationError as error:
+        return jsonify({"errors": _validation_messages(error)}), 400
+
+    _require_organiser()
+    event = event_service.save_event_registration(
+        g.access_token, g.user_id, event_id, registration
+    )
+    return jsonify({"event": event.model_dump(mode="json")}), 200
 
 
 @events_bp.post("/<event_id>/clarification-response")

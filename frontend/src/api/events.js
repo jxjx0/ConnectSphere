@@ -47,6 +47,16 @@ export function respondToEventClarification(eventId, response, token) {
   })
 }
 
+export function getMyEventArrangements(eventId, token) {
+  return request(`/events/${eventId}/arrangements`, { token })
+}
+
+export function saveEventRegistration(eventId, registration, token) {
+  return request(`/events/${eventId}/registration`, {
+    method: 'PUT', body: registration, token,
+  })
+}
+
 export function getAssignedEventRequests(token) {
   return request('/events/review', { token })
 }
