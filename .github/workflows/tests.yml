@@ -69,7 +69,7 @@ jobs:
 
   e2e:
     name: End-to-End Tests
-    needs: backend-tests  # Optional: remove this line if you want e2e to run in parallel
+    needs: backend-tests
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -84,18 +84,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"  # Caches npm packages (adjust working-directory if package.json isn't in root)
+          cache: "npm"
+          cache-dependency-path: "frontend/package-lock.json"  # Tells setup-node where to look for cache
 
       - name: Install dependencies
+        working-directory: backend
         run: |
-          # Python dependencies
-          python -m pip install --upgrade pip
-          pip install playwright
-          if [ -f backend/requirements.txt ]; then pip install -r backend/requirements.txt; fi
+          python -m pip install -r requirements.txt
           python -m playwright install --with-deps chromium
-          
-          # Node dependencies
-          npm ci
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm install
 
       - name: Start servers and run e2e tests
         run: |
@@ -109,7 +109,7 @@ jobs:
           done
 
           # 2. Start Frontend dev server on port 5173 in background
-          frontend/npm run dev > frontend.log 2>&1 &
+          (cd frontend && npm run dev) > frontend.log 2>&1 &
 
           # Wait for frontend to be ready
           for i in $(seq 1 20); do
