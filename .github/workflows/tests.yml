@@ -109,7 +109,7 @@ jobs:
           done
 
           # 2. Start Frontend dev server on port 5173 in background
-          npm run dev > frontend.log 2>&1 &
+          frontend/npm run dev > frontend.log 2>&1 &
 
           # Wait for frontend to be ready
           for i in $(seq 1 20); do
