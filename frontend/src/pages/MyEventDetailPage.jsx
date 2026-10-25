@@ -19,6 +19,7 @@ import {
   progressFor,
   readableStatus,
 } from '../eventDisplay'
+import { REGISTRATION_STATUSES } from '../eventRegistration'
 
 function Answer({ label, value, wide }) {
   return (
@@ -224,6 +225,29 @@ export default function MyEventDetailPage() {
         {/* Time, attendance, location, layout and equipment belong to
             each session (T7-276). */}
         <SessionList event={event} />
+
+        {REGISTRATION_STATUSES.includes(event.status) && (
+          <section className="stack stack--tight">
+            <h2 className="section-title">Attendee registration</h2>
+            <dl className="answers">
+              <div className="answers--paired">
+                <Answer
+                  label="Registration period"
+                  value={event.registration_opens_at && `${formatDateTime(event.registration_opens_at)} – ${formatDateTime(event.registration_closes_at)}`}
+                />
+                <Answer label="Attendee capacity" value={event.attendee_capacity} />
+              </div>
+            </dl>
+            <p className="note">
+              {event.published_at
+                ? `Published ${formatDateTime(event.published_at)}.`
+                : 'Not published yet.'}
+            </p>
+            <Link to={`/my-events/${event.id}/registration`} className="button">
+              {event.registration_opens_at ? 'Edit registration and preview' : 'Set up registration'}
+            </Link>
+          </section>
+        )}
 
         <section className="stack stack--tight">
           {event.change_request && (

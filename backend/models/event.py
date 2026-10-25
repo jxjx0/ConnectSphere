@@ -545,6 +545,10 @@ class Event(BaseModel):
     safety_status: str = "not_requested"
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    registration_opens_at: datetime | None = None
+    registration_closes_at: datetime | None = None
+    attendee_capacity: int | None = None
+    published_at: datetime | None = None
     coordinator_name: str | None = None
     has_pending_change_request: bool = False
     change_request: EventChangeRequest | None = None
@@ -600,6 +604,43 @@ class Event(BaseModel):
             })
 
         return formatted_events
+
+
+class EventRegistrationRequest(BaseModel):
+    """The body of PUT /events/<id>/registration.
+
+    publish asks for the event to be posted for attendee registration as
+    well as saved. The database decides whether the event may be published
+    and checks the rules that need the event's current values: registration
+    not yet closed, closing before the event starts, and capacity within the
+    approved venue.
+    """
+
+    registration_opens_at: datetime
+    registration_closes_at: datetime
+    attendee_capacity: int = Field(gt=0)
+    publish: bool = False
+
+    @model_validator(mode="after")
+    def validate_registration_period(self) -> "EventRegistrationRequest":
+        if _as_utc(self.registration_closes_at) <= _as_utc(self.registration_opens_at):
+            raise ValueError("Registration must close after it opens")
+        return self
+
+
+class EventArrangement(BaseModel):
+    """A venue booking or equipment request of the Organiser's own event.
+
+    kind is "venue" or "equipment". The venue fields are only filled in for
+    venue bookings.
+    """
+
+    kind: str
+    session_id: str | None = None
+    status: str
+    venue_name: str | None = None
+    venue_location: str | None = None
+    venue_capacity: int | None = None
 
 
 class EventReviewSummary(BaseModel):

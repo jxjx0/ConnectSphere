@@ -7,6 +7,7 @@ from postgrest import APIError as PostgrestAPIError
 import config
 from models.event import (
     Event,
+    EventArrangement,
     EventChangeRequest,
     EventChangeRequestApproval,
     EventChangeRequestDecision,
@@ -16,6 +17,7 @@ from models.event import (
     EventClarificationResponse,
     EventDraftRequest,
     EventOrganiser,
+    EventRegistrationRequest,
     EventReviewSummary,
     EventSession,
     EventSessionDraft,
@@ -383,6 +385,96 @@ def submit_event_change_request(
             # "Breakout A: This session has already started and cannot be changed".
             raise AuthError(error.message, status_code=400) from error
         raise _database_error(error) from error
+
+
+# Messages raised by save_event_registration in
+# database/event_registration.sql, and the status code each one deserves.
+REGISTRATION_ERRORS = {
+    "event request was not found": ("Event request was not found.", 404),
+    "cannot be set up for an event in its current status": (
+        "Registration can only be set up once the Coordinator has approved "
+        "the event request.",
+        409,
+    ),
+    "registration has already closed": (
+        "Registration has already closed and can no longer be edited.",
+        409,
+    ),
+    "must close after it opens": ("Registration must close after it opens.", 400),
+    "must close before the event starts": (
+        "Registration must close before the event starts.",
+        400,
+    ),
+    "cannot exceed the venue capacity": (
+        "Attendee capacity cannot exceed the venue capacity.",
+        400,
+    ),
+    "needs an approved venue before publishing": (
+        "Every session needs an approved venue before the event can be published.",
+        409,
+    ),
+    "equipment request must be approved before publishing": (
+        "Every equipment request must be approved before the event can be published.",
+        409,
+    ),
+    "safety officer must approve the event before publishing": (
+        "The Safety Officer must approve the event before it can be published.",
+        409,
+    ),
+}
+
+
+def save_event_registration(
+    access_token: str,
+    organiser_id: str,
+    event_id: str,
+    request: EventRegistrationRequest,
+) -> Event:
+    """Save the registration period and capacity, publishing if asked.
+
+    The database function checks ownership, event status and the rules
+    that depend on the event's current values atomically, so two saves
+    cannot interleave.
+    """
+    client = config.get_user_client(access_token)
+    try:
+        client.rpc(
+            "save_event_registration",
+            {
+                "p_event_id": event_id,
+                "p_opens_at": request.registration_opens_at.isoformat(),
+                "p_closes_at": request.registration_closes_at.isoformat(),
+                "p_capacity": request.attendee_capacity,
+                "p_publish": request.publish,
+            },
+        ).execute()
+    except PostgrestAPIError as error:
+        message = str(error).lower()
+        for fragment, (reply, status_code) in REGISTRATION_ERRORS.items():
+            if fragment in message:
+                raise AuthError(reply, status_code=status_code) from error
+        raise _database_error(error) from error
+
+    return get_my_event(access_token, organiser_id, event_id)
+
+
+def list_event_arrangements(
+    access_token: str, event_id: str
+) -> list[EventArrangement]:
+    """Return the venue bookings and equipment requests of the caller's event.
+
+    Organisers cannot read those tables directly, so a database function
+    returns only what the registration preview needs. Another Organiser's
+    event simply has no arrangements.
+    """
+    client = config.get_user_client(access_token)
+    try:
+        result = client.rpc(
+            "list_event_arrangements", {"p_event_id": event_id}
+        ).execute()
+    except PostgrestAPIError as error:
+        raise _review_read_error(error, "the event's venue and equipment") from error
+    return [EventArrangement(**row) for row in result.data or []]
 
 
 # --- Draft event requests (T7-37) ------------------------------------------
