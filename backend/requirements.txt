@@ -6,3 +6,5 @@ python-dotenv==1.2.3
 pytest==9.1.1
 pytest-cov==7.1.0
 sendgrid==6.12.5
+playwright==1.64.0
+playwright-chromium==1.44.0

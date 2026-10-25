@@ -66,3 +66,62 @@ jobs:
           TEST_RESULTS_ARTIFACT_URL: ${{ steps.test_results_artifact.outputs.artifact-url }}
           COVERAGE_ARTIFACT_URL: ${{ steps.coverage_artifact.outputs.artifact-url }}
         run: python .github/scripts/backend_test_summary.py
+
+  e2e:
+    name: End-to-End Tests
+    needs: backend-tests  # Optional: remove this line if you want e2e to run in parallel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"  # Caches npm packages (adjust working-directory if package.json isn't in root)
+
+      - name: Install dependencies
+        run: |
+          # Python dependencies
+          python -m pip install --upgrade pip
+          pip install playwright
+          if [ -f backend/requirements.txt ]; then pip install -r backend/requirements.txt; fi
+          python -m playwright install --with-deps chromium
+          
+          # Node dependencies
+          npm ci
+
+      - name: Start servers and run e2e tests
+        run: |
+          # 1. Start Python backend on port 5000 in background
+          python backend/app.py > backend.log 2>&1 &
+          
+          # Wait for backend to be ready
+          for i in $(seq 1 20); do
+            curl -fs http://localhost:5000/health > /dev/null && break
+            sleep 1
+          done
+
+          # 2. Start Frontend dev server on port 5173 in background
+          npm run dev > frontend.log 2>&1 &
+
+          # Wait for frontend to be ready
+          for i in $(seq 1 20); do
+            curl -fs http://localhost:5173 > /dev/null && break
+            sleep 1
+          done
+          
+          # 3. Run all e2e test files
+          python -m unittest discover -s e2e -v || { 
+            echo "--- Backend Log ---"
+            cat backend.log
+            echo "--- Frontend Log ---"
+            cat frontend.log
+            exit 1
+          }
