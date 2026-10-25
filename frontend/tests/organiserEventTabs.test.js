@@ -12,10 +12,12 @@ const events = [
   { id: '1', status: 'under_review' },
   { id: '2', status: 'awaiting_clarification' },
   { id: '3', status: 'change_requested' },
-  { id: '4', status: 'planning' },
-  { id: '5', status: 'confirmed' },
-  { id: '6', status: 'completed' },
-  { id: '7', status: 'rejected' },
+  { id: '4', status: 'cancellation_requested' },
+  { id: '5', status: 'planning' },
+  { id: '6', status: 'confirmed' },
+  { id: '7', status: 'completed' },
+  { id: '8', status: 'rejected' },
+  { id: '9', status: 'cancelled' },
 ]
 const drafts = [{ id: 'draft-1', status: 'draft' }]
 
@@ -27,10 +29,12 @@ test('organiser tabs cover requested statuses and rejected events', () => {
       'submitted',
       'awaiting-clarification',
       'change-requested',
+      'cancellation-requested',
       'planning',
       'confirmed',
       'completed',
       'rejected',
+      'cancelled',
     ],
   )
 })
@@ -46,10 +50,15 @@ test('status tabs filter events and return matching counts', () => {
     [events[1]],
   )
   assert.deepEqual(organiserEventsForTab('change-requested', events, drafts), [events[2]])
-  assert.deepEqual(organiserEventsForTab('planning', events, drafts), [events[3]])
-  assert.deepEqual(organiserEventsForTab('confirmed', events, drafts), [events[4]])
-  assert.deepEqual(organiserEventsForTab('completed', events, drafts), [events[5]])
-  assert.deepEqual(organiserEventsForTab('rejected', events, drafts), [events[6]])
+  assert.deepEqual(
+    organiserEventsForTab('cancellation-requested', events, drafts),
+    [events[3]],
+  )
+  assert.deepEqual(organiserEventsForTab('planning', events, drafts), [events[4]])
+  assert.deepEqual(organiserEventsForTab('confirmed', events, drafts), [events[5]])
+  assert.deepEqual(organiserEventsForTab('completed', events, drafts), [events[6]])
+  assert.deepEqual(organiserEventsForTab('rejected', events, drafts), [events[7]])
+  assert.deepEqual(organiserEventsForTab('cancelled', events, drafts), [events[8]])
   assert.equal(organiserTabCount('confirmed', events, drafts), 1)
 })
 

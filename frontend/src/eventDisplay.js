@@ -141,6 +141,11 @@ const PROGRESS_BY_STATUS = {
     notice: 'Your change request is waiting to be reviewed.',
     next: 'Your Coordinator will decide whether the change can be made.',
   },
+  cancellation_requested: {
+    step: 0,
+    notice: 'Your cancellation request is waiting for your Coordinator.',
+  },
+  cancelled: { step: 0, notice: 'This event has been cancelled.' },
   planning: {
     step: 1,
     next: 'Your Coordinator is arranging a venue and any equipment.',
@@ -160,6 +165,14 @@ const PROGRESS_BY_STATUS = {
 // The stages an Organiser may ask to change their event from. Must match
 // the check in the submit_event_change_request database function.
 export const CHANGEABLE_STATUSES = ['under_review', 'planning', 'confirmed']
+
+export const CANCELLABLE_STATUSES = [
+  'planning',
+  'awaiting_safety_check',
+  'confirmed',
+  'awaiting_clarification',
+  'change_requested',
+]
 
 export function progressFor(status) {
   const progress = PROGRESS_BY_STATUS[status] || { step: 0 }

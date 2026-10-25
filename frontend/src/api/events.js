@@ -37,6 +37,14 @@ export function getMyEvent(eventId, token) {
   return request(`/events/${eventId}`, { token })
 }
 
+export function submitEventCancellationRequest(eventId, reason, token) {
+  return request(`/events/${eventId}/cancellation-requests`, {
+    method: 'POST',
+    body: { reason },
+    token,
+  })
+}
+
 export function getMyEventClarifications(eventId, token) {
   return request(`/events/${eventId}/clarifications`, { token })
 }

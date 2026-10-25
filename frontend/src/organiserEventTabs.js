@@ -3,10 +3,12 @@ export const ORGANISER_EVENT_TABS = [
   { id: 'submitted', label: 'Submitted', statuses: ['under_review'], empty: 'You have no submitted requests waiting for review.' },
   { id: 'awaiting-clarification', label: 'Awaiting clarification', statuses: ['awaiting_clarification'], empty: 'You have no events awaiting clarification.' },
   { id: 'change-requested', label: 'Change requested', statuses: ['change_requested'], empty: 'You have no events with a change request.' },
+  { id: 'cancellation-requested', label: 'Cancellation requested', statuses: ['cancellation_requested'], empty: 'You have no cancellation requests awaiting review.' },
   { id: 'planning', label: 'Planning', statuses: ['planning'], empty: 'You have no events in planning.' },
   { id: 'confirmed', label: 'Confirmed', statuses: ['confirmed'], empty: 'You have no confirmed events.' },
   { id: 'completed', label: 'Completed', statuses: ['completed'], empty: 'You have no completed events.' },
   { id: 'rejected', label: 'Rejected', statuses: ['rejected'], empty: 'You have no rejected events.' },
+  { id: 'cancelled', label: 'Cancelled', statuses: ['cancelled'], empty: 'You have no cancelled events.' },
 ]
 
 export function organiserEventsForTab(tabId, events, drafts) {

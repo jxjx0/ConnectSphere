@@ -14,8 +14,8 @@ class EventStatus(str, Enum):
     """Every status an event row may hold.
 
     Kept in step with the events_status_valid constraint in
-    database/events.sql. Submitting a request (T7-45) always produces
-    UNDER_REVIEW; a Coordinator approving one moves it to PLANNING.
+    database/events.sql. A cancellation request saves the previous event
+    status so a rejection can restore it.
     """
 
     DRAFT = "draft"
@@ -27,6 +27,8 @@ class EventStatus(str, Enum):
     CHANGE_REQUESTED = "change_requested"
     AWAITING_CLARIFICATION = "awaiting_clarification"
     AWAITING_SAFETY_CHECK = "awaiting_safety_check"
+    CANCELLATION_REQUESTED = "cancellation_requested"
+    CANCELLED = "cancelled"
 
 
 class EventClarificationRequest(BaseModel):
@@ -51,6 +53,28 @@ class EventClarificationResponse(BaseModel):
         if not stripped:
             raise ValueError("Your response must not be blank")
         return stripped
+
+
+class EventCancellationRequestSubmit(BaseModel):
+    reason: str = Field(min_length=1)
+
+    @field_validator("reason")
+    @classmethod
+    def strip_reason(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("A cancellation reason must not be blank")
+        return stripped
+
+
+class EventCancellationRequest(BaseModel):
+    id: str
+    event_id: str
+    organiser_id: str
+    reason: str
+    previous_event_status: EventStatus
+    status: str = "pending"
+    created_at: datetime | None = None
 
 
 class EventClarification(BaseModel):
@@ -552,6 +576,8 @@ class Event(BaseModel):
     coordinator_name: str | None = None
     has_pending_change_request: bool = False
     change_request: EventChangeRequest | None = None
+    has_pending_cancellation_request: bool = False
+    cancellation_request: EventCancellationRequest | None = None
     sessions: list[EventSession] = []
 
     @classmethod
