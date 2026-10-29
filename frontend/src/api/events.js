@@ -217,3 +217,27 @@ export function requestSafetyCheck(eventId, token) {
     token,
   })
 }
+
+export function getPublishedEvents(token) {
+  return request('/attendee/events', { token })
+}
+
+export function getPublishedEvent(eventId, token) {
+  return request(`/attendee/events/${eventId}`, { token })
+}
+
+export function registerForEvent(eventId, details, token) {
+  return request(`/attendee/events/${eventId}/registrations`, {
+    method: 'POST',
+    body: details,
+    token,
+  })
+}
+
+export function getMyRegistrations(token) {
+  return request('/attendee/registrations', { token })
+}
+
+export function getMyRegistration(registrationId, token) {
+  return request(`/attendee/registrations/${registrationId}`, { token })
+}

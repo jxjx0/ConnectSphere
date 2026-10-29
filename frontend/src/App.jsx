@@ -1,7 +1,11 @@
 import { Link, Route, Routes } from 'react-router-dom'
 
 import AuthGuard from './components/AuthGuard'
-import DashboardPage from './pages/DashboardPage'
+import HomeRedirect from './components/HomeRedirect'
+import AttendeeEventDetailPage from './pages/AttendeeEventDetailPage'
+import AttendeeEventsPage from './pages/AttendeeEventsPage'
+import AttendeeRegistrationPage from './pages/AttendeeRegistrationPage'
+import MyRegistrationsPage from './pages/MyRegistrationsPage'
 import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
 import SignupAttendeePage from './pages/SignupAttendeePage'
@@ -44,7 +48,7 @@ export default function App() {
         path="/dashboard"
         element={
           <AuthGuard>
-            <DashboardPage />
+            <HomeRedirect />
           </AuthGuard>
         }
       />
@@ -234,6 +238,42 @@ export default function App() {
         element={
           <AuthGuard allowedRoles={['event_coordinator_lead']}>
             <UnassignedQueuePage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/attendee/events"
+        element={
+          <AuthGuard allowedRoles={['attendee']}>
+            <AttendeeEventsPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/attendee/events/:eventId"
+        element={
+          <AuthGuard allowedRoles={['attendee']}>
+            <AttendeeEventDetailPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/attendee/registrations"
+        element={
+          <AuthGuard allowedRoles={['attendee']}>
+            <MyRegistrationsPage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/attendee/registrations/:registrationId"
+        element={
+          <AuthGuard allowedRoles={['attendee']}>
+            <AttendeeRegistrationPage />
           </AuthGuard>
         }
       />
