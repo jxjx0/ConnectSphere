@@ -55,6 +55,7 @@ erDiagram
         int registration_capacity
         timestamptz registration_deadline
         timestamptz created_at
+        timestamptz completed_at "nullable; time of automatic completion"
     }
 
     EVENT_COORDINATOR_ASSIGNMENTS {
@@ -157,7 +158,7 @@ erDiagram
         uuid requested_by FK "must reference a profile with role=organiser"
         text change_type
         text details
-        text status "requested, approved, rejected"
+        text status "pending, approved, rejected, expired"
         text decision_reason
         uuid decided_by FK "must reference a profile with role=coordinator"
         timestamptz requested_at
@@ -176,6 +177,11 @@ erDiagram
     }
 ```
 
+T7-266 adds `events.completed_at` through `database/event_completion.sql` and the
+`expired` request status through `database/event_request_expiry.sql`. Cancellation requests use
+`previous_event_status`; change requests use `event_status_before_request` to
+preserve their original workflow states. Completion does not add or remove any
+relationships.
 
 Tentative holds are deployed with the additive `database/venue_tentative_holds.sql` script.
 An active hold has no release time and `expires_at > now()`; expiry does not delete history or depend on a scheduler.

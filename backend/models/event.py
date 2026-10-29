@@ -569,6 +569,7 @@ class Event(BaseModel):
     safety_status: str = "not_requested"
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    completed_at: datetime | None = None
     registration_opens_at: datetime | None = None
     registration_closes_at: datetime | None = None
     attendee_capacity: int | None = None
