@@ -303,6 +303,11 @@ export default function MyEventDetailPage() {
                   The Coordinator approved and applied the proposed changes.
                 </p>
               )}
+              {event.change_request.status === 'expired' && (
+                <p className="notice" role="status">
+                  This change request has expired and can no longer be reviewed.
+                </p>
+              )}
             </>
           )}
           {event.has_pending_change_request ? (
@@ -321,6 +326,14 @@ export default function MyEventDetailPage() {
         </section>
 
         <section className="stack stack--tight">
+          {event.cancellation_request?.status === 'expired' && (
+            <>
+              <h2 className="section-title">Cancellation request</h2>
+              <p className="notice" role="status">
+                This cancellation request expired when the event completed.
+              </p>
+            </>
+          )}
           {event.has_pending_cancellation_request ? (
             <>
               <h2 className="section-title">Cancellation request</h2>

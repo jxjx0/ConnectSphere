@@ -739,6 +739,12 @@ export default function EventReviewDetailPage() {
           </section>
         )}
 
+        {event.change_request?.status === 'expired' && (
+          <p className="notice" role="status">
+            This change request has expired and can no longer be reviewed.
+          </p>
+        )}
+
         {event.status === 'under_review' && (
           <section className="stack stack--tight">
             <h2 className="section-title">Review decision</h2>
