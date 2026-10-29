@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  REGISTRATION_STATUSES,
   largestAllowedCapacity,
   pendingItems,
   previewSessions,
@@ -10,6 +11,10 @@ import {
   registrationToPayload,
   validateRegistration,
 } from '../src/eventRegistration.js'
+
+test('completed events cannot open registration setup', () => {
+  assert.equal(REGISTRATION_STATUSES.includes('completed'), false)
+})
 
 const SESSION = {
   id: 'session-1',

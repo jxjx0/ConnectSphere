@@ -55,6 +55,11 @@ await assert.rejects(asUser('anon', '', save, settings()))
 await assert.rejects(saveAs(id(3)), /signed-in organiser/)
 await assert.rejects(saveAs(id(2)), /not found/)
 await assert.rejects(saveAs(id(1), { 0: id(22) }), /current status/)
+// A stale organiser page cannot save or publish registration after completion.
+await db.query("update public.events set status='completed' where id=$1", [id(21)])
+await assert.rejects(saveAs(id(1)), /current status/)
+await assert.rejects(saveAs(id(1), { 4: true }), /current status/)
+await db.query("update public.events set status='planning' where id=$1", [id(21)])
 
 // Validation.
 await assert.rejects(saveAs(id(1), { 2: '2099-11-01T09:00Z' }), /close after it opens/)
