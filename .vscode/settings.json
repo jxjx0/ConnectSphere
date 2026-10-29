@@ -1,0 +1,12 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cd C:\\\\Users\\\\Shannon\\\\Documents\\\\GitHub\\\\ConnectSphere\\\\backend; python -m pytest tests/test_event_cancellation_requests\\.py -q$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^cd C:\\\\Users\\\\Shannon\\\\Documents\\\\GitHub\\\\ConnectSphere\\\\backend; \\.\\\\venv\\\\Scripts\\\\python\\.exe -m pytest tests/test_event_cancellation_requests\\.py -q$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

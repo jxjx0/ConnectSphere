@@ -18,10 +18,12 @@ def _validation_messages(error: ValidationError) -> list[str]:
 def _bearer_token() -> str:
     """Pull the access token out of the Authorization header."""
     header = request.headers.get("Authorization", "")
-    if not header.startswith("Bearer "):
+    if not header or not header.strip():
         raise AuthError("Missing bearer token.", status_code=401)
 
-    token = header.removeprefix("Bearer ").strip()
+    token = header.strip()
+    if token.startswith("Bearer "):
+        token = token.removeprefix("Bearer ").strip()
     if not token:
         raise AuthError("Missing bearer token.", status_code=401)
     return token

@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import {
+  approveAssignedCancellationRequest,
   approveAssignedChangeRequest,
   approveAssignedEvent,
   getAssignedEventClarifications,
   getAssignedEventRequest,
+  rejectAssignedCancellationRequest,
   rejectAssignedChangeRequest,
   requestEventClarification,
   rejectAssignedEvent,
@@ -243,21 +245,57 @@ export default function EventReviewDetailPage() {
 
   async function decide(decision) {
     const reviewingChange = event.status === 'change_requested'
-    if (reviewingChange && decision === 'reject' && !rejectionReason.trim()) {
-      setDecisionError('Give a reason for rejecting this change request.')
+    const reviewingCancellation = event.status === 'cancellation_requested'
+    const trimmedReason = rejectionReason.trim()
+    if ((reviewingChange || reviewingCancellation) && !trimmedReason) {
+      setDecisionError(
+        reviewingCancellation
+          ? 'Give a decision reason before approving or rejecting this cancellation request.'
+          : 'Give a reason for rejecting this change request.'
+      )
       return
     }
-    const confirmation = reviewingChange
+    if (reviewingCancellation) {
+      const confirmation = decision === 'reject'
+        ? 'Reject this cancellation request?'
+        : 'Approve this cancellation request and cancel the event?'
+      if (!window.confirm(confirmation)) {
+        return
+      }
+    }
+
+    const rejectConfirmation = reviewingChange
       ? 'Reject this proposed change?'
       : 'Reject this event request?'
-    if (decision === 'reject' && !window.confirm(confirmation)) {
+    if (decision === 'reject' && !reviewingCancellation && !window.confirm(rejectConfirmation)) {
       return
     }
 
     setDecisionError('')
     setDeciding(true)
     try {
-      if (reviewingChange && decision === 'approve') {
+      if (reviewingCancellation) {
+        const data = decision === 'approve'
+          ? await approveAssignedCancellationRequest(eventId, trimmedReason, token)
+          : await rejectAssignedCancellationRequest(eventId, trimmedReason, token)
+        setEvent({
+          ...data.event,
+          change_request: decision === 'approve'
+            && event.change_request?.status === 'pending'
+            ? {
+                ...event.change_request,
+                status: 'expired',
+                rejection_reason: null,
+              }
+            : event.change_request,
+          has_pending_change_request: decision === 'approve'
+            && event.change_request?.status === 'pending'
+            ? false
+            : event.has_pending_change_request,
+          cancellation_request: data.cancellation_request,
+          has_pending_cancellation_request: false,
+        })
+      } else if (reviewingChange && decision === 'approve') {
         await approveAssignedChangeRequest(
           eventId,
           pendingBookingsAffectedBy(event, venueBookings)
@@ -276,7 +314,7 @@ export default function EventReviewDetailPage() {
         setVenueBookings(bookingData.bookings || [])
         setEquipmentRequests(requestData.requests || [])
       } else if (reviewingChange) {
-        const data = await rejectAssignedChangeRequest(eventId, rejectionReason.trim(), token)
+        const data = await rejectAssignedChangeRequest(eventId, trimmedReason, token)
         setEvent({
           ...data.event,
           change_request: data.change_request,
@@ -736,6 +774,76 @@ export default function EventReviewDetailPage() {
             </dl>
             <h3>Sessions</h3>
             <ProposedSessionChanges event={event} />
+          </section>
+        )}
+
+        {event.change_request && event.change_request.status !== 'pending' && (
+          <section className="stack stack--tight">
+            <h2 className="section-title">Latest change request</h2>
+            <p className="note">
+              Status: {readableStatus(event.change_request.status)}.
+              {' '}Reason for change: {event.change_request.reason_for_change}
+            </p>
+            {event.change_request.rejection_reason && (
+              <p className="form-error" role="status">
+                The Coordinator rejected this change request:
+                {' '}{event.change_request.rejection_reason}
+              </p>
+            )}
+          </section>
+        )}
+
+        {event.cancellation_request && (
+          <section className="stack stack--tight">
+            <h2 className="section-title">Cancellation request</h2>
+            <p className="note">
+              Status: {readableStatus(event.cancellation_request.status)}
+            </p>
+            <p><strong>Organiser reason:</strong> {event.cancellation_request.reason}</p>
+            {event.cancellation_request.decision_reason && (
+              <p>
+                <strong>Coordinator decision reason:</strong>{' '}
+                {event.cancellation_request.decision_reason}
+              </p>
+            )}
+            {event.cancellation_request.status === 'pending'
+              && event.status === 'cancellation_requested' && (
+                <>
+                  <h3 className="section-title">Review cancellation request</h3>
+                  {decisionError && (
+                    <p className="form-error" role="alert">{decisionError}</p>
+                  )}
+                  <label className="field">
+                    <span>Coordinator decision reason (required)</span>
+                    <textarea
+                      value={rejectionReason}
+                      onChange={(change) => {
+                        setRejectionReason(change.target.value)
+                        setDecisionError('')
+                      }}
+                      maxLength={2000}
+                    />
+                  </label>
+                  <div className="form-actions">
+                    <button
+                      type="button"
+                      className="button"
+                      onClick={() => decide('approve')}
+                      disabled={deciding}
+                    >
+                      {deciding ? 'Saving…' : 'Approve cancellation'}
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--secondary"
+                      onClick={() => decide('reject')}
+                      disabled={deciding}
+                    >
+                      Reject cancellation
+                    </button>
+                  </div>
+                </>
+              )}
           </section>
         )}
 

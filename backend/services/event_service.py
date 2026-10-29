@@ -8,6 +8,7 @@ import config
 from models.event import (
     Event,
     EventArrangement,
+    EventCancellationDecision,
     EventCancellationRequest,
     EventCancellationRequestSubmit,
     EventChangeRequest,
@@ -834,7 +835,67 @@ def get_assigned_event(
         raise AuthError("Event request was not found.", status_code=404)
     event = Event(**result.data[0])
     event = _with_change_request(client, [event])[0]
+    event = _with_cancellation_request(client, [event])[0]
     return _with_sessions(client, [event])[0]
+
+
+def review_event_cancellation_request(
+    access_token: str,
+    coordinator_id: str,
+    event_id: str,
+    decision: str,
+    reason: str,
+) -> tuple[Event, EventCancellationRequest]:
+    """Approve or reject a pending organiser cancellation request."""
+    if decision not in {"approve", "reject"}:
+        raise AuthError("Invalid cancellation decision.", status_code=400)
+    reason = (reason or "").strip()
+    if not reason:
+        raise AuthError("A decision reason is required.", status_code=400)
+
+    client = config.get_user_client(access_token)
+    try:
+        result = client.rpc(
+            "review_event_cancellation_request",
+            {
+                "p_event_id": event_id,
+                "p_decision": decision,
+                "p_reason": reason,
+            },
+        ).execute()
+    except PostgrestAPIError as error:
+        message = str(error).lower()
+        if error.code in {"42501", "PGRST301"}:
+            raise _review_read_error(error, "the cancellation request") from error
+        if "not assigned" in message or "not found" in message:
+            raise AuthError(
+                "Cancellation request was not found for an event assigned to you.",
+                status_code=404,
+            ) from error
+        if (
+            "no longer pending" in message
+            or "not awaiting" in message
+            or "is no longer pending" in message
+        ):
+            raise AuthError(
+                "This cancellation request has already been reviewed.",
+                status_code=409,
+            ) from error
+        if "decision reason" in message or "reason is required" in message:
+            raise AuthError("A decision reason is required.", status_code=400) from error
+        if "must be approve or reject" in message:
+            raise AuthError("Invalid cancellation decision.", status_code=400) from error
+        raise _database_error(error) from error
+
+    if not isinstance(result.data, dict) or "event" not in result.data or "cancellation_request" not in result.data:
+        raise AuthError(
+            "The cancellation request was reviewed but its details could not be loaded.",
+            status_code=502,
+        )
+    return (
+        Event(**result.data["event"]),
+        EventCancellationRequest(**result.data["cancellation_request"]),
+    )
 
 
 def review_assigned_change_request(
