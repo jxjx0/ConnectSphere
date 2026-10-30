@@ -49,9 +49,9 @@ REGISTRATION_ERRORS = {
         "See My registrations for your details.",
         409,
     ),
-    "email address is already registered": (
-        "This email address is already registered for this event. "
-        "Use a different email address.",
+    "account has no email address": (
+        "Your account has no email address, so we cannot send your "
+        "confirmation. Contact support to add one, then try again.",
         409,
     ),
     "event is full": (
@@ -73,11 +73,11 @@ def _registration_database_error(error: PostgrestAPIError) -> AuthError:
             "schema cache if needed.",
             status_code=503,
         )
-    # The unique indexes catch a duplicate that slipped past the checks.
+    # The unique index catches a duplicate that slipped past the checks.
     if error.code == "23505":
         return AuthError(
-            "You or this email address are already registered for this event. "
-            "See My registrations, or use a different email address.",
+            "You are already registered for this event. "
+            "See My registrations for your details.",
             status_code=409,
         )
     # The event id is the only value that can fail to parse (not a uuid).
@@ -100,10 +100,10 @@ def _registration_database_error(error: PostgrestAPIError) -> AuthError:
 
 
 def get_account_email(access_token: str) -> str | None:
-    """The signed-in user's email, used to prefill the registration form.
+    """The signed-in user's email, shown read-only on the registration form.
 
     Emails live in Supabase Auth, not in `profiles`. None if it cannot be
-    read: the attendee can still type an email address themselves.
+    read; the registration still uses the account email either way.
     """
     try:
         result = config.get_client().auth.get_user(access_token)
@@ -187,7 +187,6 @@ def register_for_event(
             {
                 "p_event_id": event_id,
                 "p_full_name": request.full_name,
-                "p_email": request.email,
                 "p_address": request.address,
                 "p_contact_number": request.contact_number,
             },
@@ -217,7 +216,7 @@ def _local_label(value: datetime | None) -> str:
 
 
 def send_registration_confirmation(registration: AttendeeRegistration) -> bool:
-    """Email the confirmation to the address given on the form.
+    """Email the confirmation to the account email it was registered under.
 
     Returns whether it was sent. A failed email does not undo the
     registration, which is already saved.

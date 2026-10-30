@@ -3,11 +3,11 @@
 
 import { formatDateTime } from './eventDisplay.js'
 
-// Mirror EMAIL_PATTERN and PHONE_PATTERN in
-// backend/models/attendee_registration.py.
-const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+// Mirror PHONE_PATTERN in backend/models/attendee_registration.py.
 const PHONE_PATTERN = /^[0-9+()\-\s]{6,30}$/
 
+// email is the account email, shown read-only and never sent: the
+// database always registers under the account's own address.
 export const EMPTY_REGISTRATION = {
   fullName: '',
   email: '',
@@ -47,10 +47,6 @@ export function validateAttendeeRegistration(form) {
   const errors = []
   if (!form.fullName.trim()) errors.push('Full name is required.')
 
-  const email = form.email.trim()
-  if (!email) errors.push('Email is required.')
-  else if (!EMAIL_PATTERN.test(email)) errors.push('Email must be a valid email address.')
-
   if (!form.address.trim()) errors.push('Address is required.')
 
   const contactNumber = form.contactNumber.trim()
@@ -64,7 +60,6 @@ export function validateAttendeeRegistration(form) {
 export function registrationToPayload(form) {
   return {
     full_name: form.fullName.trim(),
-    email: form.email.trim(),
     address: form.address.trim(),
     contact_number: form.contactNumber.trim(),
   }

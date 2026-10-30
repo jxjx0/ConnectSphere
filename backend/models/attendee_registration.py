@@ -5,8 +5,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-# Mirrored in frontend/src/attendeeRegistration.js and validation.js.
-EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# Mirrored in frontend/src/attendeeRegistration.js.
 PHONE_PATTERN = re.compile(r"^[0-9+()\-\s]{6,30}$")
 
 
@@ -23,13 +22,13 @@ class AttendeeRegistrationSubmit(BaseModel):
     """The body of POST /attendee/events/<id>/registrations.
 
     Each field defaults to blank so a missing field gets the same "is
-    required" message as an empty one, naming the field.
+    required" message as an empty one, naming the field. There is no email:
+    the database always uses the account's own email address.
     """
 
     model_config = ConfigDict(validate_default=True)
 
     full_name: str = ""
-    email: str = ""
     address: str = ""
     contact_number: str = ""
 
@@ -37,14 +36,6 @@ class AttendeeRegistrationSubmit(BaseModel):
     @classmethod
     def validate_full_name(cls, value: str) -> str:
         return _required_text(value, "Full name", 120)
-
-    @field_validator("email")
-    @classmethod
-    def validate_email(cls, value: str) -> str:
-        email = _required_text(value, "Email", 254).lower()
-        if not EMAIL_PATTERN.match(email):
-            raise ValueError("Email must be a valid email address")
-        return email
 
     @field_validator("address")
     @classmethod

@@ -5,7 +5,7 @@ const { PGlite } = await import(process.env.IMPACT_TEST_PGLITE_MODULE || '@elect
 const db = new PGlite()
 const id = n => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`
 const sql = file => readFile(new URL(`../../../database/${file}`, import.meta.url), 'utf8')
-// Users: 1, 2 and 3 attendees, 4 organiser.
+// Users: 1, 2 and 3 attendees, 4 organiser, 5 attendee without an email.
 // Events: 21 open with 2 places, 22 confirmed but unpublished,
 // 23 registration closed, 24 registration not yet open.
 await db.exec(`
@@ -13,6 +13,8 @@ create role anon; create role authenticated;
 create schema auth;
 create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
 grant usage on schema auth to authenticated;
+create table auth.users(id uuid primary key,email text);
+insert into auth.users values ('${id(1)}',' Cara@Example.com '),('${id(2)}','user02@example.com'),('${id(3)}','user03@example.com'),('${id(4)}','org@example.com'),('${id(5)}',null);
 create table public.profiles(id uuid primary key,role text);
 create table public.events(id uuid primary key,name text,description text,purpose text,category text,category_other text,
   start_time timestamptz,end_time timestamptz,accessibility_requirements text,status text,
@@ -20,7 +22,7 @@ create table public.events(id uuid primary key,name text,description text,purpos
 create table public.event_sessions(id uuid primary key,event_id uuid,name text,start_time timestamptz,end_time timestamptz);
 create table public.venues(id uuid primary key,name text,location text);
 create table public.venue_bookings(booking_id uuid primary key,venue_id uuid,session_id uuid,status text);
-insert into public.profiles values ('${id(1)}','attendee'),('${id(2)}','attendee'),('${id(3)}','attendee'),('${id(4)}','organiser');
+insert into public.profiles values ('${id(1)}','attendee'),('${id(2)}','attendee'),('${id(3)}','attendee'),('${id(4)}','organiser'),('${id(5)}','attendee');
 insert into public.events(id,name,status,start_time,registration_opens_at,registration_closes_at,attendee_capacity,published_at) values
   ('${id(21)}','Open','confirmed','2099-12-01',now()-interval '1 day','2099-11-01',2,now()),
   ('${id(22)}','Unpublished','confirmed','2099-12-01',now()-interval '1 day','2099-11-01',2,null),
@@ -38,9 +40,9 @@ async function asUser(user, query, params = []) {
   await db.query(`select set_config('request.jwt.claim.sub',$1,false)`, [user])
   try { return (await db.query(query, params)).rows } finally { await db.exec('reset role') }
 }
-const register = (user, event, email = `user${user.slice(-2)}@example.com`) => asUser(
-  user, 'select public.register_for_event($1,$2,$3,$4,$5) as id',
-  [event, 'Cara Ng', email, '1 Orchard Road', '+65 9123 4567'],
+const register = (user, event) => asUser(
+  user, 'select public.register_for_event($1,$2,$3,$4) as id',
+  [event, 'Cara Ng', '1 Orchard Road', '+65 9123 4567'],
 )
 const listAs = (user, event = null) => asUser(user, 'select * from public.list_published_events($1)', [event])
 const count = async () => (await db.query('select count(*)::int as n from public.event_registrations')).rows[0].n
@@ -62,19 +64,19 @@ await assert.rejects(register('', id(21)), /signed-in attendee/)
 await assert.rejects(register(id(1), id(22)), /not found/)
 await assert.rejects(register(id(1), id(23)), /has closed/)
 await assert.rejects(register(id(1), id(24)), /not opened yet/)
+await assert.rejects(register(id(5), id(21)), /has no email address/)
 assert.equal(await count(), 0)
 
-// A registration is saved and lowers the spots left by one.
-const [saved] = await register(id(1), id(21), ' Cara@Example.com ')
+// A registration is saved under the account email and lowers the spots left by one.
+const [saved] = await register(id(1), id(21))
 assert.ok(saved.id)
 const afterOne = (await listAs(id(1), id(21)))[0]
 assert.equal(afterOne.spots_left, 1)
 assert.equal(afterOne.is_registered, true)
 assert.equal((await listAs(id(2), id(21)))[0].is_registered, false)
 
-// The same account or the same email cannot register twice.
-await assert.rejects(register(id(1), id(21), 'other@example.com'), /account is already registered/)
-await assert.rejects(register(id(2), id(21), 'CARA@example.com'), /email address is already registered/)
+// The same account cannot register twice.
+await assert.rejects(register(id(1), id(21)), /account is already registered/)
 assert.equal(await count(), 1)
 
 // The last spot goes, then the event is full and nothing more is saved.

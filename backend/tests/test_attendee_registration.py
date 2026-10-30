@@ -34,7 +34,6 @@ HEADERS = {"Authorization": "Bearer attendee-token"}
 def valid_details(**overrides) -> dict:
     return {
         "full_name": "Cara Ng",
-        "email": "cara@example.com",
         "address": "1 Orchard Road, Singapore",
         "contact_number": "+65 9123 4567",
         **overrides,
@@ -81,6 +80,7 @@ def _registration_row(**overrides) -> dict:
         "event_id": EVENT_ID,
         "attendee_id": ATTENDEE_ID,
         **valid_details(),
+        "email": "cara@example.com",
         "event_name": "Annual Client Summit",
         "event_start_time": "2099-12-01T01:00:00+00:00",
         "event_end_time": "2099-12-01T09:00:00+00:00",
@@ -104,19 +104,21 @@ def register(details=None) -> AttendeeRegistration:
 # --- Model -------------------------------------------------------------------
 
 
-def test_valid_details_are_trimmed_and_email_lowercased():
-    details = AttendeeRegistrationSubmit(
-        **valid_details(full_name="  Cara Ng ", email=" Cara@Example.com ")
-    )
+def test_valid_details_are_trimmed():
+    details = AttendeeRegistrationSubmit(**valid_details(full_name="  Cara Ng "))
     assert details.full_name == "Cara Ng"
-    assert details.email == "cara@example.com"
+
+
+def test_a_submitted_email_is_ignored():
+    # The database always registers under the account email.
+    details = AttendeeRegistrationSubmit(**valid_details(email="other@example.com"))
+    assert not hasattr(details, "email")
 
 
 @pytest.mark.parametrize(
     "field, label",
     [
         ("full_name", "Full name"),
-        ("email", "Email"),
         ("address", "Address"),
         ("contact_number", "Contact number"),
     ],
@@ -133,7 +135,6 @@ def test_missing_or_blank_fields_name_the_field(field, label):
 @pytest.mark.parametrize(
     "field, value, message",
     [
-        ("email", "not-an-email", "Email must be a valid email address"),
         ("contact_number", "call me", "Contact number must be a valid phone number"),
         ("full_name", "x" * 121, "Full name must be 120 characters or fewer"),
         ("address", "x" * 301, "Address must be 300 characters or fewer"),
@@ -256,16 +257,15 @@ def test_invalid_details_are_rejected_before_anything_is_saved(client, monkeypat
 
     response = client.post(
         f"/attendee/events/{EVENT_ID}/registrations",
-        json={"email": "bad"},
+        json={"contact_number": "bad"},
         headers=HEADERS,
     )
 
     assert response.status_code == 400
     errors = response.get_json()["errors"]
     assert "Full name is required" in errors
-    assert "Email must be a valid email address" in errors
     assert "Address is required" in errors
-    assert "Contact number is required" in errors
+    assert "Contact number must be a valid phone number" in errors
 
 
 def test_attendee_can_list_their_registrations(client, monkeypatch):
@@ -386,7 +386,6 @@ def test_service_registers_through_the_atomic_function(monkeypatch):
     assert call.payload == {
         "p_event_id": EVENT_ID,
         "p_full_name": "Cara Ng",
-        "p_email": "cara@example.com",
         "p_address": "1 Orchard Road, Singapore",
         "p_contact_number": "+65 9123 4567",
     }
@@ -416,8 +415,7 @@ def test_service_reports_a_saved_registration_that_cannot_be_loaded(monkeypatch)
         ("Registration has closed", 409, "Choose another event"),
         ("Registration has not opened yet", 409, "Come back once registration opens"),
         ("This account is already registered for the event", 409, "See My registrations"),
-        ("This email address is already registered for the event", 409,
-         "Use a different email address"),
+        ("This account has no email address", 409, "Contact support"),
         ("Event was not found", 404, "Choose another event"),
         ("Only a signed-in attendee can register for an event", 403,
          "Log in with an Attendee account"),
@@ -518,7 +516,7 @@ def test_service_translates_errors_when_listing_my_registrations(monkeypatch):
 # --- Confirmation email ------------------------------------------------------
 
 
-def test_confirmation_is_emailed_to_the_address_on_the_form(monkeypatch):
+def test_confirmation_is_emailed_to_the_registered_address(monkeypatch):
     sent = {}
 
     def fake_try_send_email(to_email, subject, body):

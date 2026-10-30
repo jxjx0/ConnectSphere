@@ -16,8 +16,12 @@
 --     after the other and the second is told the event is full.
 --   * The registration is a single insert: when any check fails nothing is
 --     saved, and the spot count is unchanged.
---   * The unique indexes are the last guard against registering twice with
---     the same account or the same email address.
+--   * The registration email is always the account's own email, read from
+--     auth.users, so nobody can register (and receive the confirmation,
+--     with address and phone) under someone else's address. Each account
+--     registers at most once, so no per-email rule is needed.
+--   * The unique index is the last guard against registering twice with
+--     the same account.
 
 -- 1. The table. Rows are only written by register_for_event.
 create table if not exists public.event_registrations (
@@ -34,8 +38,8 @@ create table if not exists public.event_registrations (
 create unique index if not exists event_registrations_one_per_attendee
     on public.event_registrations (event_id, attendee_id);
 
-create unique index if not exists event_registrations_one_per_email
-    on public.event_registrations (event_id, lower(email));
+-- Removed: the email is now the account's own, so one per account covers it.
+drop index if exists public.event_registrations_one_per_email;
 
 alter table public.event_registrations enable row level security;
 grant select on public.event_registrations to authenticated;
@@ -127,12 +131,14 @@ $$;
 revoke all on function public.list_published_events(uuid) from public;
 grant execute on function public.list_published_events(uuid) to authenticated;
 
--- 3. Register the signed-in attendee for an event. Returns the new
---    registration's id.
+-- 3. Register the signed-in attendee for an event, under their account
+--    email. Returns the new registration's id.
+-- Replaces an earlier version that took the email as a parameter.
+drop function if exists public.register_for_event(uuid, text, text, text, text);
+
 create or replace function public.register_for_event(
     p_event_id uuid,
     p_full_name text,
-    p_email text,
     p_address text,
     p_contact_number text
 )
@@ -143,6 +149,7 @@ set search_path = ''
 as $$
 declare
     current_event public.events%rowtype;
+    account_email text;
     registered_count integer;
     registration_id uuid;
 begin
@@ -151,6 +158,14 @@ begin
         where profiles.id = auth.uid() and profiles.role = 'attendee'
     ) then
         raise exception 'Only a signed-in attendee can register for an event';
+    end if;
+
+    select lower(btrim(users.email)) into account_email
+    from auth.users
+    where users.id = auth.uid();
+
+    if account_email is null or account_email = '' then
+        raise exception 'This account has no email address';
     end if;
 
     -- The lock makes registrations for the same event wait for each other,
@@ -183,13 +198,6 @@ begin
         raise exception 'This account is already registered for the event';
     end if;
 
-    if exists (
-        select 1 from public.event_registrations r
-        where r.event_id = p_event_id and lower(r.email) = lower(btrim(p_email))
-    ) then
-        raise exception 'This email address is already registered for the event';
-    end if;
-
     select count(*) into registered_count
     from public.event_registrations r
     where r.event_id = p_event_id;
@@ -206,7 +214,7 @@ begin
         p_event_id,
         auth.uid(),
         btrim(p_full_name),
-        lower(btrim(p_email)),
+        account_email,
         btrim(p_address),
         btrim(p_contact_number)
     )
@@ -216,9 +224,9 @@ begin
 end;
 $$;
 
-revoke all on function public.register_for_event(uuid, text, text, text, text)
+revoke all on function public.register_for_event(uuid, text, text, text)
     from public;
-grant execute on function public.register_for_event(uuid, text, text, text, text)
+grant execute on function public.register_for_event(uuid, text, text, text)
     to authenticated;
 
 -- 4. The signed-in attendee's registrations, with the event each is for,

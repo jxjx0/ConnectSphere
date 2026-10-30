@@ -75,25 +75,27 @@ test('valid details pass', () => {
 test('every missing field is reported at once', () => {
   assert.deepEqual(validateAttendeeRegistration(EMPTY_REGISTRATION), [
     'Full name is required.',
-    'Email is required.',
     'Address is required.',
     'Contact number is required.',
   ])
 })
 
-test('badly formatted email and phone number are reported', () => {
+test('a badly formatted phone number is reported', () => {
   assert.deepEqual(
-    validateAttendeeRegistration({ ...VALID_FORM, email: 'cara@', contactNumber: 'call me' }),
-    ['Email must be a valid email address.', 'Contact number must be a valid phone number.'],
+    validateAttendeeRegistration({ ...VALID_FORM, contactNumber: 'call me' }),
+    ['Contact number must be a valid phone number.'],
   )
 })
 
-test('the payload is trimmed and uses the API field names', () => {
+test('the read-only account email is not checked', () => {
+  assert.deepEqual(validateAttendeeRegistration({ ...VALID_FORM, email: '' }), [])
+})
+
+test('the payload is trimmed, uses the API field names and leaves out the email', () => {
   assert.deepEqual(
     registrationToPayload({ ...VALID_FORM, fullName: '  Cara Ng ' }),
     {
       full_name: 'Cara Ng',
-      email: 'cara@example.com',
       address: '1 Orchard Road',
       contact_number: '+65 9123 4567',
     },

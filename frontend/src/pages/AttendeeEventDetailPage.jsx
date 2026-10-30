@@ -16,7 +16,7 @@ import { formatDateRange, formatDateTime, optional } from '../eventDisplay'
 
 const FIELDS = [
   { name: 'fullName', label: 'Full name', type: 'text', autoComplete: 'name' },
-  { name: 'email', label: 'Email', type: 'email', autoComplete: 'email' },
+  { name: 'email', label: 'Email', type: 'email', autoComplete: 'email', readOnly: true },
   { name: 'address', label: 'Address', type: 'text', autoComplete: 'street-address' },
   { name: 'contactNumber', label: 'Contact number', type: 'tel', autoComplete: 'tel' },
 ]
@@ -184,13 +184,13 @@ export default function AttendeeEventDetailPage() {
                     type={field.type}
                     autoComplete={field.autoComplete}
                     value={form[field.name]}
-                    onChange={updateField(field.name)}
-                    required
+                    onChange={field.readOnly ? undefined : updateField(field.name)}
+                    readOnly={field.readOnly}
+                    required={!field.readOnly}
                   />
                   {field.name === 'email' && (
                     <p className="field__hint">
-                      Your account email. Change it to use a different address;
-                      your confirmation email is sent here.
+                      Your account email. Your confirmation email is sent here.
                     </p>
                   )}
                 </div>
