@@ -122,6 +122,19 @@ def _get_user_email(user_id: str) -> str:
     return response.user.email
 
 
+def try_send_email(to_email: str, subject: str, body: str) -> bool:
+    """Email an address that may not belong to an account; never raises.
+
+    Returns whether the email was sent, so the caller can tell the user.
+    """
+    try:
+        send_email(to_email, subject, body)
+    except Exception:
+        logger.exception("Could not send email '%s'", subject)
+        return False
+    return True
+
+
 def send_email(to_email: str, subject: str, body: str) -> None:
     """Send a plain-text email through SendGrid. Raises on failure."""
     if not config.SENDGRID_API_KEY or not config.SENDGRID_FROM_EMAIL:
