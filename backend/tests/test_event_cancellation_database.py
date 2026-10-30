@@ -122,6 +122,10 @@ def review(db, decision):
 
 def test_submission_rpc_stores_reason_previous_status_and_rejects_forbidden_status(db):
     insert_event(db, status="planning")
+    db.execute(
+        "select set_config('request.jwt.claim.sub', %s, false)",
+        (ORGANISER_ID,),
+    )
 
     request_id = db.execute(
         "select public.submit_event_cancellation_request(%s, %s)",
@@ -155,7 +159,7 @@ def test_submission_rpc_stores_reason_previous_status_and_rejects_forbidden_stat
 def test_approval_releases_event_resources_expires_requests_and_closes_registration(db):
     insert_event(db, status="cancellation_requested")
     insert_event(db, event_id=OTHER_EVENT_ID, status="confirmed")
-    insert_cancellation_request()
+    insert_cancellation_request(db)
     db.execute(
         "insert into public.venue_bookings (booking_id, event_id, status) "
         "values (%s, %s, 'APPROVED'), (%s, %s, 'APPROVED')",
@@ -295,7 +299,7 @@ def test_approval_expires_safety_check_when_it_was_awaiting_review(db):
 
 def test_only_a_coordinator_can_review_a_cancellation_request(db):
     insert_event(db, status="cancellation_requested")
-    insert_cancellation_request()
+    insert_cancellation_request(db)
     db.execute(
         "select set_config('request.jwt.claim.sub', %s, false)",
         (ORGANISER_ID,),
@@ -308,7 +312,7 @@ def test_only_a_coordinator_can_review_a_cancellation_request(db):
 def test_rejection_restores_prior_status_without_releasing_resources(db):
     insert_event(db, status="cancellation_requested")
     insert_event(db, event_id=OTHER_EVENT_ID, status="confirmed")
-    insert_cancellation_request(previous_status="awaiting_safety_check")
+    insert_cancellation_request(db, previous_status="awaiting_safety_check")
     db.execute(
         "insert into public.venue_bookings (booking_id, event_id, status) "
         "values (%s, %s, 'APPROVED')",

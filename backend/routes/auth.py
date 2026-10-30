@@ -21,12 +21,10 @@ def _bearer_token() -> str:
     if not header or not header.strip():
         raise AuthError("Missing bearer token.", status_code=401)
 
-    token = header.strip()
-    if token.startswith("Bearer "):
-        token = token.removeprefix("Bearer ").strip()
-    if not token:
+    parts = header.strip().split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
         raise AuthError("Missing bearer token.", status_code=401)
-    return token
+    return parts[1]
 
 
 def require_auth(view):

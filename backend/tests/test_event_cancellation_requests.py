@@ -488,7 +488,7 @@ def test_coordinator_cancellation_review_route_notifies_the_organiser(
     response = client.post(
         f"/events/review/{EVENT_ID}/cancellation-request/approve",
         json={"reason": "Venue availability changed"},
-        headers={"Authorization": "******"},
+        headers={"Authorization": "Bearer ******"},
     )
 
     assert response.status_code == 200
@@ -546,7 +546,7 @@ def test_coordinator_rejection_notifies_organiser_but_not_attendees(
     response = client.post(
         f"/events/review/{EVENT_ID}/cancellation-request/reject",
         json={"reason": "The event is still needed"},
-        headers={"Authorization": "******"},
+        headers={"Authorization": "Bearer ******"},
     )
 
     assert response.status_code == 200
@@ -577,7 +577,7 @@ def test_non_coordinator_cannot_review_cancellation_request(client, monkeypatch)
     response = client.post(
         f"/events/review/{EVENT_ID}/cancellation-request/approve",
         json={"reason": "Decision reason"},
-        headers={"Authorization": "******"},
+        headers={"Authorization": "Bearer ******"},
     )
 
     assert response.status_code == 403
@@ -600,7 +600,7 @@ def test_blank_decision_reason_is_rejected_before_review_or_notification(
     response = client.post(
         f"/events/review/{EVENT_ID}/cancellation-request/approve",
         json={"reason": "  "},
-        headers={"Authorization": "******"},
+        headers={"Authorization": "Bearer ******"},
     )
 
     assert response.status_code == 400

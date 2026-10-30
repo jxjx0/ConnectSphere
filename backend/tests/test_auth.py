@@ -262,7 +262,12 @@ def test_me_without_a_token_is_unauthorised(client):
 
 # A header missing the "Bearer " prefix is refused too, rather than being
 # read as a token by accident.
-def test_me_with_a_malformed_header_is_unauthorised(client):
+def test_me_with_a_malformed_header_is_unauthorised(client, monkeypatch):
+    def reject_malformed_token(token):
+        pytest.fail("malformed headers must be rejected before token validation")
+
+    monkeypatch.setattr(auth_service, "get_user_id", reject_malformed_token)
+
     response = client.get("/me", headers={"Authorization": "token-123"})
 
     assert response.status_code == 401
