@@ -1,13 +1,68 @@
 -- Coordinator review of an Organiser's event cancellation request.
 -- Apply after event_cancellation_requests.sql, venue_tentative_holds.sql,
 -- equipment_bookings.sql, event_change_requests.sql, and
--- create_event_safety_reviews.sql.
+-- create_event_safety_reviews.sql, event_registration.sql, and the
+-- event_registrations table.
 begin;
 
 alter table public.event_cancellation_requests
     add column if not exists decision_reason text,
     add column if not exists decision_by uuid references public.profiles(id),
     add column if not exists decided_at timestamptz;
+
+alter table public.events
+    drop constraint if exists events_registration_closes_after_opens;
+alter table public.events
+    add constraint events_registration_closes_after_opens
+    check (
+        status = 'cancelled'
+        or registration_opens_at is null
+        or registration_closes_at is null
+        or registration_closes_at > registration_opens_at
+    );
+
+create or replace function public.prevent_registration_for_cancelled_event()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+    event_status text;
+begin
+    select status
+    into event_status
+    from public.events
+    where id = new.event_id
+    for share;
+
+    if event_status = 'cancelled' then
+        raise exception 'Registration is closed because this event was cancelled'
+            using errcode = 'P0001';
+    end if;
+
+    return new;
+end;
+$$;
+
+create or replace function public.prevent_reopening_cancelled_event_registration()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+    if old.status = 'cancelled' and (
+        new.registration_opens_at is distinct from old.registration_opens_at
+        or new.registration_closes_at is distinct from old.registration_closes_at
+        or new.attendee_capacity is distinct from old.attendee_capacity
+        or new.published_at is distinct from old.published_at
+    ) then
+        raise exception 'Registration cannot be changed after event cancellation'
+            using errcode = 'P0001';
+    end if;
+    return new;
+end;
+$$;
 
 alter table public.venue_blocks
     add column if not exists booking_id uuid
@@ -147,7 +202,7 @@ begin
         update public.events
         set status = 'cancelled',
             updated_at = now(),
-            registration_closes_at = coalesce(registration_closes_at, now())
+            registration_closes_at = now()
         where id = p_event_id
         returning * into current_event;
 
@@ -334,5 +389,35 @@ where status = 'pending'
       where request.status = 'approved'
         and event.status = 'cancelled'
   );
+
+update public.events
+set registration_closes_at = now()
+where status = 'cancelled'
+  and id in (
+        select request.event_id
+        from public.event_cancellation_requests as request
+        where request.status = 'approved'
+  )
+  and (
+        registration_closes_at is null
+        or registration_closes_at > now()
+  );
+
+drop trigger if exists prevent_registration_for_cancelled_event
+    on public.event_registrations;
+create trigger prevent_registration_for_cancelled_event
+    before insert or update of event_id
+    on public.event_registrations
+    for each row
+    execute function public.prevent_registration_for_cancelled_event();
+
+drop trigger if exists prevent_reopening_cancelled_event_registration
+    on public.events;
+create trigger prevent_reopening_cancelled_event_registration
+    before update of registration_opens_at, registration_closes_at,
+        attendee_capacity, published_at
+    on public.events
+    for each row
+    execute function public.prevent_reopening_cancelled_event_registration();
 
 commit;

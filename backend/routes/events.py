@@ -386,6 +386,12 @@ def _review_cancellation_request(event_id, decision):
         ),
         event.id,
     )
+    if approved:
+        notification_service.notify_event_registrants_of_cancellation(
+            event.id,
+            event.name,
+            cancellation_request.reason,
+        )
     event = event.model_copy(
         update={
             "cancellation_request": cancellation_request,
