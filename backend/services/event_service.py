@@ -78,8 +78,16 @@ def get_event_activity_logs(event_id: str, access_token: str):
     return logs
 
 
+OPEN_REQUEST_BLOCKS_MOVE = (
+    "Close the open clarification, change or cancellation request before "
+    "moving this event forward."
+)
+
+
 def _database_error(error: PostgrestAPIError) -> AuthError:
     """Translate known PostgREST constraint errors into API responses."""
+    if "before moving this event forward" in str(error).lower():
+        return AuthError(OPEN_REQUEST_BLOCKS_MOVE, status_code=409)
     if error.code in {"42703", "PGRST204", "PGRST205"}:
         return AuthError(
             "The database schema is missing a required field or table.",
@@ -257,7 +265,42 @@ def list_my_events(access_token: str, organiser_id: str) -> list[Event]:
         raise _database_error(error) from error
 
     events = [Event(**event) for event in result.data]
+    events = _with_open_requests(client, events)
     return _with_sessions(client, _with_coordinator_names(client, events))
+
+
+def _with_open_requests(client, events: list) -> list:
+    """Set each event's open-request badges.
+
+    A clarification, change request or cancellation request is open while
+    its status is 'pending'. Works on Event and EventReviewSummary alike.
+    """
+    if not events:
+        return events
+    event_ids = [event.id for event in events]
+    open_ids = {}
+    for table, flag in (
+        ("event_clarifications", "has_open_clarification"),
+        ("event_change_requests", "has_pending_change_request"),
+        ("event_cancellation_requests", "has_pending_cancellation_request"),
+    ):
+        try:
+            result = (
+                client.table(table)
+                .select("event_id")
+                .in_("event_id", event_ids)
+                .eq("status", "pending")
+                .execute()
+            )
+        except PostgrestAPIError as error:
+            raise _review_read_error(error, "open event requests") from error
+        open_ids[flag] = {row["event_id"] for row in result.data}
+    return [
+        event.model_copy(
+            update={flag: event.id in ids for flag, ids in open_ids.items()}
+        )
+        for event in events
+    ]
 
 
 def _with_coordinator_names(client, events: list[Event]) -> list[Event]:
@@ -321,11 +364,12 @@ def get_my_event(access_token: str, organiser_id: str, event_id: str) -> Event:
     event = _with_coordinator_names(client, [Event(**result.data[0])])[0]
     event = _with_change_request(client, [event])[0]
     event = _with_cancellation_request(client, [event])[0]
+    event = _with_open_requests(client, [event])[0]
     return _with_sessions(client, [event])[0]
 
 
 def _with_cancellation_request(client, events: list[Event]) -> list[Event]:
-    """Attach each event's latest cancellation request and pending state."""
+    """Attach each event's cancellation requests, newest first."""
     if not events:
         return events
     try:
@@ -339,19 +383,14 @@ def _with_cancellation_request(client, events: list[Event]) -> list[Event]:
     except PostgrestAPIError as error:
         raise _cancellation_database_error(error) from error
 
-    latest_by_event = {}
+    by_event = {}
     for row in result.data:
-        latest_by_event.setdefault(
-            row["event_id"], EventCancellationRequest(**row)
-        )
+        by_event.setdefault(row["event_id"], []).append(EventCancellationRequest(**row))
     return [
         event.model_copy(
             update={
-                "cancellation_request": latest_by_event.get(event.id),
-                "has_pending_cancellation_request": (
-                    latest_by_event.get(event.id) is not None
-                    and latest_by_event[event.id].status == "pending"
-                ),
+                "cancellation_request": (by_event.get(event.id) or [None])[0],
+                "cancellation_requests": by_event.get(event.id, []),
             }
         )
         for event in events
@@ -364,7 +403,7 @@ def submit_event_cancellation_request(
     event_id: str,
     request: EventCancellationRequestSubmit,
 ) -> EventCancellationRequest:
-    """Persist a cancellation request and hold the event's previous status."""
+    """Persist a cancellation request. The event keeps its status."""
     client = config.get_user_client(access_token)
     try:
         result = client.rpc(
@@ -392,8 +431,7 @@ def submit_event_cancellation_request(
         if "event cannot be cancelled" in message:
             raise AuthError(
                 "Cancellation requests are only available for events in "
-                "planning, awaiting clarification, awaiting a safety check, "
-                "with a change request or confirmed.",
+                "planning, awaiting a safety check or confirmed.",
                 status_code=409,
             ) from error
         if "event request was not found" in message:
@@ -414,7 +452,7 @@ def submit_event_cancellation_request(
 
 
 def _with_change_request(client, events: list[Event]) -> list[Event]:
-    """Attach each event's latest proposal and its review outcome."""
+    """Attach each event's proposals and their review outcomes, newest first."""
     if not events:
         return events
     try:
@@ -428,19 +466,16 @@ def _with_change_request(client, events: list[Event]) -> list[Event]:
     except PostgrestAPIError as error:
         raise _review_read_error(error, "event change requests") from error
 
-    latest_by_event = {}
+    by_event = {}
     for row in result.data:
         # Proposed sessions are shown in time order, like the event's own.
         row["sessions"] = sorted(row.get("sessions") or [], key=lambda session: session["start_time"])
-        latest_by_event.setdefault(row["event_id"], EventChangeRequest(**row))
+        by_event.setdefault(row["event_id"], []).append(EventChangeRequest(**row))
     return [
         event.model_copy(
             update={
-                "change_request": latest_by_event.get(event.id),
-                "has_pending_change_request": (
-                    latest_by_event.get(event.id) is not None
-                    and latest_by_event[event.id].status == "pending"
-                ),
+                "change_request": (by_event.get(event.id) or [None])[0],
+                "change_requests": by_event.get(event.id, []),
             }
         )
         for event in events
@@ -453,7 +488,7 @@ def submit_event_change_request(
     event_id: str,
     request: EventChangeRequestSubmit,
 ) -> None:
-    """Persist a proposed change and mark its event as change_requested.
+    """Persist a proposed change. The event keeps its status.
 
     The database function performs ownership, event status, duplicate
     pending request, started-session and changed-values checks atomically
@@ -474,6 +509,12 @@ def submit_event_change_request(
         if "pending change request" in message:
             raise AuthError(
                 "A change request is already waiting for review.",
+                status_code=409,
+            ) from error
+        if "while a cancellation request is pending" in message:
+            raise AuthError(
+                "This event cannot be changed while its cancellation request "
+                "is waiting for review.",
                 status_code=409,
             ) from error
         if "event cannot be changed" in message:
@@ -811,7 +852,8 @@ def list_assigned_events(
         )
     except PostgrestAPIError as error:
         raise _review_read_error(error, "assigned event requests") from error
-    return [EventReviewSummary(**event) for event in result.data]
+    events = [EventReviewSummary(**event) for event in result.data]
+    return _with_open_requests(client, events)
 
 
 def get_assigned_event(
@@ -836,6 +878,7 @@ def get_assigned_event(
     event = Event(**result.data[0])
     event = _with_change_request(client, [event])[0]
     event = _with_cancellation_request(client, [event])[0]
+    event = _with_open_requests(client, [event])[0]
     return _with_sessions(client, [event])[0]
 
 
@@ -905,13 +948,14 @@ def review_assigned_change_request(
     decision: str,
     rejection: EventChangeRequestDecision | None = None,
     approval: EventChangeRequestApproval | None = None,
-) -> tuple[Event, EventChangeRequest]:
+) -> tuple[Event, EventChangeRequest, bool]:
     """Approve or reject the pending proposal through an atomic database RPC.
 
     Approving applies the proposed sessions (T7-281): moved or removed
     sessions have their approved bookings and equipment requests flagged,
     the pending bookings listed in `approval` are cancelled, and a material
-    change sends a Confirmed event back to Planning.
+    change sends a Confirmed event back to Planning. The third value says
+    whether that happened.
     """
     if decision not in {"approve", "reject"}:
         raise AuthError("Invalid change request decision.", status_code=400)
@@ -964,6 +1008,7 @@ def review_assigned_change_request(
     return (
         Event(**result.data["event"]),
         EventChangeRequest(**result.data["change_request"]),
+        bool(result.data.get("returned_to_planning")),
     )
 
 
@@ -1012,7 +1057,7 @@ def list_event_clarifications(
             client.table("event_clarifications")
             .select("*")
             .eq("event_id", event_id)
-            .order("requested_at")
+            .order("created_at")
             .execute()
         )
     except PostgrestAPIError as error:
@@ -1027,7 +1072,7 @@ def request_event_clarification(
     event_id: str,
     request: EventClarificationRequest,
 ) -> EventClarification:
-    """Save a Coordinator's clarification request and hold event planning."""
+    """Save a Coordinator's question. The event keeps its status."""
     client = config.get_user_client(access_token)
     try:
         client.rpc(
@@ -1051,7 +1096,17 @@ def request_event_clarification(
             raise AuthError("Event request was not found.", status_code=404) from error
         if "event cannot be clarified" in message:
             raise AuthError(
-                "Only events under review, in planning, or with a change request can be sent for clarification.",
+                "Only events under review, in planning, awaiting a safety check or confirmed can be sent for clarification.",
+                status_code=409,
+            ) from error
+        if "already waiting for a response" in message:
+            raise AuthError(
+                "A clarification is already waiting for the Organiser's reply.",
+                status_code=409,
+            ) from error
+        if "pending cancellation request" in message:
+            raise AuthError(
+                "Review the pending cancellation request first.",
                 status_code=409,
             ) from error
         raise _database_error(error) from error
@@ -1068,7 +1123,7 @@ def respond_to_event_clarification(
     event_id: str,
     request: EventClarificationResponse,
 ) -> EventClarification:
-    """Record the Organiser's response and return the event to review."""
+    """Record the Organiser's reply and close the clarification."""
     client = config.get_user_client(access_token)
     try:
         client.rpc(
@@ -1090,10 +1145,7 @@ def respond_to_event_clarification(
             ) from error
         if "event request was not found" in message:
             raise AuthError("Event request was not found.", status_code=404) from error
-        if (
-            "no clarification is awaiting a response" in message
-            or "event is not awaiting clarification" in message
-        ):
+        if "no clarification is awaiting a response" in message:
             raise AuthError(
                 "This event is not awaiting a clarification response.",
                 status_code=409,

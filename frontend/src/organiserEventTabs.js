@@ -1,29 +1,33 @@
+import { CLOSED_STATUSES, isWaitingOn } from './eventStatus.js'
+
+// "Needs my reply" comes first: it is the only tab where the next step is
+// the Organiser's. Every submitted event is in exactly one of the others.
 export const ORGANISER_EVENT_TABS = [
+  { id: 'needs-reply', label: 'Needs my reply', empty: 'Nothing is waiting for your reply.' },
+  { id: 'in-progress', label: 'In progress', empty: 'You have no event requests in progress.' },
   { id: 'drafts', label: 'Drafts', empty: 'You have no saved drafts.' },
-  { id: 'submitted', label: 'Submitted', statuses: ['under_review'], empty: 'You have no submitted requests waiting for review.' },
-  { id: 'awaiting-clarification', label: 'Awaiting clarification', statuses: ['awaiting_clarification'], empty: 'You have no events awaiting clarification.' },
-  { id: 'awaiting-safety-check', label: 'Awaiting safety check', statuses: ['awaiting_safety_check'], empty: 'You have no events awaiting a safety check.' },
-  { id: 'change-requested', label: 'Change requested', statuses: ['change_requested'], empty: 'You have no events with a change request.' },
-  { id: 'cancellation-requested', label: 'Cancellation requested', statuses: ['cancellation_requested'], empty: 'You have no cancellation requests awaiting review.' },
-  { id: 'planning', label: 'Planning', statuses: ['planning'], empty: 'You have no events in planning.' },
-  { id: 'confirmed', label: 'Confirmed', statuses: ['confirmed'], empty: 'You have no confirmed events.' },
-  { id: 'completed', label: 'Completed', statuses: ['completed'], empty: 'You have no completed events.' },
-  { id: 'rejected', label: 'Rejected', statuses: ['rejected'], empty: 'You have no rejected events.' },
-  { id: 'cancelled', label: 'Cancelled', statuses: ['cancelled'], empty: 'You have no cancelled events.' },
+  { id: 'closed', label: 'Closed', empty: 'You have no completed, rejected or cancelled events.' },
 ]
+
+// The one tab an event belongs in.
+export function organiserTabFor(event) {
+  if (isWaitingOn(event, 'organiser')) return 'needs-reply'
+  if (CLOSED_STATUSES.includes(event.status)) return 'closed'
+  return 'in-progress'
+}
 
 export function organiserEventsForTab(tabId, events, drafts) {
   if (tabId === 'drafts') return drafts
-  const tab = ORGANISER_EVENT_TABS.find((item) => item.id === tabId)
-  return tab ? events.filter((event) => tab.statuses.includes(event.status)) : []
+  return events.filter((event) => organiserTabFor(event) === tabId)
 }
 
 export function organiserTabCount(tabId, events, drafts) {
   return organiserEventsForTab(tabId, events, drafts).length
 }
 
-export function organiserEventStatusLabel(status, tabId) {
-  if (tabId === 'submitted' && status === 'under_review') return 'Submitted'
-  const words = status.replace(/_/g, ' ')
-  return words.charAt(0).toUpperCase() + words.slice(1)
+// Open "Needs my reply" when something is waiting, otherwise "In progress".
+export function defaultOrganiserTab(events) {
+  return events.some((event) => organiserTabFor(event) === 'needs-reply')
+    ? 'needs-reply'
+    : 'in-progress'
 }

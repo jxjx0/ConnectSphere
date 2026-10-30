@@ -4,7 +4,8 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import { getMyRegistration } from '../api/events'
 import AppShell from '../components/AppShell'
 import { useAuth } from '../context/AuthContext'
-import { formatDateRange, formatDateTime, readableStatus } from '../eventDisplay'
+import { formatDateRange, formatDateTime } from '../eventDisplay'
+import { attendeeEventNote } from '../eventStatus'
 
 // The confirmation shown straight after registering, and the page each
 // entry in My registrations opens.
@@ -66,9 +67,9 @@ export default function AttendeeRegistrationPage() {
           </p>
         )}
 
-        {registration.event_status !== 'confirmed' && (
+        {attendeeEventNote(registration.event_status, registration.event_end_time) && (
           <p className="note">
-            This event is now {readableStatus(registration.event_status).toLowerCase()}.
+            {attendeeEventNote(registration.event_status, registration.event_end_time)}
           </p>
         )}
 

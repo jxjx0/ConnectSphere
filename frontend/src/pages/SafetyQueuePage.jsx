@@ -1,17 +1,16 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
+import { categoryLabel } from '../eventCategories'
 import { formatSessionSummary } from '../eventDisplay'
+import { statusLabel } from '../eventStatus'
 import { getSafetyQueue } from '../api/events'
 import { useAuth } from '../context/AuthContext'
 
-// Helper function to convert snake_case strings to Title Case
-const formatStatus = (status) => {
-  if (!status) return 'Awaiting Safety Check'
-  return status
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase())
-}
+// Everything in this queue is waiting on the Safety Officer reading it.
+const formatStatus = (status) => (
+  !status || status === 'awaiting_safety_check' ? 'Waiting for your check' : statusLabel(status)
+)
 
 const formatDateTime = (isoString) => {
   if (!isoString) return { date: 'TBD', time: '' }
@@ -158,7 +157,7 @@ export default function SafetyQueuePage() {
                   return (
                     <tr key={item.id}>
                       <th scope="row">{item.name}</th>
-                      <td>{item.category ? formatStatus(item.category) : 'General'}</td>
+                      <td>{item.category ? categoryLabel(item.category, item.category_other) : 'General'}</td>
                       <td>
                         <div>{eventTiming}</div>
                         <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '2px' }}>

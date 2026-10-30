@@ -47,7 +47,7 @@ export default function BookingForm({ venue, eventId: initialEventId, sessionId:
         .then((data) => {
           const active = (data.events || []).filter((e) =>
             // Venues are requested only once a request is approved.
-            ['planning', 'change_requested', 'confirmed'].includes(e.status)
+            ['planning', 'confirmed'].includes(e.status)
           )
           setAssignedEvents(active)
           if (active.length === 1) setSelectedEventId(active[0].id)

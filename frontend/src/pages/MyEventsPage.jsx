@@ -9,9 +9,10 @@ import {
   formatDateTime,
   formatSessionSummary,
 } from '../eventDisplay'
+import { openRequestBadges, statusLabel } from '../eventStatus'
 import {
   ORGANISER_EVENT_TABS,
-  organiserEventStatusLabel,
+  defaultOrganiserTab,
   organiserEventsForTab,
   organiserTabCount,
 } from '../organiserEventTabs'
@@ -20,8 +21,6 @@ export default function MyEventsPage() {
   const { token } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab')
-  const tab = ORGANISER_EVENT_TABS.find((item) => item.id === requestedTab)
-    || ORGANISER_EVENT_TABS.find((item) => item.id === 'submitted')
 
   const [events, setEvents] = useState([])
   const [drafts, setDrafts] = useState([])
@@ -46,6 +45,8 @@ export default function MyEventsPage() {
     )
   }
 
+  const tab = ORGANISER_EVENT_TABS.find((item) => item.id === requestedTab)
+    || ORGANISER_EVENT_TABS.find((item) => item.id === defaultOrganiserTab(events))
   const tabEvents = organiserEventsForTab(tab.id, events, drafts)
 
   return (
@@ -55,7 +56,7 @@ export default function MyEventsPage() {
         <div className="content__header">
           <h1>My event requests</h1>
           <p className="lead">
-            View your event requests by status, or continue a saved draft.
+            See what needs your reply, follow your requests, or continue a saved draft.
           </p>
         </div>
 
@@ -69,9 +70,7 @@ export default function MyEventsPage() {
               className={tab.id === item.id
                 ? 'button button--small'
                 : 'button button--small button--secondary'}
-              onClick={() => setSearchParams(item.id === 'submitted'
-                ? {}
-                : { tab: item.id })}
+              onClick={() => setSearchParams({ tab: item.id })}
             >
               {item.label} ({organiserTabCount(item.id, events, drafts)})
             </button>
@@ -88,7 +87,7 @@ export default function MyEventsPage() {
                 Use “Save as draft” on an event request to finish it later.
               </p>
             )}
-            {(tab.id === 'drafts' || tab.id === 'submitted') && (
+            {(tab.id === 'drafts' || tab.id === 'in-progress') && (
               <div className="form-actions">
                 <Link to="/my-events/new" className="button">
                   Request an Event
@@ -115,7 +114,18 @@ export default function MyEventsPage() {
                       <span className="choice__description">
                         {isDraft
                           ? `Last edited ${formatDateTime(item.updated_at)}`
-                          : <>{formatDateRange(item.start_time, item.end_time)}{' · '}{formatSessionSummary(item)}{' · '}<span className="tag">{organiserEventStatusLabel(item.status, tab.id)}</span></>}
+                          : (
+                            <>
+                              {formatDateRange(item.start_time, item.end_time)}{' · '}{formatSessionSummary(item)}{' · '}
+                              <span className="tag">{statusLabel(item.status)}</span>
+                              {openRequestBadges(item, 'organiser').map((badge) => (
+                                <span key={badge.kind}>
+                                  {' '}
+                                  <span className={badge.yourTurn ? 'tag tag--your-turn' : 'tag'}>{badge.label}</span>
+                                </span>
+                              ))}
+                            </>
+                          )}
                       </span>
                     </span>
                     <span className="choice__arrow" aria-hidden="true">→</span>

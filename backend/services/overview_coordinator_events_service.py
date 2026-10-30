@@ -23,6 +23,15 @@ def get_lead_coordinator_events(access_token: str):
                 sessions:event_sessions (
                     id
                 ),
+                clarifications:event_clarifications (
+                    status
+                ),
+                change_requests:event_change_requests (
+                    status
+                ),
+                cancellation_requests:event_cancellation_requests (
+                    status
+                ),
                 venue_bookings (
                     status,
                     venue:venues (

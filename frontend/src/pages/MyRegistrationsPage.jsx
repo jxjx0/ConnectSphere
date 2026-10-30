@@ -5,7 +5,8 @@ import { getMyRegistrations } from '../api/events'
 import AppShell from '../components/AppShell'
 import AttendeeTabs from '../components/AttendeeTabs'
 import { useAuth } from '../context/AuthContext'
-import { formatDateRange, formatDateTime, readableStatus } from '../eventDisplay'
+import { formatDateRange, formatDateTime } from '../eventDisplay'
+import { attendeeEventNote } from '../eventStatus'
 
 export default function MyRegistrationsPage() {
   const { token } = useAuth()
@@ -49,9 +50,9 @@ export default function MyRegistrationsPage() {
             </header>
             <div className="session-card__body">
               <p>Registered {formatDateTime(registration.created_at)} as {registration.email}</p>
-              {registration.event_status !== 'confirmed' && (
+              {attendeeEventNote(registration.event_status, registration.event_end_time) && (
                 <p className="note">
-                  This event is now {readableStatus(registration.event_status).toLowerCase()}.
+                  {attendeeEventNote(registration.event_status, registration.event_end_time)}
                 </p>
               )}
               <Link

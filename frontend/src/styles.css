@@ -1430,6 +1430,12 @@ a:hover {
   white-space: nowrap;
 }
 
+/* An open request waiting on the person reading it. */
+.tag--your-turn {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .form-card {
   background: white;
   padding: 2rem;
