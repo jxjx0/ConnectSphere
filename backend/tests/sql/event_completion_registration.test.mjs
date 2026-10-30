@@ -22,6 +22,10 @@ test('completion integrated with attendee registration migration', {
     await db.exec(`
       create role anon; create role authenticated; create role service_role bypassrls;
       create schema auth;
+      create table auth.users(id uuid primary key, email text not null);
+      insert into auth.users values
+        ('${id(2)}','attendee2@example.test'),
+        ('${id(3)}','attendee3@example.test');
       create function auth.uid() returns uuid language sql stable as
         $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
       grant usage on schema auth to authenticated;
@@ -48,8 +52,8 @@ test('completion integrated with attendee registration migration', {
       try { return (await db.query(query, params)).rows } finally { await db.exec('reset role') }
     }
     const register = user => asAttendee(user,
-      'select public.register_for_event($1,$2,$3,$4,$5)',
-      [id(11), 'Attendee', `attendee${user}@example.test`, 'Test address', '12345678'])
+      'select public.register_for_event($1,$2,$3,$4)',
+      [id(11), 'Attendee', 'Test address', '12345678'])
     await db.exec(`
       insert into public.events(id,organiser_id,name,description,purpose,category,status,
         start_time,end_time,expected_attendance,published_at,
