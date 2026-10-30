@@ -7,6 +7,7 @@ RPCs rather than a SQL or Supabase mock.
 
 import os
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
@@ -226,7 +227,7 @@ def test_approval_releases_event_resources_expires_requests_and_closes_registrat
     assert db.execute(
         "select event_id, released_at is not null from public.venue_tentative_holds "
         "order by id"
-    ).fetchall() == [(EVENT_ID, True), (OTHER_EVENT_ID, False)]
+    ).fetchall() == [(UUID(EVENT_ID), True), (UUID(OTHER_EVENT_ID), False)]
     assert db.execute(
         "select count(*) from public.equipment_bookings where request_id = %s",
         (EQUIPMENT_REQUEST_ID,),
