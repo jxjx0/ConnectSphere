@@ -157,6 +157,116 @@ def test_notify_role_sends_to_profiles_with_that_role(monkeypatch):
     ]
 
 
+def test_notify_event_registrants_emails_each_unique_address(monkeypatch, sent_emails):
+    class FakeRegistrations:
+        def table(self, name):
+            assert name == "event_registrations"
+            return self
+
+        def select(self, columns):
+            assert columns == "email"
+            return self
+
+        def eq(self, column, value):
+            assert (column, value) == ("event_id", EVENT_ID)
+            return self
+
+        def execute(self):
+            return SimpleNamespace(data=[
+                {"email": "ada@example.com"},
+                {"email": "ADA@example.com"},
+                {"email": "ben@example.com"},
+            ])
+
+    monkeypatch.setattr(
+        notification_service.config,
+        "get_admin_client",
+        lambda: FakeRegistrations(),
+    )
+
+    notification_service.notify_event_registrants_of_cancellation(
+        EVENT_ID, "Annual Client Summit", "Plans have changed"
+    )
+
+    assert sent_emails == [
+        (
+            "ada@example.com",
+            "Event cancelled: Annual Client Summit",
+            "The event 'Annual Client Summit' has been cancelled.\n\n"
+            "Reason: Plans have changed",
+        ),
+        (
+            "ben@example.com",
+            "Event cancelled: Annual Client Summit",
+            "The event 'Annual Client Summit' has been cancelled.\n\n"
+            "Reason: Plans have changed",
+        ),
+    ]
+
+
+def test_notify_event_registrants_continues_after_delivery_failure(monkeypatch, caplog):
+    class FakeRegistrations:
+        def table(self, name):
+            assert name == "event_registrations"
+            return self
+
+        def select(self, columns):
+            return self
+
+        def eq(self, column, value):
+            return self
+
+        def execute(self):
+            return SimpleNamespace(
+                data=[
+                    {"email": "failed@example.com"},
+                    {"email": "success@example.com"},
+                    {"email": None},
+                ]
+            )
+
+    sent = []
+
+    def send_email(to_email, subject, body):
+        sent.append(to_email)
+        if to_email == "failed@example.com":
+            raise RuntimeError("mail provider unavailable")
+
+    monkeypatch.setattr(
+        notification_service.config,
+        "get_admin_client",
+        lambda: FakeRegistrations(),
+    )
+    monkeypatch.setattr(notification_service, "send_email", send_email)
+
+    notification_service.notify_event_registrants_of_cancellation(
+        EVENT_ID, "Annual Client Summit", "Plans have changed"
+    )
+
+    assert sent == ["failed@example.com", "success@example.com"]
+    assert "Could not email a registered attendee" in caplog.text
+
+
+def test_notify_event_registrants_logs_lookup_failure_without_raising(
+    monkeypatch, caplog
+):
+    class FailedRegistrations:
+        def table(self, name):
+            raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(
+        notification_service.config,
+        "get_admin_client",
+        lambda: FailedRegistrations(),
+    )
+
+    notification_service.notify_event_registrants_of_cancellation(
+        EVENT_ID, "Annual Client Summit", "Plans have changed"
+    )
+
+    assert "Could not load attendee registrations" in caplog.text
+
+
 def test_notify_keeps_row_when_email_fails(monkeypatch, caplog):
     use_admin_client(monkeypatch, FakeAdminClient())
 

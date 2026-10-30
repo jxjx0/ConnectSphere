@@ -10,6 +10,7 @@ from postgrest import APIError
 import config
 from models.event import (
     Event,
+    EventCancellationDecision,
     EventCancellationRequest,
     EventCancellationRequestSubmit,
     EventStatus,
@@ -238,7 +239,6 @@ def test_organiser_can_submit_a_cancellation_request_and_coordinator_is_notified
         "routes.events.notification_service.notify",
         lambda *args: captured.setdefault("notification", args),
     )
-
     response = client.post(
         f"/events/{EVENT_ID}/cancellation-requests",
         json={"reason": "Plans have changed"},
@@ -326,3 +326,282 @@ def test_failed_cancellation_request_does_not_notify_the_coordinator(
     )
 
     assert response.status_code == 409
+
+
+def test_cancellation_decision_requires_a_nonblank_reason():
+    request = EventCancellationDecision(reason="  Avenues changed  ")
+    assert request.reason == "Avenues changed"
+
+    with pytest.raises(ValidationError):
+        EventCancellationDecision(reason="   ")
+
+
+def test_service_reviews_a_pending_cancellation_request(monkeypatch):
+    captured = {}
+
+    class Client:
+        def rpc(self, name, payload):
+            captured["rpc"] = (name, payload)
+            return SimpleNamespace(
+                execute=lambda: SimpleNamespace(
+                    data={
+                        "event": {
+                            "id": EVENT_ID,
+                            "organiser_id": ORGANISER_ID,
+                            "coordinator_id": COORDINATOR_ID,
+                            "name": "Annual Client Summit",
+                            "status": "cancelled",
+                        },
+                        "cancellation_request": {
+                            "id": "44444444-4444-4444-4444-444444444444",
+                            "event_id": EVENT_ID,
+                            "organiser_id": ORGANISER_ID,
+                            "reason": "Plans have changed",
+                            "previous_event_status": "confirmed",
+                            "status": "approved",
+                            "decision_reason": "Venue availability changed",
+                            "decision_by": COORDINATOR_ID,
+                            "decided_at": datetime.now(timezone.utc).isoformat(),
+                        },
+                    }
+                )
+            )
+
+    monkeypatch.setattr(config, "get_user_client", lambda token: Client())
+
+    event, cancellation_request = event_service.review_event_cancellation_request(
+        "coordinator-token",
+        COORDINATOR_ID,
+        EVENT_ID,
+        "approve",
+        " Venue availability changed ",
+    )
+
+    assert captured["rpc"] == (
+        "review_event_cancellation_request",
+        {
+            "p_event_id": EVENT_ID,
+            "p_decision": "approve",
+            "p_reason": "Venue availability changed",
+        },
+    )
+    assert event.status == EventStatus.CANCELLED
+    assert cancellation_request.reason == "Plans have changed"
+    assert cancellation_request.decision_reason == "Venue availability changed"
+
+
+@pytest.mark.parametrize(
+    ("decision", "database_message", "status_code", "expected_message"),
+    [
+        (
+            "approve",
+            "Cancellation request was not found for an event assigned to this Coordinator",
+            404,
+            "Cancellation request was not found for an event assigned to you.",
+        ),
+        (
+            "reject",
+            "Cancellation request is no longer pending",
+            409,
+            "This cancellation request has already been reviewed.",
+        ),
+    ],
+)
+def test_service_maps_cancellation_review_conflicts(
+    monkeypatch, decision, database_message, status_code, expected_message
+):
+    error = APIError(
+        {
+            "code": "P0001",
+            "message": database_message,
+            "details": None,
+            "hint": None,
+        }
+    )
+
+    class Client:
+        def rpc(self, name, payload):
+            return SimpleNamespace(execute=lambda: (_ for _ in ()).throw(error))
+
+    monkeypatch.setattr(config, "get_user_client", lambda token: Client())
+
+    with pytest.raises(AuthError) as caught:
+        event_service.review_event_cancellation_request(
+            "coordinator-token", COORDINATOR_ID, EVENT_ID, decision, "Decision reason"
+        )
+
+    assert caught.value.status_code == status_code
+    assert caught.value.message == expected_message
+
+
+def test_cancellation_review_rejects_missing_or_malformed_rpc_result(monkeypatch):
+    class Client:
+        def rpc(self, name, payload):
+            return SimpleNamespace(execute=lambda: SimpleNamespace(data=None))
+
+    monkeypatch.setattr(config, "get_user_client", lambda token: Client())
+
+    with pytest.raises(AuthError) as caught:
+        event_service.review_event_cancellation_request(
+            "coordinator-token", COORDINATOR_ID, EVENT_ID, "approve", "Decision reason"
+        )
+
+    assert caught.value.status_code == 502
+
+
+def test_coordinator_cancellation_review_route_notifies_the_organiser(
+    client, monkeypatch
+):
+    authenticate_as(monkeypatch, COORDINATOR)
+    saved_event = Event(
+        id=EVENT_ID,
+        organiser_id=ORGANISER_ID,
+        coordinator_id=COORDINATOR_ID,
+        status=EventStatus.CANCELLED,
+        name="Annual Client Summit",
+    )
+    saved_request = EventCancellationRequest(
+        id="44444444-4444-4444-4444-444444444444",
+        event_id=EVENT_ID,
+        organiser_id=ORGANISER_ID,
+        reason="Plans have changed",
+        previous_event_status=EventStatus.CONFIRMED,
+        status="approved",
+        decision_reason="Venue availability changed",
+        decision_by=COORDINATOR_ID,
+    )
+    captured = {}
+    monkeypatch.setattr(
+        event_service,
+        "review_event_cancellation_request",
+        lambda *args: (saved_event, saved_request),
+    )
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: captured.setdefault("notification", args),
+    )
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify_event_registrants_of_cancellation",
+        lambda *args: captured.setdefault("attendee_notification", args),
+    )
+
+    response = client.post(
+        f"/events/review/{EVENT_ID}/cancellation-request/approve",
+        json={"reason": "Venue availability changed"},
+        headers={"Authorization": "Bearer ******"},
+    )
+
+    assert response.status_code == 200
+    assert captured["notification"] == (
+        ORGANISER_ID,
+        "event_cancellation_approved",
+        "Event cancellation approved",
+        "The cancellation request for 'Annual Client Summit' has been approved. "
+        "Reason: Venue availability changed",
+        EVENT_ID,
+    )
+    assert captured["attendee_notification"] == (
+        EVENT_ID,
+        "Annual Client Summit",
+        "Plans have changed",
+    )
+
+
+def test_coordinator_rejection_notifies_organiser_but_not_attendees(
+    client, monkeypatch
+):
+    authenticate_as(monkeypatch, COORDINATOR)
+    saved_event = Event(
+        id=EVENT_ID,
+        organiser_id=ORGANISER_ID,
+        coordinator_id=COORDINATOR_ID,
+        status=EventStatus.CONFIRMED,
+        name="Annual Client Summit",
+    )
+    saved_request = EventCancellationRequest(
+        id="44444444-4444-4444-4444-444444444444",
+        event_id=EVENT_ID,
+        organiser_id=ORGANISER_ID,
+        reason="Plans have changed",
+        previous_event_status=EventStatus.CONFIRMED,
+        status="rejected",
+        decision_reason="The event is still needed",
+        decision_by=COORDINATOR_ID,
+    )
+    notifications = []
+    monkeypatch.setattr(
+        event_service,
+        "review_event_cancellation_request",
+        lambda *args: (saved_event, saved_request),
+    )
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: notifications.append(("organiser", args)),
+    )
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify_event_registrants_of_cancellation",
+        lambda *args: pytest.fail("rejected cancellation must not notify attendees"),
+    )
+
+    response = client.post(
+        f"/events/review/{EVENT_ID}/cancellation-request/reject",
+        json={"reason": "The event is still needed"},
+        headers={"Authorization": "Bearer ******"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["event"]["status"] == "confirmed"
+    assert notifications == [
+        (
+            "organiser",
+            (
+                ORGANISER_ID,
+                "event_cancellation_rejected",
+                "Event cancellation rejected",
+                "The cancellation request for 'Annual Client Summit' was rejected. "
+                "Reason: The event is still needed",
+                EVENT_ID,
+            ),
+        )
+    ]
+
+
+def test_non_coordinator_cannot_review_cancellation_request(client, monkeypatch):
+    authenticate_as(monkeypatch, ORGANISER)
+    monkeypatch.setattr(
+        event_service,
+        "review_event_cancellation_request",
+        lambda *args: pytest.fail("organisers cannot decide cancellation requests"),
+    )
+
+    response = client.post(
+        f"/events/review/{EVENT_ID}/cancellation-request/approve",
+        json={"reason": "Decision reason"},
+        headers={"Authorization": "Bearer ******"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_blank_decision_reason_is_rejected_before_review_or_notification(
+    client, monkeypatch
+):
+    authenticate_as(monkeypatch, COORDINATOR)
+    monkeypatch.setattr(
+        event_service,
+        "review_event_cancellation_request",
+        lambda *args: pytest.fail("blank reasons must not reach the service"),
+    )
+    monkeypatch.setattr(
+        "routes.events.notification_service.notify",
+        lambda *args: pytest.fail("invalid decisions must not notify the organiser"),
+    )
+
+    response = client.post(
+        f"/events/review/{EVENT_ID}/cancellation-request/approve",
+        json={"reason": "  "},
+        headers={"Authorization": "Bearer ******"},
+    )
+
+    assert response.status_code == 400
+    assert "A decision reason must not be blank" in response.get_json()["errors"]

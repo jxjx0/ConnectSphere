@@ -11,13 +11,14 @@ import {
 const events = [
   { id: '1', status: 'under_review' },
   { id: '2', status: 'awaiting_clarification' },
-  { id: '3', status: 'change_requested' },
-  { id: '4', status: 'cancellation_requested' },
-  { id: '5', status: 'planning' },
-  { id: '6', status: 'confirmed' },
-  { id: '7', status: 'completed' },
-  { id: '8', status: 'rejected' },
-  { id: '9', status: 'cancelled' },
+  { id: '3', status: 'awaiting_safety_check' },
+  { id: '4', status: 'change_requested' },
+  { id: '5', status: 'cancellation_requested' },
+  { id: '6', status: 'planning' },
+  { id: '7', status: 'confirmed' },
+  { id: '8', status: 'completed' },
+  { id: '9', status: 'rejected' },
+  { id: '10', status: 'cancelled' },
 ]
 const drafts = [{ id: 'draft-1', status: 'draft' }]
 
@@ -28,6 +29,7 @@ test('organiser tabs cover requested statuses and rejected events', () => {
       'drafts',
       'submitted',
       'awaiting-clarification',
+      'awaiting-safety-check',
       'change-requested',
       'cancellation-requested',
       'planning',
@@ -49,16 +51,20 @@ test('status tabs filter events and return matching counts', () => {
     organiserEventsForTab('awaiting-clarification', events, drafts),
     [events[1]],
   )
-  assert.deepEqual(organiserEventsForTab('change-requested', events, drafts), [events[2]])
+  assert.deepEqual(
+    organiserEventsForTab('awaiting-safety-check', events, drafts),
+    [events[2]],
+  )
+  assert.deepEqual(organiserEventsForTab('change-requested', events, drafts), [events[3]])
   assert.deepEqual(
     organiserEventsForTab('cancellation-requested', events, drafts),
-    [events[3]],
+    [events[4]],
   )
-  assert.deepEqual(organiserEventsForTab('planning', events, drafts), [events[4]])
-  assert.deepEqual(organiserEventsForTab('confirmed', events, drafts), [events[5]])
-  assert.deepEqual(organiserEventsForTab('completed', events, drafts), [events[6]])
-  assert.deepEqual(organiserEventsForTab('rejected', events, drafts), [events[7]])
-  assert.deepEqual(organiserEventsForTab('cancelled', events, drafts), [events[8]])
+  assert.deepEqual(organiserEventsForTab('planning', events, drafts), [events[5]])
+  assert.deepEqual(organiserEventsForTab('confirmed', events, drafts), [events[6]])
+  assert.deepEqual(organiserEventsForTab('completed', events, drafts), [events[7]])
+  assert.deepEqual(organiserEventsForTab('rejected', events, drafts), [events[8]])
+  assert.deepEqual(organiserEventsForTab('cancelled', events, drafts), [events[9]])
   assert.equal(organiserTabCount('confirmed', events, drafts), 1)
 })
 

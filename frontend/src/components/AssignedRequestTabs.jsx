@@ -59,10 +59,22 @@ const TABS = [
     empty: 'No events are waiting on a change request.',
   },
   {
+    id: 'cancellation-requested',
+    label: 'Cancellation requested',
+    statuses: ['cancellation_requested'],
+    empty: 'No cancellation requests are waiting for your review.',
+  },
+  {
     id: 'completed',
     label: 'Completed',
     statuses: ['completed'],
     empty: 'You have no completed events.',
+  },
+  {
+    id: 'cancelled',
+    label: 'Cancelled',
+    statuses: ['cancelled'],
+    empty: 'You have no cancelled events.',
   },
   {
     id: 'rejected',
@@ -303,18 +315,22 @@ export default function AssignedRequestTabs({ events }) {
                     <span>{formatSessionSummary(event)}</span>
                     <span aria-hidden="true">·</span>
                     <span className="tag">{readableStatus(event.status)}</span>
-                    <span className="tag" style={venueBadge.style}>
-                      {venueBadge.label}
-                    </span>
-                    {safetyBadge && (
-                      <span className="tag" style={safetyBadge.style}>
-                        {safetyBadge.label}
-                      </span>
-                    )}
-                    {equipmentBadge && (
-                      <span className="tag" style={equipmentBadge.style}>
-                        {equipmentBadge.label}
-                      </span>
+                    {event.status !== 'cancelled' && (
+                      <>
+                        <span className="tag" style={venueBadge.style}>
+                          {venueBadge.label}
+                        </span>
+                        {safetyBadge && (
+                          <span className="tag" style={safetyBadge.style}>
+                            {safetyBadge.label}
+                          </span>
+                        )}
+                        {equipmentBadge && (
+                          <span className="tag" style={equipmentBadge.style}>
+                            {equipmentBadge.label}
+                          </span>
+                        )}
+                      </>
                     )}
                   </span>
                 </span>

@@ -321,13 +321,26 @@ export default function MyEventDetailPage() {
         </section>
 
         <section className="stack stack--tight">
+          {event.cancellation_request && (
+            <>
+              <h2 className="section-title">Latest cancellation request</h2>
+              <p className="note">
+                Status: {readableStatus(event.cancellation_request.status)}.
+              </p>
+              <p><strong>Your reason:</strong> {event.cancellation_request.reason}</p>
+              {event.cancellation_request.decision_reason && (
+                <p>
+                  <strong>Coordinator decision reason:</strong>{' '}
+                  {event.cancellation_request.decision_reason}
+                </p>
+              )}
+            </>
+          )}
           {event.has_pending_cancellation_request ? (
             <>
-              <h2 className="section-title">Cancellation request</h2>
               <p className="notice" role="status">
                 Your cancellation request is waiting for the Coordinator.
               </p>
-              <p><strong>Reason:</strong> {event.cancellation_request.reason}</p>
             </>
           ) : CANCELLABLE_STATUSES.includes(event.status) ? (
             <>

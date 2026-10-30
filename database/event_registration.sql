@@ -29,7 +29,8 @@ alter table public.events
 alter table public.events
     add constraint events_registration_closes_after_opens
     check (
-        registration_opens_at is null
+        status = 'cancelled'
+        or registration_opens_at is null
         or registration_closes_at is null
         or registration_closes_at > registration_opens_at
     );
@@ -70,7 +71,10 @@ begin
         raise exception 'Event request was not found';
     end if;
 
-    if current_event.status in ('draft', 'under_review', 'rejected', 'completed') then
+    if current_event.status in (
+        'draft', 'under_review', 'rejected', 'completed',
+        'cancellation_requested', 'cancelled'
+    ) then
         raise exception 'Registration cannot be set up for an event in its current status';
     end if;
 

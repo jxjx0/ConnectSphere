@@ -84,6 +84,48 @@ def notify_role(
         logger.exception("Could not notify profiles with role %s", role)
 
 
+def notify_event_registrants_of_cancellation(
+    event_id: str,
+    event_name: str,
+    cancellation_reason: str,
+) -> None:
+    """Email attendees registered for an event after its cancellation is approved."""
+    try:
+        registrations = (
+            config.get_admin_client()
+            .table("event_registrations")
+            .select("email")
+            .eq("event_id", event_id)
+            .execute()
+        ).data or []
+    except Exception:
+        logger.exception(
+            "Could not load attendee registrations for cancelled event %s",
+            event_id,
+        )
+        return
+
+    subject = f"Event cancelled: {event_name}"
+    body = (
+        f"The event '{event_name}' has been cancelled.\n\n"
+        f"Reason: {cancellation_reason}"
+    )
+    sent_to: set[str] = set()
+    for registration in registrations:
+        email = (registration.get("email") or "").strip()
+        email_key = email.casefold()
+        if not email or email_key in sent_to:
+            continue
+        sent_to.add(email_key)
+        try:
+            send_email(email, subject, body)
+        except Exception:
+            logger.exception(
+                "Could not email a registered attendee about cancelled event %s",
+                event_id,
+            )
+
+
 def _save_notification(
     user_id: str,
     notification_type: str,

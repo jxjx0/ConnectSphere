@@ -2,6 +2,7 @@ export const ORGANISER_EVENT_TABS = [
   { id: 'drafts', label: 'Drafts', empty: 'You have no saved drafts.' },
   { id: 'submitted', label: 'Submitted', statuses: ['under_review'], empty: 'You have no submitted requests waiting for review.' },
   { id: 'awaiting-clarification', label: 'Awaiting clarification', statuses: ['awaiting_clarification'], empty: 'You have no events awaiting clarification.' },
+  { id: 'awaiting-safety-check', label: 'Awaiting safety check', statuses: ['awaiting_safety_check'], empty: 'You have no events awaiting a safety check.' },
   { id: 'change-requested', label: 'Change requested', statuses: ['change_requested'], empty: 'You have no events with a change request.' },
   { id: 'cancellation-requested', label: 'Cancellation requested', statuses: ['cancellation_requested'], empty: 'You have no cancellation requests awaiting review.' },
   { id: 'planning', label: 'Planning', statuses: ['planning'], empty: 'You have no events in planning.' },
