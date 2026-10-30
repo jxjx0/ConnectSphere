@@ -139,10 +139,9 @@ def _change_request_row(status="pending") -> dict:
         id="44444444-4444-4444-4444-444444444444",
         event_id=EVENT_ID,
         organiser_id=ORGANISER_ID,
-        event_status_before_request="under_review",
         status=status,
         created_at=_in_days(-1),
-        rejection_reason="The revised date conflicts with the venue booking."
+        decision_reason="The revised date conflicts with the venue booking."
         if status == "rejected"
         else None,
         name="Annual Client Summit",
@@ -650,7 +649,7 @@ def test_coordinator_review_calls_atomic_rejection_rpc_with_reason(monkeypatch):
             "p_rejection_reason": "Venue unavailable",
         },
     }
-    assert result[1].rejection_reason == (
+    assert result[1].decision_reason == (
         "The revised date conflicts with the venue booking."
     )
 
@@ -668,6 +667,7 @@ def test_coordinator_can_reject_change_request_and_notify_organiser(
         lambda access_token, coordinator_id, event_id, decision, rejection, approval: (
             reviewed_event,
             reviewed_request,
+            False,
         ),
     )
     monkeypatch.setattr(
@@ -682,7 +682,7 @@ def test_coordinator_can_reject_change_request_and_notify_organiser(
     )
 
     assert response.status_code == 200
-    assert response.get_json()["change_request"]["rejection_reason"]
+    assert response.get_json()["change_request"]["decision_reason"]
     assert captured["notification"][0] == ORGANISER_ID
     assert captured["notification"][2] == "Event change request rejected"
     assert f"The proposed changes to '{reviewed_request.name}' were rejected." in captured["notification"][3]
@@ -800,7 +800,7 @@ def _review_returns(monkeypatch, status):
     monkeypatch.setattr(
         event_service,
         "review_assigned_change_request",
-        lambda *args: (reviewed_event, reviewed_request),
+        lambda *args: (reviewed_event, reviewed_request, False),
     )
 
 
@@ -840,7 +840,7 @@ def test_approve_route_passes_the_ticked_bookings(client, monkeypatch):
 
     def review(access_token, coordinator_id, event_id, decision, rejection, approval):
         captured["approval"] = approval
-        return Event(**_event_row("planning")), EventChangeRequest(**_change_request_row("approved"))
+        return Event(**_event_row("planning")), EventChangeRequest(**_change_request_row("approved")), False
 
     monkeypatch.setattr(event_service, "review_assigned_change_request", review)
     monkeypatch.setattr("routes.events.notification_service.notify", lambda *args: None)
@@ -857,12 +857,11 @@ def test_approve_route_passes_the_ticked_bookings(client, monkeypatch):
 
 def test_organiser_is_told_when_a_confirmed_event_returns_to_planning(client, monkeypatch):
     authenticate_as(monkeypatch, COORDINATOR)
-    approved = EventChangeRequest(**{
-        **_change_request_row("approved"), "event_status_before_request": "confirmed",
-    })
+    approved = EventChangeRequest(**_change_request_row("approved"))
+    # The database reports that the material change sent it back to Planning.
     monkeypatch.setattr(
         event_service, "review_assigned_change_request",
-        lambda *args: (Event(**_event_row("planning")), approved),
+        lambda *args: (Event(**_event_row("planning")), approved, True),
     )
     captured = {}
     monkeypatch.setattr(

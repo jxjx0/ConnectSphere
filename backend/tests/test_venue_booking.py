@@ -188,7 +188,7 @@ def test_venues_are_requested_only_after_approval(database, status):
     assert database.calls_to("venue_bookings", "insert") == []
 
 
-@pytest.mark.parametrize("status", ["planning", "change_requested", "confirmed"])
+@pytest.mark.parametrize("status", ["planning", "confirmed"])
 def test_approved_events_can_request_venues(database, status):
     database.responses[("events", "select")] = [{"status": status}]
 

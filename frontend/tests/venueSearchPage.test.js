@@ -11,6 +11,8 @@ import * as searchHelpers from '../src/venueSearch.js'
 import * as eventDisplay from '../src/eventDisplay.js'
 import * as eventCategories from '../src/eventCategories.js'
 import * as equipmentEligibility from '../src/equipmentRequestEligibility.js'
+import * as eventStatus from '../src/eventStatus.js'
+import * as coordinatorTabs from '../src/coordinatorEventTabs.js'
 
 
 const source = await readFile(new URL('../src/pages/VenueSearchPage.jsx', import.meta.url), 'utf8')
@@ -330,6 +332,9 @@ test('event details offer contextual Find Venue only in Planning', async () => {
       '../eventDisplay': eventDisplay,
       '../equipmentRequestEligibility': equipmentEligibility,
       '../components/EquipmentRequestCard': { __esModule: true, default: () => null },
+      '../components/EventStatusPanel': { __esModule: true, default: () => null },
+      '../components/RequestHistory': { __esModule: true, default: () => null },
+      '../eventStatus': eventStatus,
     }
     new Function('require', 'module', 'exports', compiled.code)((name) => imports[name], module, module.exports)
     const html = renderToStaticMarkup(React.createElement(module.exports.default))
@@ -352,8 +357,10 @@ test('Coordinator dashboard prioritizes assigned events and keeps standalone bro
   }
   const AssignedRequestTabs = await compilePage('../src/components/AssignedRequestTabs.jsx', {
     'react/jsx-runtime': jsxRuntime,
-    'react-router-dom': { Link: link, useSearchParams: () => [new URLSearchParams('tab=planning'), () => {}] },
+    'react-router-dom': { Link: link, useSearchParams: () => [new URLSearchParams('tab=in-progress'), () => {}] },
     '../eventDisplay': eventDisplay,
+    '../eventStatus': eventStatus,
+    '../coordinatorEventTabs': coordinatorTabs,
   })
   let stateIndex = 0
   const states = [[{ ...assignedEvent, status: 'planning' }], '', false]

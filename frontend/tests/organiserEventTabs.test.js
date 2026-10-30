@@ -3,72 +3,66 @@ import test from 'node:test'
 
 import {
   ORGANISER_EVENT_TABS,
-  organiserEventStatusLabel,
+  defaultOrganiserTab,
   organiserEventsForTab,
   organiserTabCount,
+  organiserTabFor,
 } from '../src/organiserEventTabs.js'
 
 const events = [
   { id: '1', status: 'under_review' },
-  { id: '2', status: 'awaiting_clarification' },
+  { id: '2', status: 'planning', has_open_clarification: true },
   { id: '3', status: 'awaiting_safety_check' },
-  { id: '4', status: 'change_requested' },
-  { id: '5', status: 'cancellation_requested' },
+  { id: '4', status: 'confirmed', has_pending_change_request: true },
+  { id: '5', status: 'confirmed', has_pending_cancellation_request: true },
   { id: '6', status: 'planning' },
-  { id: '7', status: 'confirmed' },
-  { id: '8', status: 'completed' },
-  { id: '9', status: 'rejected' },
-  { id: '10', status: 'cancelled' },
+  { id: '7', status: 'completed' },
+  { id: '8', status: 'rejected' },
+  { id: '9', status: 'cancelled' },
 ]
 const drafts = [{ id: 'draft-1', status: 'draft' }]
 
-test('organiser tabs cover requested statuses and rejected events', () => {
+test('organiser tabs put what needs a reply first', () => {
   assert.deepEqual(
     ORGANISER_EVENT_TABS.map((tab) => tab.id),
-    [
-      'drafts',
-      'submitted',
-      'awaiting-clarification',
-      'awaiting-safety-check',
-      'change-requested',
-      'cancellation-requested',
-      'planning',
-      'confirmed',
-      'completed',
-      'rejected',
-      'cancelled',
-    ],
+    ['needs-reply', 'in-progress', 'drafts', 'closed'],
   )
 })
 
-test('submitted tab filters under-review events and labels them Submitted', () => {
-  assert.deepEqual(organiserEventsForTab('submitted', events, drafts), [events[0]])
-  assert.equal(organiserEventStatusLabel('under_review', 'submitted'), 'Submitted')
+test('only an open clarification needs the Organiser', () => {
+  assert.deepEqual(organiserEventsForTab('needs-reply', events, drafts), [events[1]])
 })
 
-test('status tabs filter events and return matching counts', () => {
+test('events stay in progress while their own change or cancellation is reviewed', () => {
   assert.deepEqual(
-    organiserEventsForTab('awaiting-clarification', events, drafts),
-    [events[1]],
+    organiserEventsForTab('in-progress', events, drafts).map((event) => event.id),
+    ['1', '3', '4', '5', '6'],
   )
-  assert.deepEqual(
-    organiserEventsForTab('awaiting-safety-check', events, drafts),
-    [events[2]],
-  )
-  assert.deepEqual(organiserEventsForTab('change-requested', events, drafts), [events[3]])
-  assert.deepEqual(
-    organiserEventsForTab('cancellation-requested', events, drafts),
-    [events[4]],
-  )
-  assert.deepEqual(organiserEventsForTab('planning', events, drafts), [events[5]])
-  assert.deepEqual(organiserEventsForTab('confirmed', events, drafts), [events[6]])
-  assert.deepEqual(organiserEventsForTab('completed', events, drafts), [events[7]])
-  assert.deepEqual(organiserEventsForTab('rejected', events, drafts), [events[8]])
-  assert.deepEqual(organiserEventsForTab('cancelled', events, drafts), [events[9]])
-  assert.equal(organiserTabCount('confirmed', events, drafts), 1)
 })
 
-test('drafts tab returns drafts separately from submitted events', () => {
+test('completed, rejected and cancelled events are closed', () => {
+  assert.deepEqual(
+    organiserEventsForTab('closed', events, drafts).map((event) => event.id),
+    ['7', '8', '9'],
+  )
+})
+
+test('every submitted event is in exactly one tab', () => {
+  const tabs = ['needs-reply', 'in-progress', 'closed']
+  for (const event of events) {
+    assert.equal(tabs.filter((tab) => organiserTabFor(event) === tab).length, 1)
+  }
+  assert.equal(
+    tabs.reduce((total, tab) => total + organiserTabCount(tab, events, drafts), 0),
+    events.length,
+  )
+})
+
+test('drafts tab lists drafts', () => {
   assert.deepEqual(organiserEventsForTab('drafts', events, drafts), drafts)
-  assert.equal(organiserTabCount('drafts', events, drafts), 1)
+})
+
+test('the page opens on "Needs my reply" only when something is waiting', () => {
+  assert.equal(defaultOrganiserTab(events), 'needs-reply')
+  assert.equal(defaultOrganiserTab([events[0], events[5]]), 'in-progress')
 })

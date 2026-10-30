@@ -60,7 +60,6 @@ def test_service_submits_reason_to_atomic_rpc_and_loads_saved_request(monkeypatc
         "event_id": EVENT_ID,
         "organiser_id": ORGANISER_ID,
         "reason": "Plans have changed",
-        "previous_event_status": "confirmed",
         "status": "pending",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -98,7 +97,7 @@ def test_service_submits_reason_to_atomic_rpc_and_loads_saved_request(monkeypatc
     )
 
     assert saved.reason == "Plans have changed"
-    assert saved.previous_event_status == EventStatus.CONFIRMED
+    assert saved.status == "pending"
     assert captured["rpc"] == (
         "submit_event_cancellation_request",
         {"p_event_id": EVENT_ID, "p_reason": "Plans have changed"},
@@ -122,8 +121,7 @@ def test_service_submits_reason_to_atomic_rpc_and_loads_saved_request(monkeypatc
             "Event cannot be cancelled in its current status",
             409,
             "Cancellation requests are only available for events in planning, "
-            "awaiting clarification, awaiting a safety check, with a change "
-            "request or confirmed.",
+            "awaiting a safety check or confirmed.",
         ),
         ("Event request was not found", 404, "Event request was not found."),
         (
@@ -171,7 +169,6 @@ def test_event_detail_includes_the_pending_request_and_reason():
         "event_id": EVENT_ID,
         "organiser_id": ORGANISER_ID,
         "reason": "Plans have changed",
-        "previous_event_status": "planning",
         "status": "pending",
     }
 
@@ -205,10 +202,9 @@ def test_event_detail_includes_the_pending_request_and_reason():
     )
     enriched = event_service._with_cancellation_request(Client(), [event])[0]
 
-    assert enriched.has_pending_cancellation_request is True
     assert enriched.cancellation_request is not None
     assert enriched.cancellation_request.reason == "Plans have changed"
-    assert enriched.cancellation_request.previous_event_status == EventStatus.PLANNING
+    assert enriched.cancellation_request.status == "pending"
 
 
 def test_organiser_can_submit_a_cancellation_request_and_coordinator_is_notified(
@@ -220,7 +216,6 @@ def test_organiser_can_submit_a_cancellation_request_and_coordinator_is_notified
         event_id=EVENT_ID,
         organiser_id=ORGANISER_ID,
         reason="Plans have changed",
-        previous_event_status=EventStatus.CONFIRMED,
     )
     event = Event(
         id=EVENT_ID,
@@ -247,7 +242,7 @@ def test_organiser_can_submit_a_cancellation_request_and_coordinator_is_notified
 
     assert response.status_code == 201
     assert response.get_json()["cancellation_request"]["reason"] == "Plans have changed"
-    assert response.get_json()["cancellation_request"]["previous_event_status"] == "confirmed"
+    assert response.get_json()["cancellation_request"]["status"] == "pending"
     assert captured["notification"] == (
         COORDINATOR_ID,
         "event_cancellation_requested",
@@ -357,11 +352,10 @@ def test_service_reviews_a_pending_cancellation_request(monkeypatch):
                             "event_id": EVENT_ID,
                             "organiser_id": ORGANISER_ID,
                             "reason": "Plans have changed",
-                            "previous_event_status": "confirmed",
                             "status": "approved",
                             "decision_reason": "Venue availability changed",
-                            "decision_by": COORDINATOR_ID,
-                            "decided_at": datetime.now(timezone.utc).isoformat(),
+                            "closed_by": COORDINATOR_ID,
+                            "closed_at": datetime.now(timezone.utc).isoformat(),
                         },
                     }
                 )
@@ -465,10 +459,9 @@ def test_coordinator_cancellation_review_route_notifies_the_organiser(
         event_id=EVENT_ID,
         organiser_id=ORGANISER_ID,
         reason="Plans have changed",
-        previous_event_status=EventStatus.CONFIRMED,
         status="approved",
         decision_reason="Venue availability changed",
-        decision_by=COORDINATOR_ID,
+        closed_by=COORDINATOR_ID,
     )
     captured = {}
     monkeypatch.setattr(
@@ -523,10 +516,9 @@ def test_coordinator_rejection_notifies_organiser_but_not_attendees(
         event_id=EVENT_ID,
         organiser_id=ORGANISER_ID,
         reason="Plans have changed",
-        previous_event_status=EventStatus.CONFIRMED,
         status="rejected",
         decision_reason="The event is still needed",
-        decision_by=COORDINATOR_ID,
+        closed_by=COORDINATOR_ID,
     )
     notifications = []
     monkeypatch.setattr(
