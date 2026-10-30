@@ -196,7 +196,7 @@ def test_approval_releases_event_resources_expires_requests_and_closes_registrat
         insert into public.event_change_requests
             (id, event_id, status, rejection_reason)
         values (%s, %s, 'pending', 'old reason'),
-               (%s, %s, 'approved', null)
+               (%s, %s, 'pending', null)
         """,
         (CHANGE_REQUEST_ID, EVENT_ID, OTHER_EVENT_ID, OTHER_EVENT_ID),
     )
