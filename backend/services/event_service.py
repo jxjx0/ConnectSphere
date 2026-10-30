@@ -945,7 +945,8 @@ def review_assigned_change_request(
             or "not awaiting" in message
         ):
             raise AuthError(
-                "This change request has already been reviewed.",
+                "This change request is no longer pending. It may have been "
+                "reviewed or expired.",
                 status_code=409,
             ) from error
         if error.code == "22023":

@@ -303,6 +303,11 @@ export default function MyEventDetailPage() {
                   The Coordinator approved and applied the proposed changes.
                 </p>
               )}
+              {event.change_request.status === 'expired' && (
+                <p className="notice" role="status">
+                  This change request has expired and can no longer be reviewed.
+                </p>
+              )}
             </>
           )}
           {event.has_pending_change_request ? (
@@ -327,6 +332,11 @@ export default function MyEventDetailPage() {
               <p className="note">
                 Status: {readableStatus(event.cancellation_request.status)}.
               </p>
+              {event.cancellation_request.status === 'expired' && (
+                <p className="notice" role="status">
+                  This cancellation request expired when the event completed.
+                </p>
+              )}
               <p><strong>Your reason:</strong> {event.cancellation_request.reason}</p>
               {event.cancellation_request.decision_reason && (
                 <p>

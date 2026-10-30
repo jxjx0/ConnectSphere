@@ -784,6 +784,11 @@ export default function EventReviewDetailPage() {
               Status: {readableStatus(event.change_request.status)}.
               {' '}Reason for change: {event.change_request.reason_for_change}
             </p>
+            {event.change_request.status === 'expired' && (
+              <p className="notice" role="status">
+                This change request has expired and can no longer be reviewed.
+              </p>
+            )}
             {event.change_request.rejection_reason && (
               <p className="form-error" role="status">
                 The Coordinator rejected this change request:
