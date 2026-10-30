@@ -181,6 +181,13 @@ the event to `cancellation_requested`. The Coordinator's approval or rejection
 workflow is handled separately. If the original cancellation migration was
 already applied, apply `database/event_cancellation_request_status_transition.sql`.
 
+Before Attendees can register for events, apply
+`database/attendee_registrations.sql` after `database/event_registration.sql`.
+It adds the `event_registrations` table and the functions that list published
+events and register an Attendee. A registration locks the event while it checks
+the registration window, duplicates and spots left, so an event cannot be
+oversold.
+
 ---
 
 ## Running the app

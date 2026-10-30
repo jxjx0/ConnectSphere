@@ -4,6 +4,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 
 import config
+from routes.attendee_events import attendee_events_bp
 from routes.auth import auth_bp
 from routes.events import events_bp
 from routes.health import health_bp
@@ -28,6 +29,7 @@ def create_app() -> Flask:
     app.register_blueprint(equipment_bp)
     app.register_blueprint(equipment_requests_bp)
     app.register_blueprint(equipment_bookings_bp)
+    app.register_blueprint(attendee_events_bp)
 
     @app.errorhandler(AuthError)
     def handle_auth_error(error: AuthError):
