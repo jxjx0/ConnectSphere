@@ -67,6 +67,18 @@ class EventCancellationRequestSubmit(BaseModel):
         return stripped
 
 
+class EventCancellationDecision(BaseModel):
+    reason: str = Field(min_length=1)
+
+    @field_validator("reason")
+    @classmethod
+    def strip_reason(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("A decision reason must not be blank")
+        return stripped
+
+
 class EventCancellationRequest(BaseModel):
     id: str
     event_id: str
@@ -74,6 +86,9 @@ class EventCancellationRequest(BaseModel):
     reason: str
     previous_event_status: EventStatus
     status: str = "pending"
+    decision_reason: str | None = None
+    decision_by: str | None = None
+    decided_at: datetime | None = None
     created_at: datetime | None = None
 
 

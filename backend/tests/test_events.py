@@ -805,6 +805,36 @@ def test_coordinator_detail_includes_the_events_sessions(monkeypatch):
     assert [session.name for session in event.sessions] == ["Breakout A"]
 
 
+def test_coordinator_detail_includes_pending_cancellation_request(monkeypatch):
+    assigned = EVENT_RESPONSE.model_dump(mode="json")
+    assigned["coordinator_id"] = COORDINATOR_PROFILE.id
+    assigned["status"] = EventStatus.CANCELLATION_REQUESTED.value
+    cancellation_request = {
+        "id": "44444444-4444-4444-4444-444444444444",
+        "event_id": EVENT_RESPONSE.id,
+        "organiser_id": ORGANISER_PROFILE.id,
+        "reason": "Plans have changed",
+        "previous_event_status": EventStatus.CONFIRMED.value,
+        "status": "pending",
+    }
+    fake_client(
+        monkeypatch,
+        {
+            "events": [assigned],
+            "event_cancellation_requests": [cancellation_request],
+        },
+        [],
+    )
+
+    event = event_service.get_assigned_event(
+        "coordinator-token", COORDINATOR_PROFILE.id, EVENT_RESPONSE.id
+    )
+
+    assert event.cancellation_request is not None
+    assert event.cancellation_request.reason == "Plans have changed"
+    assert event.has_pending_cancellation_request is True
+
+
 def test_lead_overview_keeps_each_events_sessions():
     [event] = Event.format_lead_overview(
         [{"id": "event-1", "status": "planning", "sessions": [{"id": "s1"}]}]

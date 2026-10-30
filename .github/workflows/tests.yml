@@ -43,6 +43,20 @@ jobs:
     name: Backend Tests
     runs-on: ubuntu-latest
     # needs: lint
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cancellation_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d cancellation_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Check out repository
@@ -60,6 +74,8 @@ jobs:
       - name: Run backend tests
         id: tests
         working-directory: backend
+        env:
+          CANCELLATION_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/cancellation_test
         run: >-
           python -m pytest
           --cov

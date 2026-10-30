@@ -7,6 +7,7 @@ from flask import Blueprint, g, jsonify, request
 from pydantic import ValidationError
 
 from models.event import (
+    EventCancellationDecision,
     EventChangeRequestApproval,
     EventChangeRequestDecision,
     EventChangeRequestSubmit,
@@ -353,6 +354,70 @@ def approve_assigned_change_request(event_id):
 def reject_assigned_change_request(event_id):
     _require_coordinator()
     return _review_change_request(event_id, "reject")
+
+
+def _review_cancellation_request(event_id, decision):
+    try:
+        decision_request = EventCancellationDecision(
+            **(request.get_json(silent=True) or {})
+        )
+    except ValidationError as error:
+        return jsonify({"errors": _validation_messages(error)}), 400
+
+    _require_coordinator()
+    event, cancellation_request = event_service.review_event_cancellation_request(
+        g.access_token,
+        g.user_id,
+        event_id,
+        decision,
+        decision_request.reason,
+    )
+    approved = decision == "approve"
+    notification_service.notify(
+        cancellation_request.organiser_id,
+        "event_cancellation_approved" if approved else "event_cancellation_rejected",
+        "Event cancellation approved" if approved else "Event cancellation rejected",
+        (
+            f"The cancellation request for '{event.name}' has been approved. "
+            f"Reason: {cancellation_request.decision_reason}"
+            if approved
+            else f"The cancellation request for '{event.name}' was rejected. "
+            f"Reason: {cancellation_request.decision_reason}"
+        ),
+        event.id,
+    )
+    if approved:
+        notification_service.notify_event_registrants_of_cancellation(
+            event.id,
+            event.name,
+            cancellation_request.reason,
+        )
+    event = event.model_copy(
+        update={
+            "cancellation_request": cancellation_request,
+            "has_pending_cancellation_request": False,
+        }
+    )
+    return jsonify(
+        {
+            "event": event.model_dump(mode="json"),
+            "cancellation_request": cancellation_request.model_dump(mode="json"),
+        }
+    ), 200
+
+
+@events_bp.post("/review/<event_id>/cancellation-request/approve")
+@require_auth
+def approve_assigned_cancellation_request(event_id):
+    _require_coordinator()
+    return _review_cancellation_request(event_id, "approve")
+
+
+@events_bp.post("/review/<event_id>/cancellation-request/reject")
+@require_auth
+def reject_assigned_cancellation_request(event_id):
+    _require_coordinator()
+    return _review_cancellation_request(event_id, "reject")
 
 
 @events_bp.get("/review/<event_id>/clarifications")
