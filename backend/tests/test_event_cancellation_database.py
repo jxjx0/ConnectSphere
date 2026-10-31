@@ -231,7 +231,7 @@ def test_approval_releases_event_resources_expires_requests_and_closes_registrat
     )
     assert db.execute(
         "select id from public.list_published_events()"
-    ).fetchall() == []
+    ).fetchall() == [(UUID(OTHER_EVENT_ID),)]
     assert db.execute(
         "select id, status from public.list_published_events(%s)",
         (EVENT_ID,),
