@@ -14,17 +14,22 @@ export const REGISTRATION_STATUSES = [
 ]
 
 // Attendees register for the whole event and the Organiser spreads them
-// across its sessions, so the limit is what every session's approved venue
-// holds together. Null until every session has one, as the total is not
-// known before then. Mirrors save_event_registration, which has the final say.
+// across its sessions, so the limit is what every approved venue of every
+// session holds together. Null until every session has one, as the total is
+// not known before then. Mirrors save_event_registration, which has the
+// final say.
 export function largestAllowedCapacity(event, arrangements) {
-  const capacities = sessionsOf(event).map((session) => arrangements.find(
-    (item) => item.kind === 'venue'
-      && item.status === 'APPROVED'
-      && item.session_id === session.id,
-  )?.venue_capacity)
-  if (capacities.some((capacity) => capacity == null)) return null
-  return capacities.reduce((total, capacity) => total + capacity, 0)
+  const approvedVenues = arrangements.filter(
+    (item) => item.kind === 'venue' && item.status === 'APPROVED',
+  )
+  const sessions = sessionsOf(event)
+  const everySessionHasVenue = sessions.every((session) => approvedVenues.some(
+    (venue) => venue.session_id === session.id,
+  ))
+  if (!everySessionHasVenue) return null
+  return approvedVenues
+    .filter((venue) => sessions.some((session) => session.id === venue.session_id))
+    .reduce((total, venue) => total + venue.venue_capacity, 0)
 }
 
 // Everyone expected across all the sessions. Null when no session gives a
@@ -37,12 +42,13 @@ export function totalExpectedAttendance(event) {
 }
 
 // The saved settings, or a starting point taken from the event request:
-// the total expected attendance, kept within the venues.
+// the total expected attendance, kept within the venues. With no expected
+// attendance, the venue limit is the best guess.
 export function registrationFormFrom(event, arrangements) {
   const limit = largestAllowedCapacity(event, arrangements)
   const expected = totalExpectedAttendance(event)
   const suggested = limit === null || expected === null
-    ? expected
+    ? expected ?? limit
     : Math.min(expected, limit)
   return {
     opensAt: toDateTimeInput(event.registration_opens_at),

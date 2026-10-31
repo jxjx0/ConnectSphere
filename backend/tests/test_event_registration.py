@@ -254,12 +254,12 @@ def test_service_sends_registration_to_the_database_function(monkeypatch):
             "Attendee capacity cannot exceed the combined capacity of the "
             "sessions' approved venues.",
         ),
-        # A database not yet updated still raises the earlier wording.
+        # A database not yet updated still enforces the smallest venue.
         (
             "Attendee capacity cannot exceed the venue capacity",
             400,
-            "Attendee capacity cannot exceed the combined capacity of the "
-            "sessions' approved venues.",
+            "Attendee capacity cannot exceed the capacity of the smallest "
+            "approved venue.",
         ),
         (
             "Every session needs an approved venue before publishing",

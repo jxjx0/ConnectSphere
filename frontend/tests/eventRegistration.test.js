@@ -78,6 +78,19 @@ test("every session's approved venue adds to the capacity limit", () => {
   assert.equal(largestAllowedCapacity(twoSessions(), [APPROVED_VENUE, BREAKOUT_VENUE]), 200)
 })
 
+test('a session with two approved venues counts both, as the database does', () => {
+  const overflow = { ...BREAKOUT_VENUE, venue_name: 'Overflow room', venue_capacity: 30 }
+  assert.equal(
+    largestAllowedCapacity(twoSessions(), [APPROVED_VENUE, BREAKOUT_VENUE, overflow]),
+    230,
+  )
+})
+
+test("another event's venue does not count", () => {
+  const elsewhere = { ...APPROVED_VENUE, session_id: 'other-session', venue_capacity: 999 }
+  assert.equal(largestAllowedCapacity(event(), [APPROVED_VENUE, elsewhere]), 120)
+})
+
 test('there is no venue limit until every session has an approved venue', () => {
   assert.equal(largestAllowedCapacity(event(), []), null)
   assert.equal(largestAllowedCapacity(twoSessions(), [APPROVED_VENUE]), null)
@@ -120,10 +133,14 @@ test('a new registration suggests the total expected attendance, within the venu
   )
 })
 
+const noExpectedAttendance = event({ sessions: [{ ...SESSION, expected_attendance: null }] })
+
+test('without an expected attendance, capacity starts at the venue limit', () => {
+  assert.equal(registrationFormFrom(noExpectedAttendance, [APPROVED_VENUE]).capacity, '120')
+})
+
 test('capacity starts blank when there is nothing to suggest', () => {
-  const noNumbers = event({ sessions: [{ ...SESSION, expected_attendance: null }] })
-  assert.equal(registrationFormFrom(noNumbers, []).capacity, '')
-  assert.equal(registrationFormFrom(noNumbers, [APPROVED_VENUE]).capacity, '')
+  assert.equal(registrationFormFrom(noExpectedAttendance, []).capacity, '')
 })
 
 test('saved settings are shown for editing', () => {

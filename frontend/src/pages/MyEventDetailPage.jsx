@@ -68,10 +68,22 @@ export default function MyEventDetailPage() {
   // Attendees can only sign up once the event is published.
   const isPublished = Boolean(event?.published_at)
   useEffect(() => {
-    if (!isPublished) return
+    // Clear the previous event's count so it is never shown for this one.
+    setRegistrationCount(null)
+    setRegistrationCountError('')
+    if (!isPublished) return undefined
+
+    let active = true
     getMyEventRegistrationCount(eventId, token)
-      .then((data) => setRegistrationCount(data.registration_count))
-      .catch((caught) => setRegistrationCountError(caught.message))
+      .then((data) => {
+        if (active) setRegistrationCount(data.registration_count)
+      })
+      .catch((caught) => {
+        if (active) setRegistrationCountError(caught.message)
+      })
+    return () => {
+      active = false
+    }
   }, [eventId, token, isPublished])
 
   async function submitClarificationResponse(eventTarget) {
