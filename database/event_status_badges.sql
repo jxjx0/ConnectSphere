@@ -50,9 +50,14 @@ alter table public.event_change_requests
     rename column reviewed_at to closed_at;
 alter table public.event_change_requests
     rename column rejection_reason to decision_reason;
+-- The reason check has a different name in the repository schema
+-- (..._not_blank) and the shared database (..._check), so replace either.
 alter table public.event_change_requests
-    rename constraint event_change_requests_rejection_reason_check
-    to event_change_requests_decision_reason_check;
+    drop constraint if exists event_change_requests_rejection_reason_check,
+    drop constraint if exists event_change_requests_rejection_reason_not_blank;
+alter table public.event_change_requests
+    add constraint event_change_requests_decision_reason_not_blank
+    check (decision_reason is null or length(btrim(decision_reason)) > 0);
 alter table public.event_change_requests
     add column closed_by uuid references public.profiles (id);
 

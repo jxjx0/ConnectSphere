@@ -243,17 +243,20 @@ export default function EventReviewDetailPage() {
   }
 
 
-  // Reload the event and its arrangements: a decision can change the
-  // status, the badges, sessions, bookings and equipment.
+  // Reload the event, its arrangements and its clarifications: a decision
+  // can change the status, the badges, sessions, bookings and equipment,
+  // and ending the event expires any open clarification.
   async function reloadEvent() {
-    const [data, bookingData, requestData] = await Promise.all([
+    const [data, bookingData, requestData, clarificationData] = await Promise.all([
       getAssignedEventRequest(eventId, token),
       getVenueBookingsForEvent(eventId, token),
       getEventEquipmentRequests(eventId, token),
+      getAssignedEventClarifications(eventId, token),
     ])
     setEvent(data.event)
     setVenueBookings(bookingData.bookings || [])
     setEquipmentRequests(requestData.requests || [])
+    setClarifications(clarificationData.clarifications)
   }
 
   // kind is 'event' (accept or reject the request), 'change' or
@@ -314,8 +317,7 @@ export default function EventReviewDetailPage() {
       // will keep failing.
       if (caught.status === 409) {
         try {
-          const data = await getAssignedEventRequest(eventId, token)
-          setEvent(data.event)
+          await reloadEvent()
         } catch {
           // Keep the decision error on screen; the page can be refreshed.
         }

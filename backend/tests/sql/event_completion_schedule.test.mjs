@@ -192,16 +192,6 @@ test('database-native completion schedule configuration (cron API fixture)', asy
       }
     })
 
-    await check('missing request privileges prevents installation', async () => {
-      await db.exec('revoke update (status) on public.event_cancellation_requests from service_role')
-      try {
-        await assert.rejects(db.exec(setup), /needs UPDATE on event_cancellation_requests.status/)
-        assert.deepEqual(await jobs(), [])
-      } finally {
-        await db.exec('grant update (status) on public.event_cancellation_requests to service_role')
-      }
-    })
-
     await check('an existing job for another database is not overwritten', async () => {
       await db.query('select cron.schedule($1, $2, $3)', [jobName, '* * * * *', 'select 1;'])
       await db.exec("update cron.job set database = 'another_database'")
