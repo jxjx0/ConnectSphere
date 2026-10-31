@@ -62,8 +62,10 @@ create policy "Attendees can view their own registrations"
     using (attendee_id = (select auth.uid()));
 
 -- 2. Published events as an attendee sees them. Pass an event id for one
---    event, or nothing for all of them. Only confirmed, published events
---    are returned; each session shows its approved venue.
+--    event, or nothing for all of them. Browsing returns only confirmed,
+--    published events. Direct links also show cancelled published events so
+--    registered attendees can see the final status; they cannot register.
+drop function if exists public.list_published_events(uuid);
 create or replace function public.list_published_events(p_event_id uuid default null)
 returns table (
     id uuid,
@@ -80,7 +82,8 @@ returns table (
     attendee_capacity integer,
     spots_left integer,
     is_registered boolean,
-    sessions jsonb
+    sessions jsonb,
+    status text
 )
 language sql
 stable
@@ -128,10 +131,14 @@ as $$
                 on b.session_id = s.id and b.status = 'APPROVED'
             left join public.venues v on v.id = b.venue_id
             where s.event_id = e.id
-        ), '[]'::jsonb)
+        ), '[]'::jsonb),
+        e.status
     from public.events e
     where auth.uid() is not null
-      and e.status = 'confirmed'
+      and (
+          e.status = 'confirmed'
+          or (p_event_id is not null and e.status = 'cancelled')
+      )
       and e.published_at is not null
       and (p_event_id is null or e.id = p_event_id)
     order by e.start_time;

@@ -8,6 +8,11 @@ as $$
     select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
 $$;
 
+create table auth.users (
+    id uuid primary key,
+    email text
+);
+
 create function public.is_coordinator()
 returns boolean
 language sql
@@ -25,7 +30,8 @@ as $$
 $$;
 
 create table public.profiles (
-    id uuid primary key
+    id uuid primary key,
+    role text
 );
 
 create table public.events (
@@ -34,7 +40,13 @@ create table public.events (
     coordinator_id uuid references public.profiles(id),
     name text not null,
     status text not null,
+    description text,
+    purpose text,
+    category text,
+    category_other text,
+    accessibility_requirements text,
     start_time timestamptz,
+    end_time timestamptz,
     updated_at timestamptz not null default now(),
     registration_opens_at timestamptz,
     registration_closes_at timestamptz,
@@ -59,7 +71,10 @@ create table public.venues (
 
 create table public.event_sessions (
     id uuid primary key,
-    event_id uuid not null references public.events(id)
+    event_id uuid not null references public.events(id),
+    name text,
+    start_time timestamptz,
+    end_time timestamptz
 );
 
 create table public.venue_blocks (
@@ -103,8 +118,12 @@ create table public.event_safety_reviews (
 );
 
 create table public.event_registrations (
-    id bigserial primary key,
+    id uuid primary key default gen_random_uuid(),
     event_id uuid not null references public.events(id),
-    attendee_id uuid,
-    email text
+    attendee_id uuid not null references public.profiles(id),
+    full_name text not null,
+    email text not null,
+    address text,
+    contact_number text,
+    created_at timestamptz not null default now()
 );
