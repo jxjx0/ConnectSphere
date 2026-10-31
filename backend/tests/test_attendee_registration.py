@@ -50,6 +50,7 @@ def _event_row(**overrides) -> dict:
     return {
         "id": EVENT_ID,
         "name": "Annual Client Summit",
+        "status": "confirmed",
         "description": "A day of talks.",
         "category": "conference",
         "start_time": "2099-12-01T09:00:00+00:00",
@@ -338,6 +339,17 @@ def test_service_gets_one_event_by_id(monkeypatch):
     assert event.id == EVENT_ID
     call = database.calls_to("rpc:list_published_events", "rpc")[0]
     assert call.payload == {"p_event_id": EVENT_ID}
+
+
+def test_service_exposes_cancelled_status_for_a_published_event_link(monkeypatch):
+    use_database(
+        monkeypatch,
+        {("rpc:list_published_events", "rpc"): [_event_row(status="cancelled")]},
+    )
+
+    event = attendee_registration_service.get_published_event("token", EVENT_ID)
+
+    assert event.status == "cancelled"
 
 
 def test_service_reports_an_unpublished_event_as_not_found(monkeypatch):

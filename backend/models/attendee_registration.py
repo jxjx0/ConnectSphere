@@ -80,11 +80,12 @@ class PublishedEventSession(BaseModel):
 
 
 class PublishedEvent(BaseModel):
-    """A confirmed, published event as an attendee sees it.
+    """A published event as an attendee sees it.
 
     A row of the list_published_events database function. spots_left is
     attendee_capacity minus the registrations so far; is_registered says
-    whether the signed-in attendee has already registered.
+    whether the signed-in attendee has already registered. Cancelled events
+    are returned only for direct links, never in the browse list.
     """
 
     id: str
@@ -102,3 +103,4 @@ class PublishedEvent(BaseModel):
     spots_left: int | None = None
     is_registered: bool = False
     sessions: list[PublishedEventSession] = []
+    status: str
