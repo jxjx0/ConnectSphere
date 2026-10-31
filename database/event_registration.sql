@@ -12,8 +12,10 @@
 --   * Settings can be saved and previewed while the venue, equipment or
 --     safety review is still pending. Publishing waits until every session's
 --     venue, any equipment and the Safety Officer have all approved.
---   * Capacity is checked against the smallest approved venue, because
---     every session's attendees must fit in the room they are booked into.
+--   * Attendees register for the whole event and the Organiser spreads
+--     them across its sessions, so capacity is checked against what every
+--     session's approved venue holds together. That total is only known,
+--     and only checked, once every session has an approved venue.
 --   * Once published, an event stays published.
 
 -- 1. The columns. Nullable because an event has none of this until the
@@ -56,7 +58,7 @@ set search_path = ''
 as $$
 declare
     current_event public.events%rowtype;
-    smallest_venue_capacity integer;
+    total_venue_capacity integer;
 begin
     if auth.uid() is null or not public.is_organiser() then
         raise exception 'Only the signed-in organiser can set up registration';
@@ -92,14 +94,24 @@ begin
         raise exception 'Registration must close before the event starts';
     end if;
 
-    select min(v.capacity) into smallest_venue_capacity
-    from public.venue_bookings b
+    select sum(v.capacity) into total_venue_capacity
+    from public.event_sessions s
+    join public.venue_bookings b
+        on b.session_id = s.id and b.status = 'APPROVED'
     join public.venues v on v.id = b.venue_id
-    where b.event_id = p_event_id and b.status = 'APPROVED';
+    where s.event_id = p_event_id;
 
-    if smallest_venue_capacity is not null
-        and p_capacity > smallest_venue_capacity then
-        raise exception 'Attendee capacity cannot exceed the venue capacity';
+    if total_venue_capacity is not null
+        and not exists (
+            select 1 from public.event_sessions s
+            where s.event_id = p_event_id
+              and not exists (
+                  select 1 from public.venue_bookings b
+                  where b.session_id = s.id and b.status = 'APPROVED'
+              )
+        )
+        and p_capacity > total_venue_capacity then
+        raise exception 'Attendee capacity cannot exceed the combined venue capacity';
     end if;
 
     -- Publishing checks each approval itself rather than trusting the

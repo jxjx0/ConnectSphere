@@ -553,8 +553,9 @@ REGISTRATION_ERRORS = {
         "Registration must close before the event starts.",
         400,
     ),
-    "cannot exceed the venue capacity": (
-        "Attendee capacity cannot exceed the venue capacity.",
+    "attendee capacity cannot exceed": (
+        "Attendee capacity cannot exceed the combined capacity of the "
+        "sessions' approved venues.",
         400,
     ),
     "needs an approved venue before publishing": (

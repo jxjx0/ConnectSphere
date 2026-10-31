@@ -25,6 +25,8 @@ EVENT_NOT_FOUND = (
     "Choose another event from the events list."
 )
 REGISTRATION_NOT_FOUND = "Registration was not found."
+# Same wording as get_my_event in event_service.py.
+ORGANISER_EVENT_NOT_FOUND = "Event request was not found."
 
 # Message fragments raised by register_for_event, and the reply for each.
 # Every reply tells the attendee what they can do next.
@@ -86,7 +88,7 @@ def _registration_database_error(error: PostgrestAPIError) -> AuthError:
     if error.code in {"23502", "23514"}:
         return AuthError(
             "Registration details violate a database validation rule. "
-            "Check every field is filled in, then try again.",
+            "Check your full name is filled in, then try again.",
             status_code=400,
         )
     if error.code in {"42501", "PGRST301"}:
@@ -169,6 +171,46 @@ def get_my_registration(
     return AttendeeRegistration(**rows[0])
 
 
+def _registration_count_error(error: PostgrestAPIError) -> AuthError:
+    """Translate failures of count_event_registrations for the Organiser."""
+    if error.code in {"42883", "PGRST202"}:
+        return AuthError(
+            "Sign-up counts are not available yet. Apply "
+            "database/attendee_registrations.sql, then refresh the API "
+            "schema cache if needed.",
+            status_code=503,
+        )
+    if error.code == "22P02":
+        return AuthError(ORGANISER_EVENT_NOT_FOUND, status_code=404)
+    if error.code in {"42501", "PGRST301"}:
+        return AuthError(
+            "You do not have permission to view sign-ups for this event.",
+            status_code=403,
+        )
+    return AuthError(
+        "Unable to load the number of sign-ups. Please try again.",
+        status_code=502,
+    )
+
+
+def count_event_registrations(access_token: str, event_id: str) -> int:
+    """How many attendees have registered for the Organiser's own event.
+
+    Another Organiser's event comes back as 404, the same answer as one
+    that does not exist.
+    """
+    client = config.get_user_client(access_token)
+    try:
+        result = client.rpc(
+            "count_event_registrations", {"p_event_id": event_id}
+        ).execute()
+    except PostgrestAPIError as error:
+        raise _registration_count_error(error) from error
+    if result.data is None:
+        raise AuthError(ORGANISER_EVENT_NOT_FOUND, status_code=404)
+    return result.data
+
+
 def register_for_event(
     access_token: str,
     event_id: str,
@@ -187,7 +229,6 @@ def register_for_event(
             {
                 "p_event_id": event_id,
                 "p_full_name": request.full_name,
-                "p_address": request.address,
                 "p_contact_number": request.contact_number,
             },
         ).execute()
@@ -229,8 +270,7 @@ def send_registration_confirmation(registration: AttendeeRegistration) -> bool:
         "Your details\n"
         f"Name: {registration.full_name}\n"
         f"Email: {registration.email}\n"
-        f"Address: {registration.address}\n"
-        f"Contact number: {registration.contact_number}\n\n"
+        f"Contact number: {registration.contact_number or 'Not given'}\n\n"
         f"Registration reference: {registration.id}\n\n"
         "See you there,\nConnectSphere"
     )

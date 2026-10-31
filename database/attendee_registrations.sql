@@ -1,7 +1,7 @@
 -- Attendees registering for published events.
 -- Run this only if events.sql, event_sessions.sql, venue_bookings.sql and
 -- event_registration.sql have already been applied.
--- Backward compatible: adds one table and three functions; changes no
+-- Backward compatible: adds one table and four functions; changes no
 -- existing table, column or rule, so code on main keeps working.
 --
 -- Design notes:
@@ -18,8 +18,11 @@
 --     saved, and the spot count is unchanged.
 --   * The registration email is always the account's own email, read from
 --     auth.users, so nobody can register (and receive the confirmation,
---     with address and phone) under someone else's address. Each account
+--     with their details) under someone else's address. Each account
 --     registers at most once, so no per-email rule is needed.
+--   * Attendees no longer give an address, and the contact number is
+--     optional. The address column stays, nullable, so registrations made
+--     before keep their data.
 --   * The unique index is the last guard against registering twice with
 --     the same account.
 
@@ -30,10 +33,16 @@ create table if not exists public.event_registrations (
     attendee_id uuid not null references public.profiles(id),
     full_name text not null check (length(btrim(full_name)) > 0),
     email text not null check (length(btrim(email)) > 0),
-    address text not null check (length(btrim(address)) > 0),
-    contact_number text not null check (length(btrim(contact_number)) > 0),
+    address text check (length(btrim(address)) > 0),
+    contact_number text check (length(btrim(contact_number)) > 0),
     created_at timestamptz not null default now()
 );
+
+-- For databases created before the address was removed and the contact
+-- number made optional.
+alter table public.event_registrations
+    alter column address drop not null,
+    alter column contact_number drop not null;
 
 create unique index if not exists event_registrations_one_per_attendee
     on public.event_registrations (event_id, attendee_id);
@@ -132,15 +141,16 @@ revoke all on function public.list_published_events(uuid) from public;
 grant execute on function public.list_published_events(uuid) to authenticated;
 
 -- 3. Register the signed-in attendee for an event, under their account
---    email. Returns the new registration's id.
--- Replaces an earlier version that took the email as a parameter.
+--    email. Returns the new registration's id. A blank contact number is
+--    saved as null.
+-- Replaces earlier versions that took the email and the address.
 drop function if exists public.register_for_event(uuid, text, text, text, text);
+drop function if exists public.register_for_event(uuid, text, text, text);
 
 create or replace function public.register_for_event(
     p_event_id uuid,
     p_full_name text,
-    p_address text,
-    p_contact_number text
+    p_contact_number text default null
 )
 returns uuid
 language plpgsql
@@ -208,15 +218,14 @@ begin
     end if;
 
     insert into public.event_registrations (
-        event_id, attendee_id, full_name, email, address, contact_number
+        event_id, attendee_id, full_name, email, contact_number
     )
     values (
         p_event_id,
         auth.uid(),
         btrim(p_full_name),
         account_email,
-        btrim(p_address),
-        btrim(p_contact_number)
+        nullif(btrim(p_contact_number), '')
     )
     returning event_registrations.id into registration_id;
 
@@ -224,15 +233,18 @@ begin
 end;
 $$;
 
-revoke all on function public.register_for_event(uuid, text, text, text)
+revoke all on function public.register_for_event(uuid, text, text)
     from public;
-grant execute on function public.register_for_event(uuid, text, text, text)
+grant execute on function public.register_for_event(uuid, text, text)
     to authenticated;
 
 -- 4. The signed-in attendee's registrations, with the event each is for,
 --    newest first. Pass a registration id for one, or nothing for all.
 --    The event is included even if it is later cancelled, so the attendee
 --    can see what happened to it.
+-- Dropped first because the address column was removed from its result.
+drop function if exists public.list_my_registrations(uuid);
+
 create or replace function public.list_my_registrations(p_registration_id uuid default null)
 returns table (
     id uuid,
@@ -240,7 +252,6 @@ returns table (
     attendee_id uuid,
     full_name text,
     email text,
-    address text,
     contact_number text,
     created_at timestamptz,
     event_name text,
@@ -259,7 +270,6 @@ as $$
         r.attendee_id,
         r.full_name,
         r.email,
-        r.address,
         r.contact_number,
         r.created_at,
         e.name,
@@ -275,3 +285,27 @@ $$;
 
 revoke all on function public.list_my_registrations(uuid) from public;
 grant execute on function public.list_my_registrations(uuid) to authenticated;
+
+-- 5. How many attendees have registered for the Organiser's own event.
+--    Organisers cannot read event_registrations under row-level security,
+--    and only need the number, not attendees' names or phone numbers.
+--    Null when the event is not the caller's own, so an id cannot be used
+--    to probe other Organisers' events.
+create or replace function public.count_event_registrations(p_event_id uuid)
+returns integer
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+    select (
+        select count(*) from public.event_registrations r
+        where r.event_id = e.id
+    )::integer
+    from public.events e
+    where e.id = p_event_id
+      and e.organiser_id = auth.uid();
+$$;
+
+revoke all on function public.count_event_registrations(uuid) from public;
+grant execute on function public.count_event_registrations(uuid) to authenticated;

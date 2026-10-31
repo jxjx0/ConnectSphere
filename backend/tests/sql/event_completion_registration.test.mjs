@@ -52,8 +52,8 @@ test('completion integrated with attendee registration migration', {
       try { return (await db.query(query, params)).rows } finally { await db.exec('reset role') }
     }
     const register = user => asAttendee(user,
-      'select public.register_for_event($1,$2,$3,$4)',
-      [id(11), 'Attendee', 'Test address', '12345678'])
+      'select public.register_for_event($1,$2,$3)',
+      [id(11), 'Attendee', '12345678'])
     await db.exec(`
       insert into public.events(id,organiser_id,name,description,purpose,category,status,
         start_time,end_time,expected_attendance,published_at,

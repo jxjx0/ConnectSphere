@@ -4,7 +4,7 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import { getMyRegistration } from '../api/events'
 import AppShell from '../components/AppShell'
 import { useAuth } from '../context/AuthContext'
-import { formatDateRange, formatDateTime } from '../eventDisplay'
+import { formatDateRange, formatDateTime, optional } from '../eventDisplay'
 import { attendeeEventNote } from '../eventStatus'
 
 // The confirmation shown straight after registering, and the page each
@@ -91,12 +91,8 @@ export default function AttendeeRegistrationPage() {
             <dd>{registration.email}</dd>
           </div>
           <div className="detail-list__row">
-            <dt>Address</dt>
-            <dd>{registration.address}</dd>
-          </div>
-          <div className="detail-list__row">
             <dt>Contact number</dt>
-            <dd>{registration.contact_number}</dd>
+            <dd>{optional(registration.contact_number)}</dd>
           </div>
           <div className="detail-list__row">
             <dt>Registered</dt>

@@ -11,7 +11,6 @@ const PHONE_PATTERN = /^[0-9+()\-\s]{6,30}$/
 export const EMPTY_REGISTRATION = {
   fullName: '',
   email: '',
-  address: '',
   contactNumber: '',
 }
 
@@ -47,11 +46,9 @@ export function validateAttendeeRegistration(form) {
   const errors = []
   if (!form.fullName.trim()) errors.push('Full name is required.')
 
-  if (!form.address.trim()) errors.push('Address is required.')
-
+  // Optional, but checked when given.
   const contactNumber = form.contactNumber.trim()
-  if (!contactNumber) errors.push('Contact number is required.')
-  else if (!PHONE_PATTERN.test(contactNumber)) {
+  if (contactNumber && !PHONE_PATTERN.test(contactNumber)) {
     errors.push('Contact number must be a valid phone number.')
   }
   return errors
@@ -60,7 +57,6 @@ export function validateAttendeeRegistration(form) {
 export function registrationToPayload(form) {
   return {
     full_name: form.fullName.trim(),
-    address: form.address.trim(),
-    contact_number: form.contactNumber.trim(),
+    contact_number: form.contactNumber.trim() || null,
   }
 }

@@ -34,7 +34,6 @@ HEADERS = {"Authorization": "Bearer attendee-token"}
 def valid_details(**overrides) -> dict:
     return {
         "full_name": "Cara Ng",
-        "address": "1 Orchard Road, Singapore",
         "contact_number": "+65 9123 4567",
         **overrides,
     }
@@ -115,29 +114,47 @@ def test_a_submitted_email_is_ignored():
     assert not hasattr(details, "email")
 
 
-@pytest.mark.parametrize(
-    "field, label",
-    [
-        ("full_name", "Full name"),
-        ("address", "Address"),
-        ("contact_number", "Contact number"),
-    ],
-)
-def test_missing_or_blank_fields_name_the_field(field, label):
+def test_a_missing_or_blank_full_name_is_required():
     missing = valid_details()
-    del missing[field]
-    for body in (missing, valid_details(**{field: "   "})):
+    del missing["full_name"]
+    for body in (missing, valid_details(full_name="   ")):
         with pytest.raises(ValidationError) as caught:
             AttendeeRegistrationSubmit(**body)
-        assert f"{label} is required" in str(caught.value)
+        assert "Full name is required" in str(caught.value)
+
+
+@pytest.mark.parametrize("contact_number", [None, "", "   "])
+def test_the_contact_number_is_optional(contact_number):
+    details = AttendeeRegistrationSubmit(
+        **valid_details(contact_number=contact_number)
+    )
+    assert details.contact_number is None
+
+
+def test_a_missing_contact_number_is_allowed():
+    body = valid_details()
+    del body["contact_number"]
+    assert AttendeeRegistrationSubmit(**body).contact_number is None
+
+
+def test_a_given_contact_number_is_trimmed():
+    details = AttendeeRegistrationSubmit(
+        **valid_details(contact_number=" +65 9123 4567 ")
+    )
+    assert details.contact_number == "+65 9123 4567"
+
+
+def test_a_submitted_address_is_ignored():
+    details = AttendeeRegistrationSubmit(**valid_details(address="1 Orchard Road"))
+    assert not hasattr(details, "address")
 
 
 @pytest.mark.parametrize(
     "field, value, message",
     [
         ("contact_number", "call me", "Contact number must be a valid phone number"),
+        ("contact_number", "1" * 31, "Contact number must be a valid phone number"),
         ("full_name", "x" * 121, "Full name must be 120 characters or fewer"),
-        ("address", "x" * 301, "Address must be 300 characters or fewer"),
     ],
 )
 def test_invalid_formats_are_rejected(field, value, message):
@@ -263,9 +280,10 @@ def test_invalid_details_are_rejected_before_anything_is_saved(client, monkeypat
 
     assert response.status_code == 400
     errors = response.get_json()["errors"]
-    assert "Full name is required" in errors
-    assert "Address is required" in errors
-    assert "Contact number must be a valid phone number" in errors
+    assert errors == [
+        "Full name is required",
+        "Contact number must be a valid phone number",
+    ]
 
 
 def test_attendee_can_list_their_registrations(client, monkeypatch):
@@ -386,11 +404,28 @@ def test_service_registers_through_the_atomic_function(monkeypatch):
     assert call.payload == {
         "p_event_id": EVENT_ID,
         "p_full_name": "Cara Ng",
-        "p_address": "1 Orchard Road, Singapore",
         "p_contact_number": "+65 9123 4567",
     }
     loaded = database.calls_to("rpc:list_my_registrations", "rpc")[0]
     assert loaded.payload == {"p_registration_id": REGISTRATION_ID}
+
+
+def test_service_registers_without_a_contact_number(monkeypatch):
+    database = use_database(
+        monkeypatch,
+        {
+            ("rpc:register_for_event", "rpc"): REGISTRATION_ID,
+            ("rpc:list_my_registrations", "rpc"): [
+                _registration_row(contact_number=None)
+            ],
+        },
+    )
+
+    saved = register({"full_name": "Cara Ng"})
+
+    assert saved.contact_number is None
+    call = database.calls_to("rpc:register_for_event", "rpc")[0]
+    assert call.payload["p_contact_number"] is None
 
 
 def test_service_reports_a_saved_registration_that_cannot_be_loaded(monkeypatch):
@@ -513,6 +548,93 @@ def test_service_translates_errors_when_listing_my_registrations(monkeypatch):
     assert caught.value.status_code == 503
 
 
+# --- Organiser: sign-up count ------------------------------------------------
+
+ORGANISER_HEADERS = {"Authorization": "Bearer organiser-token"}
+
+
+def test_organiser_sees_how_many_attendees_signed_up(client, monkeypatch):
+    authenticate_as(monkeypatch, ORGANISER)
+    database = use_database(
+        monkeypatch, {("rpc:count_event_registrations", "rpc"): 42}
+    )
+
+    response = client.get(
+        f"/events/{EVENT_ID}/registrations/count", headers=ORGANISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"registration_count": 42}
+    assert database.calls_to("rpc:count_event_registrations", "rpc")[0].payload == {
+        "p_event_id": EVENT_ID
+    }
+
+
+def test_organiser_sees_zero_before_anyone_signs_up(client, monkeypatch):
+    authenticate_as(monkeypatch, ORGANISER)
+    use_database(monkeypatch, {("rpc:count_event_registrations", "rpc"): 0})
+
+    response = client.get(
+        f"/events/{EVENT_ID}/registrations/count", headers=ORGANISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"registration_count": 0}
+
+
+def test_sign_up_count_requires_authentication(client):
+    response = client.get(f"/events/{EVENT_ID}/registrations/count")
+    assert response.status_code == 401
+
+
+def test_non_organiser_cannot_see_the_sign_up_count(client, monkeypatch):
+    authenticate_as(monkeypatch, ATTENDEE)
+    database = use_database(monkeypatch, {})
+
+    response = client.get(f"/events/{EVENT_ID}/registrations/count", headers=HEADERS)
+
+    assert response.status_code == 403
+    assert database.calls == []
+
+
+def test_sign_up_count_of_another_organisers_event_is_not_found(monkeypatch):
+    # The database function returns null when the event is not the caller's.
+    use_database(monkeypatch, {("rpc:count_event_registrations", "rpc"): None})
+
+    with pytest.raises(AuthError) as caught:
+        attendee_registration_service.count_event_registrations("token", EVENT_ID)
+
+    assert caught.value.status_code == 404
+    assert caught.value.message == "Event request was not found."
+
+
+@pytest.mark.parametrize(
+    "code, status_code",
+    [
+        ("42883", 503),
+        ("PGRST202", 503),
+        ("22P02", 404),
+        ("42501", 403),
+        ("PGRST301", 403),
+        ("XX000", 502),
+    ],
+)
+def test_service_translates_errors_when_counting_sign_ups(
+    monkeypatch, code, status_code
+):
+    use_database(
+        monkeypatch,
+        {("rpc:count_event_registrations", "rpc"): APIError(
+            {"message": "database error", "code": code}
+        )},
+    )
+
+    with pytest.raises(AuthError) as caught:
+        attendee_registration_service.count_event_registrations("token", EVENT_ID)
+
+    assert caught.value.status_code == status_code
+
+
 # --- Confirmation email ------------------------------------------------------
 
 
@@ -550,6 +672,37 @@ def test_confirmation_email_without_event_times_says_to_be_announced(monkeypatch
     attendee_registration_service.send_registration_confirmation(registration)
 
     assert "Starts: To be announced" in sent["body"]
+
+
+def test_confirmation_email_lists_the_details_given(monkeypatch):
+    sent = {}
+    monkeypatch.setattr(
+        notification_service,
+        "try_send_email",
+        lambda to_email, subject, body: sent.update(body=body) or True,
+    )
+
+    attendee_registration_service.send_registration_confirmation(
+        AttendeeRegistration(**_registration_row())
+    )
+
+    assert "Contact number: +65 9123 4567" in sent["body"]
+    assert "Address" not in sent["body"]
+
+
+def test_confirmation_email_without_a_contact_number_says_not_given(monkeypatch):
+    sent = {}
+    monkeypatch.setattr(
+        notification_service,
+        "try_send_email",
+        lambda to_email, subject, body: sent.update(body=body) or True,
+    )
+
+    attendee_registration_service.send_registration_confirmation(
+        AttendeeRegistration(**_registration_row(contact_number=None))
+    )
+
+    assert "Contact number: Not given" in sent["body"]
 
 
 def test_try_send_email_reports_success(monkeypatch):

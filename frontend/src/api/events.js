@@ -65,6 +65,10 @@ export function saveEventRegistration(eventId, registration, token) {
   })
 }
 
+export function getMyEventRegistrationCount(eventId, token) {
+  return request(`/events/${eventId}/registrations/count`, { token })
+}
+
 export function getAssignedEventRequests(token) {
   return request('/events/review', { token })
 }

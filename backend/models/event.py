@@ -666,7 +666,7 @@ class EventRegistrationRequest(BaseModel):
     well as saved. The database decides whether the event may be published
     and checks the rules that need the event's current values: registration
     not yet closed, closing before the event starts, and capacity within the
-    approved venue.
+    combined capacity of the sessions' approved venues.
     """
 
     registration_opens_at: datetime
