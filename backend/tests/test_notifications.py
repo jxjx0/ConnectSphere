@@ -159,6 +159,9 @@ def test_notify_role_sends_to_profiles_with_that_role(monkeypatch):
 
 def test_notify_event_registrants_emails_each_unique_address(monkeypatch, sent_emails):
     class FakeRegistrations:
+        def __init__(self):
+            self.filters = {}
+
         def table(self, name):
             assert name == "event_registrations"
             return self
@@ -168,10 +171,11 @@ def test_notify_event_registrants_emails_each_unique_address(monkeypatch, sent_e
             return self
 
         def eq(self, column, value):
-            assert (column, value) == ("event_id", EVENT_ID)
+            self.filters[column] = value
             return self
 
         def execute(self):
+            assert self.filters == {"event_id": EVENT_ID, "status": "registered"}
             return SimpleNamespace(data=[
                 {"email": "ada@example.com"},
                 {"email": "ADA@example.com"},

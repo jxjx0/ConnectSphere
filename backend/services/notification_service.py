@@ -96,6 +96,7 @@ def notify_event_registrants_of_cancellation(
             .table("event_registrations")
             .select("email")
             .eq("event_id", event_id)
+            .eq("status", "registered")
             .execute()
         ).data or []
     except Exception:
