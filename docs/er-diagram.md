@@ -147,9 +147,10 @@ erDiagram
     REGISTRATIONS {
         uuid id PK
         uuid event_id FK
-        uuid attendee_id FK "must reference a profile with role=attendee; unique per event"
+        uuid attendee_id FK "must reference a profile with role=attendee; one active registration per event"
         text status "registered, withdrawn"
-        timestamptz registered_at
+        timestamptz created_at
+        timestamptz withdrawn_at "required only when withdrawn"
     }
 
     EVENT_CHANGE_REQUESTS {
