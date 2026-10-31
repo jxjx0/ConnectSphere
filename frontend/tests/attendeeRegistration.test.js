@@ -33,6 +33,18 @@ test('an event with spots left inside its registration window is open', () => {
   assert.deepEqual(registrationAvailability(event(), NOW), { open: true, message: '' })
 })
 
+test('a cancelled event is closed even when the attendee was registered', () => {
+  const availability = registrationAvailability(
+    event({ status: 'cancelled', is_registered: true }),
+    NOW,
+  )
+
+  assert.deepEqual(availability, {
+    open: false,
+    message: 'This event has been cancelled. Registration is closed.',
+  })
+})
+
 test('a full event is unavailable', () => {
   const availability = registrationAvailability(event({ spots_left: 0 }), NOW)
   assert.equal(availability.open, false)

@@ -158,6 +158,8 @@ def test_notify_role_sends_to_profiles_with_that_role(monkeypatch):
 
 
 def test_notify_event_registrants_emails_each_unique_address(monkeypatch, sent_emails):
+    attendee_notifications = []
+
     class FakeRegistrations:
         def __init__(self):
             self.filters = {}
@@ -167,7 +169,7 @@ def test_notify_event_registrants_emails_each_unique_address(monkeypatch, sent_e
             return self
 
         def select(self, columns):
-            assert columns == "email"
+            assert columns == "attendee_id,email"
             return self
 
         def eq(self, column, value):
@@ -177,9 +179,12 @@ def test_notify_event_registrants_emails_each_unique_address(monkeypatch, sent_e
         def execute(self):
             assert self.filters == {"event_id": EVENT_ID, "status": "registered"}
             return SimpleNamespace(data=[
-                {"email": "ada@example.com"},
-                {"email": "ADA@example.com"},
-                {"email": "ben@example.com"},
+                {"attendee_id": USER_ID, "email": "ada@example.com"},
+                {"attendee_id": USER_ID, "email": "ADA@example.com"},
+                {
+                    "attendee_id": "77777777-7777-7777-7777-777777777777",
+                    "email": "ben@example.com",
+                },
             ])
 
     monkeypatch.setattr(
@@ -187,11 +192,36 @@ def test_notify_event_registrants_emails_each_unique_address(monkeypatch, sent_e
         "get_admin_client",
         lambda: FakeRegistrations(),
     )
+    monkeypatch.setattr(
+        notification_service,
+        "_save_notification",
+        lambda *args: attendee_notifications.append(args),
+    )
 
     notification_service.notify_event_registrants_of_cancellation(
         EVENT_ID, "Annual Client Summit", "Plans have changed"
     )
 
+    expected_body = (
+        "The event 'Annual Client Summit' has been cancelled.\n\n"
+        "Reason: Plans have changed"
+    )
+    assert attendee_notifications == [
+        (
+            USER_ID,
+            "event_cancelled",
+            "Event cancelled: Annual Client Summit",
+            expected_body,
+            EVENT_ID,
+        ),
+        (
+            "77777777-7777-7777-7777-777777777777",
+            "event_cancelled",
+            "Event cancelled: Annual Client Summit",
+            expected_body,
+            EVENT_ID,
+        ),
+    ]
     assert sent_emails == [
         (
             "ada@example.com",
@@ -223,9 +253,12 @@ def test_notify_event_registrants_continues_after_delivery_failure(monkeypatch, 
         def execute(self):
             return SimpleNamespace(
                 data=[
-                    {"email": "failed@example.com"},
-                    {"email": "success@example.com"},
-                    {"email": None},
+                    {"attendee_id": USER_ID, "email": "failed@example.com"},
+                    {
+                        "attendee_id": "77777777-7777-7777-7777-777777777777",
+                        "email": "success@example.com",
+                    },
+                    {"attendee_id": None, "email": None},
                 ]
             )
 
@@ -263,6 +296,7 @@ def test_notify_event_registrants_logs_lookup_failure_without_raising(
         "get_admin_client",
         lambda: FailedRegistrations(),
     )
+    monkeypatch.setattr(notification_service, "_save_notification", lambda *args: None)
 
     notification_service.notify_event_registrants_of_cancellation(
         EVENT_ID, "Annual Client Summit", "Plans have changed"

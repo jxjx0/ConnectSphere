@@ -102,6 +102,12 @@ export default function NotificationDropdown() {
       navigate(`/event-reviews/${notification.event_id}`)
     } else if (notification.event_id && user?.role === 'organiser') {
       navigate(`/my-events/${notification.event_id}`)
+    } else if (
+      notification.event_id
+      && notification.type === 'event_cancelled'
+      && user?.role === 'attendee'
+    ) {
+      navigate(`/attendee/events/${notification.event_id}`)
     }
   }
 

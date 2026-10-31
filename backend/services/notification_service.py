@@ -89,12 +89,12 @@ def notify_event_registrants_of_cancellation(
     event_name: str,
     cancellation_reason: str,
 ) -> None:
-    """Email attendees registered for an event after its cancellation is approved."""
+    """Notify registered attendees in-app and by email after cancellation approval."""
     try:
         registrations = (
             config.get_admin_client()
             .table("event_registrations")
-            .select("email")
+            .select("attendee_id,email")
             .eq("event_id", event_id)
             .eq("status", "registered")
             .execute()
@@ -111,8 +111,26 @@ def notify_event_registrants_of_cancellation(
         f"The event '{event_name}' has been cancelled.\n\n"
         f"Reason: {cancellation_reason}"
     )
+    notified_attendees: set[str] = set()
     sent_to: set[str] = set()
     for registration in registrations:
+        attendee_id = str(registration.get("attendee_id") or "").strip()
+        if attendee_id and attendee_id not in notified_attendees:
+            notified_attendees.add(attendee_id)
+            try:
+                _save_notification(
+                    attendee_id,
+                    "event_cancelled",
+                    subject,
+                    body,
+                    event_id,
+                )
+            except Exception:
+                logger.exception(
+                    "Could not save cancellation notification for attendee %s",
+                    attendee_id,
+                )
+
         email = (registration.get("email") or "").strip()
         email_key = email.casefold()
         if not email or email_key in sent_to:

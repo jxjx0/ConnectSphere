@@ -16,12 +16,14 @@ ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_SQL = ROOT / "backend" / "tests" / "sql" / "cancellation_review_schema.sql"
 REQUEST_MIGRATION = ROOT / "database" / "event_cancellation_requests.sql"
 REGISTRATION_MIGRATION = ROOT / "database" / "event_registration.sql"
+ATTENDEE_REGISTRATION_MIGRATION = ROOT / "database" / "attendee_registrations.sql"
 REVIEW_MIGRATION = ROOT / "database" / "event_cancellation_review.sql"
 
 ORGANISER_ID = "11111111-1111-1111-1111-111111111111"
 COORDINATOR_ID = "22222222-2222-2222-2222-222222222222"
 EVENT_ID = "33333333-3333-3333-3333-333333333333"
 OTHER_EVENT_ID = "44444444-4444-4444-4444-444444444444"
+ATTENDEE_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 BOOKING_ID = "55555555-5555-5555-5555-555555555555"
 OTHER_BOOKING_ID = "66666666-6666-6666-6666-666666666666"
 EQUIPMENT_REQUEST_ID = "77777777-7777-7777-7777-777777777777"
@@ -38,10 +40,12 @@ def postgres_connection():
     connection = psycopg.connect(database_url, autocommit=True)
 
     connection.execute("create role authenticated")
+    connection.execute("create role anon")
     for sql_file in (
         SCHEMA_SQL,
         REQUEST_MIGRATION,
         REGISTRATION_MIGRATION,
+        ATTENDEE_REGISTRATION_MIGRATION,
         REVIEW_MIGRATION,
     ):
         connection.execute(sql_file.read_text(encoding="utf-8"))
@@ -55,6 +59,7 @@ def db(postgres_connection):
     postgres_connection.execute(
         """
         truncate table
+            auth.users,
             public.event_registrations,
             public.event_safety_reviews,
             public.event_change_requests,
@@ -82,8 +87,13 @@ def db(postgres_connection):
         (ORGANISER_ID,),
     )
     postgres_connection.execute(
-        "insert into public.profiles (id) values (%s), (%s)",
-        (ORGANISER_ID, COORDINATOR_ID),
+        "insert into public.profiles (id, role) "
+        "values (%s, 'organiser'), (%s, 'coordinator'), (%s, 'attendee')",
+        (ORGANISER_ID, COORDINATOR_ID, ATTENDEE_ID),
+    )
+    postgres_connection.execute(
+        "insert into auth.users (id, email) values (%s, %s)",
+        (ATTENDEE_ID, "attendee@example.com"),
     )
     return postgres_connection
 
@@ -93,9 +103,9 @@ def insert_event(db, event_id=EVENT_ID, status="confirmed"):
         """
         insert into public.events
             (id, organiser_id, coordinator_id, name, status,
-             registration_opens_at, registration_closes_at)
+             registration_opens_at, registration_closes_at, published_at)
         values (%s, %s, %s, 'Annual Client Summit', %s,
-                now() - interval '1 day', now() + interval '30 days')
+                now() - interval '1 day', now() + interval '30 days', now())
         """,
         (event_id, ORGANISER_ID, COORDINATOR_ID, status),
     )
@@ -201,14 +211,42 @@ def test_approval_releases_event_resources_expires_requests_and_closes_registrat
         (CHANGE_REQUEST_ID, EVENT_ID, OTHER_EVENT_ID, OTHER_EVENT_ID),
     )
     db.execute(
-        "insert into public.event_registrations (event_id, email) values (%s, %s)",
-        (EVENT_ID, "attendee@example.com"),
+        "insert into public.event_registrations "
+        "(event_id, attendee_id, full_name, email) values (%s, %s, %s, %s)",
+        (EVENT_ID, ATTENDEE_ID, "Casey Attendee", "attendee@example.com"),
     )
 
     result = review(db, "approve")
     assert result["event"]["status"] == "cancelled"
     assert result["cancellation_request"]["status"] == "approved"
     assert result["cancellation_request"]["decision_reason"] == "Coordinator decision"
+    assert db.execute(
+        "select attendee_id, email from public.event_registrations "
+        "where event_id = %s",
+        (EVENT_ID,),
+    ).fetchall() == [(UUID(ATTENDEE_ID), "attendee@example.com")]
+
+    db.execute(
+        "select set_config('request.jwt.claim.sub', %s, false)",
+        (ATTENDEE_ID,),
+    )
+    assert db.execute(
+        "select id from public.list_published_events()"
+    ).fetchall() == [(UUID(OTHER_EVENT_ID),)]
+    assert db.execute(
+        "select id, status from public.list_published_events(%s)",
+        (EVENT_ID,),
+    ).fetchall() == [(UUID(EVENT_ID), "cancelled")]
+    with pytest.raises(Exception, match="Event was not found"):
+        with db.transaction():
+            db.execute(
+                "select public.register_for_event(%s, %s, %s)",
+                (EVENT_ID, "Casey Attendee", None),
+            )
+    assert db.execute(
+        "select count(*) from public.event_registrations where event_id = %s",
+        (EVENT_ID,),
+    ).fetchone() == (1,)
 
     assert db.execute(
         "select status, registration_closes_at <= now() from public.events "
@@ -296,6 +334,50 @@ def test_approval_expires_safety_check_when_it_was_awaiting_review(db):
         "select decision from public.event_safety_reviews where event_id = %s",
         (EVENT_ID,),
     ).fetchall() == [("EXPIRED",)]
+
+
+def test_approved_cancellation_closes_registration_and_preserves_attendee_record(db):
+    insert_event(db, status="cancellation_requested")
+    insert_cancellation_request(db)
+    db.execute(
+        "insert into public.event_registrations "
+        "(event_id, attendee_id, full_name, email) values (%s, %s, %s, %s)",
+        (EVENT_ID, ATTENDEE_ID, "Casey Attendee", "attendee@example.com"),
+    )
+
+    result = review(db, "approve")
+    assert result["event"]["status"] == "cancelled"
+    assert db.execute(
+        "select status, registration_closes_at <= now() "
+        "from public.events where id = %s",
+        (EVENT_ID,),
+    ).fetchone() == ("cancelled", True)
+
+    db.execute(
+        "select set_config('request.jwt.claim.sub', %s, false)",
+        (ATTENDEE_ID,),
+    )
+    with pytest.raises(Exception, match="Event was not found"):
+        with db.transaction():
+            db.execute(
+                "select public.register_for_event(%s, %s, %s)",
+                (EVENT_ID, "New Attendee", None),
+            )
+
+    assert db.execute(
+        "select id, status from public.list_published_events(%s)",
+        (EVENT_ID,),
+    ).fetchall() == [(UUID(EVENT_ID), "cancelled")]
+    assert db.execute(
+        "select id from public.list_published_events()"
+    ).fetchall() == []
+    assert db.execute(
+        "select event_name, event_status from public.list_my_registrations()"
+    ).fetchall() == [("Annual Client Summit", "cancelled")]
+    assert db.execute(
+        "select count(*) from public.event_registrations where event_id = %s",
+        (EVENT_ID,),
+    ).fetchone() == (1,)
 
 
 def test_only_a_coordinator_can_review_a_cancellation_request(db):

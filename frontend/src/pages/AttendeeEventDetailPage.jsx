@@ -13,6 +13,7 @@ import {
 } from '../attendeeRegistration'
 import { categoryLabel } from '../eventCategories'
 import { formatDateRange, formatDateTime, optional } from '../eventDisplay'
+import { statusLabel } from '../eventStatus'
 
 const FIELDS = [
   { name: 'fullName', label: 'Full name', type: 'text', autoComplete: 'name', required: true },
@@ -105,6 +106,9 @@ export default function AttendeeEventDetailPage() {
             {categoryLabel(event.category, event.category_other)}
             {' · '}
             {formatDateRange(event.start_time, event.end_time)}
+          </p>
+          <p className="record-head__meta">
+            Event status: <strong>{statusLabel(event.status)}</strong>
           </p>
         </div>
 

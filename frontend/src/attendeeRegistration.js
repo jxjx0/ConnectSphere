@@ -18,7 +18,10 @@ export const EMPTY_REGISTRATION = {
 // The database makes the final decision; this decides what to show.
 export function registrationAvailability(event, now = new Date()) {
   if (event.status === 'cancelled') {
-    return { open: false, message: 'Registration is unavailable: this event has been cancelled.' }
+    return {
+      open: false,
+      message: 'This event has been cancelled. Registration is closed.',
+    }
   }
   if (event.is_registered) {
     return { open: false, message: 'You are registered for this event.' }
