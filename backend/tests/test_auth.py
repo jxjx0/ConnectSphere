@@ -1,5 +1,8 @@
 """Tests for signup, login, and the protected /me route."""
 
+from types import SimpleNamespace
+from unittest.mock import Mock
+
 import pytest
 from pydantic import ValidationError
 
@@ -193,6 +196,61 @@ def test_signup_reports_a_duplicate_email(client, monkeypatch):
 
     assert response.status_code == 400
     assert response.get_json()["error"] == "User already registered"
+
+
+@pytest.mark.parametrize("role", ["organiser", "attendee"])
+def test_signup_route_and_service_create_auth_user_and_matching_profile(client, monkeypatch, role):
+    """Exercise the actual route and service with only Supabase replaced."""
+    user_id = "22222222-2222-2222-2222-222222222222"
+    auth_client = Mock()
+    auth_client.auth.sign_up.return_value = SimpleNamespace(
+        user=SimpleNamespace(id=user_id), session=SimpleNamespace(access_token="new-user-token")
+    )
+    user_client = Mock()
+    profile_table = user_client.table.return_value
+    payload = {**VALID_SIGNUP, "role": role, "full_name": "  Ada Tan  "}
+    if role == "attendee":
+        del payload["organization"]
+    expected_profile = {
+        "id": user_id,
+        "full_name": "Ada Tan",
+        "role": role,
+        "contact_number": VALID_SIGNUP["contact_number"],
+        "organization": VALID_SIGNUP["organization"] if role == "organiser" else None,
+    }
+    profile_table.insert.return_value.execute.return_value = SimpleNamespace(data=[expected_profile])
+    get_user_client = Mock(return_value=user_client)
+    monkeypatch.setattr(auth_service.config, "get_client", lambda: auth_client)
+    monkeypatch.setattr(auth_service.config, "get_user_client", get_user_client)
+    monkeypatch.setattr(auth_service.config, "get_admin_client", Mock(side_effect=AssertionError("Signup must not bypass RLS")))
+
+    response = client.post("/signup", json=payload)
+
+    assert response.status_code == 201
+    auth_client.auth.sign_up.assert_called_once_with({
+        "email": VALID_SIGNUP["email"], "password": VALID_SIGNUP["password"]
+    })
+    get_user_client.assert_called_once_with("new-user-token")
+    user_client.table.assert_called_once_with("profiles")
+    profile_table.insert.assert_called_once_with(expected_profile)
+    body = response.get_json()
+    assert body["access_token"] == "new-user-token"
+    assert all(body["profile"][key] == value for key, value in expected_profile.items())
+    assert "password" not in body["profile"]
+
+
+def test_signup_without_session_reports_failure_without_inserting_profile(client, monkeypatch):
+    auth_client = Mock()
+    auth_client.auth.sign_up.return_value = SimpleNamespace(user=SimpleNamespace(id="new-user"), session=None)
+    get_user_client = Mock(side_effect=AssertionError("No profile write without a session"))
+    monkeypatch.setattr(auth_service.config, "get_client", lambda: auth_client)
+    monkeypatch.setattr(auth_service.config, "get_user_client", get_user_client)
+
+    response = client.post("/signup", json=VALID_SIGNUP)
+
+    assert response.status_code == 502
+    assert "Signup did not return a session" in response.get_json()["error"]
+    get_user_client.assert_not_called()
 
 
 # --- POST /login --------------------------------------------------------

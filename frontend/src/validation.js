@@ -2,7 +2,7 @@
 // (backend/models/profile.py) so bad input is caught before a round trip
 // to the API. The backend remains the real boundary -- this is convenience.
 
-import { OTHER_CATEGORY } from './eventCategories'
+import { OTHER_CATEGORY } from './eventCategories.js'
 
 const PHONE_PATTERN = /^[0-9+()\-\s]{6,30}$/
 
