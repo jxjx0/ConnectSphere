@@ -64,17 +64,20 @@ await db.query("update public.events set status='planning' where id=$1", [id(21)
 // Validation.
 await assert.rejects(saveAs(id(1), { 2: '2099-11-01T09:00Z' }), /close after it opens/)
 await assert.rejects(saveAs(id(1), { 2: '2099-12-01T09:01Z' }), /before the event starts/)
-await assert.rejects(saveAs(id(1), { 3: 201 }), /venue capacity/) // Only the approved Hall counts.
 await assert.rejects(saveAs(id(1), { 3: 0 }))
 
-// Saving works while approvals are pending; publishing does not.
-await saveAs(id(1), { 3: 200 })
+// Saving works while approvals are pending; publishing does not. The venue
+// limit waits until every session's venue is approved, so it is not yet known.
+await saveAs(id(1), { 3: 1000 })
 let saved = await event()
-assert.equal(saved.attendee_capacity, 200)
+assert.equal(saved.attendee_capacity, 1000)
 assert.equal(saved.published_at, null)
 await assert.rejects(saveAs(id(1), { 4: true }), /approved venue/)
 await db.query(`update public.venue_bookings set status='APPROVED' where booking_id=$1`, [id(42)])
-await assert.rejects(saveAs(id(1), { 3: 81 }), /venue capacity/) // Now the smaller Room counts.
+// Every session's venue is approved: Hall 200 + Room 80. The cancelled Room booking does not count.
+await assert.rejects(saveAs(id(1), { 3: 281 }), /combined venue capacity/)
+await saveAs(id(1), { 3: 280 })
+assert.equal((await event()).attendee_capacity, 280)
 await assert.rejects(saveAs(id(1), { 4: true }), /equipment request/)
 await db.query(`update public.equipment_requests set status='Approved' where id=$1`, [id(51)])
 await assert.rejects(saveAs(id(1), { 4: true }), /Safety Officer/)

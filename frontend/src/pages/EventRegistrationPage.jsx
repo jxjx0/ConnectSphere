@@ -18,6 +18,7 @@ import {
   registrationFormFrom,
   registrationHasClosed,
   registrationToPayload,
+  sessionCapacityNotes,
   validateRegistration,
 } from '../eventRegistration'
 
@@ -119,7 +120,9 @@ export default function EventRegistrationPage() {
 
   const closed = registrationHasClosed(event)
   const pending = pendingItems(event, arrangements)
-  const capacityLimit = largestAllowedCapacity(arrangements)
+  const capacityLimit = largestAllowedCapacity(event, arrangements)
+  const sessions = previewSessions(event, arrangements)
+  const capacityNotes = sessionCapacityNotes(sessions)
   const published = Boolean(event.published_at)
 
   return (
@@ -172,9 +175,14 @@ export default function EventRegistrationPage() {
               <input id="capacity" type="number" min={1} max={capacityLimit ?? undefined} value={form.capacity} onChange={updateField('capacity')} />
               <p className="field__hint">
                 {capacityLimit === null
-                  ? 'The venue limit applies once a venue is approved.'
-                  : `Up to ${capacityLimit}, the capacity of the smallest approved venue.`}
+                  ? "The venue limit applies once every session's venue is approved."
+                  : `Up to ${capacityLimit}, the combined capacity of the sessions' venues.`}
               </p>
+              {capacityNotes.length > 0 && (
+                <ul className="field__hint">
+                  {capacityNotes.map((note) => <li key={note}>{note}</li>)}
+                </ul>
+              )}
             </div>
           </fieldset>
 
@@ -233,7 +241,7 @@ export default function EventRegistrationPage() {
             </div>
           </article>
 
-          {previewSessions(event, arrangements).map((session) => (
+          {sessions.map((session) => (
             <article className="session-card" key={session.id}>
               <header className="session-card__head">
                 <h3>{session.name}</h3>

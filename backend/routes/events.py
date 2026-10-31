@@ -21,7 +21,7 @@ from models.event import (
 )
 from models.profile import Profile, Role
 from routes.auth import require_auth
-from services import auth_service, event_service, notification_service, overview_coordinator_events_service, event_assignment_service, safety_review_service
+from services import attendee_registration_service, auth_service, event_service, notification_service, overview_coordinator_events_service, event_assignment_service, safety_review_service
 from services.auth_service import AuthError
 from models.event import Event
 
@@ -189,6 +189,16 @@ def list_my_event_arrangements(event_id):
     return jsonify(
         {"arrangements": [item.model_dump(mode="json") for item in arrangements]}
     ), 200
+
+
+@events_bp.get("/<event_id>/registrations/count")
+@require_auth
+def count_my_event_registrations(event_id):
+    _require_organiser()
+    count = attendee_registration_service.count_event_registrations(
+        g.access_token, event_id
+    )
+    return jsonify({"registration_count": count}), 200
 
 
 @events_bp.put("/<event_id>/registration")

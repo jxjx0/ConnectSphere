@@ -15,10 +15,9 @@ import { categoryLabel } from '../eventCategories'
 import { formatDateRange, formatDateTime, optional } from '../eventDisplay'
 
 const FIELDS = [
-  { name: 'fullName', label: 'Full name', type: 'text', autoComplete: 'name' },
+  { name: 'fullName', label: 'Full name', type: 'text', autoComplete: 'name', required: true },
   { name: 'email', label: 'Email', type: 'email', autoComplete: 'email', readOnly: true },
-  { name: 'address', label: 'Address', type: 'text', autoComplete: 'street-address' },
-  { name: 'contactNumber', label: 'Contact number', type: 'tel', autoComplete: 'tel' },
+  { name: 'contactNumber', label: 'Contact number (optional)', type: 'tel', autoComplete: 'tel' },
 ]
 
 export default function AttendeeEventDetailPage() {
@@ -186,7 +185,7 @@ export default function AttendeeEventDetailPage() {
                     value={form[field.name]}
                     onChange={field.readOnly ? undefined : updateField(field.name)}
                     readOnly={field.readOnly}
-                    required={!field.readOnly}
+                    required={field.required}
                   />
                   {field.name === 'email' && (
                     <p className="field__hint">

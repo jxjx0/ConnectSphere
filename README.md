@@ -188,6 +188,14 @@ events and register an Attendee. A registration locks the event while it checks
 the registration window, duplicates and spots left, so an event cannot be
 oversold.
 
+If either file was applied before PR #55, apply both again, in the same
+order. The updated versions stop asking Attendees for an address, make the
+contact number optional, let attendee capacity go up to the combined capacity
+of every session's approved venue, and let Organisers see how many Attendees
+signed up. Until they are applied, registration fails with "Event
+registration is not available yet" and capacity is still capped at the
+smallest venue.
+
 ---
 
 ## Running the app

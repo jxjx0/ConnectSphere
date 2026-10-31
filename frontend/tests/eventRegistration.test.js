@@ -9,11 +9,26 @@ import {
   registrationFormFrom,
   registrationHasClosed,
   registrationToPayload,
+  sessionCapacityNotes,
+  signUpSummary,
+  totalExpectedAttendance,
   validateRegistration,
 } from '../src/eventRegistration.js'
 
 test('completed events cannot open registration setup', () => {
   assert.equal(REGISTRATION_STATUSES.includes('completed'), false)
+})
+
+test('the sign-up count is shown against the attendee capacity', () => {
+  assert.equal(signUpSummary(42, 120), '42 of 120')
+})
+
+test('no sign-ups yet still shows a count, not an empty value', () => {
+  assert.equal(signUpSummary(0, 120), '0 of 120')
+})
+
+test('without a capacity the sign-up count stands alone', () => {
+  assert.equal(signUpSummary(7, null), '7')
 })
 
 const SESSION = {
@@ -55,30 +70,77 @@ function form(overrides = {}) {
 
 // --- Capacity and pre-filling ----------------------------------------------
 
-test('the smallest approved venue limits capacity', () => {
-  const arrangements = [
-    APPROVED_VENUE,
-    { ...APPROVED_VENUE, session_id: 'session-2', venue_capacity: 80 },
-    { ...APPROVED_VENUE, session_id: 'session-3', status: 'PENDING_VENUE_APPROVAL', venue_capacity: 10 },
-  ]
-  assert.equal(largestAllowedCapacity(arrangements), 80)
+const BREAKOUT = { ...SESSION, id: 'session-2', name: 'Breakout', expected_attendance: 60 }
+const BREAKOUT_VENUE = { ...APPROVED_VENUE, session_id: 'session-2', venue_name: 'Room 2', venue_capacity: 80 }
+const twoSessions = (overrides = {}) => event({ sessions: [SESSION, BREAKOUT], ...overrides })
+
+test("every session's approved venue adds to the capacity limit", () => {
+  assert.equal(largestAllowedCapacity(twoSessions(), [APPROVED_VENUE, BREAKOUT_VENUE]), 200)
 })
 
-test('there is no venue limit until a venue is approved', () => {
-  assert.equal(largestAllowedCapacity([]), null)
+test('a session with two approved venues counts both, as the database does', () => {
+  const overflow = { ...BREAKOUT_VENUE, venue_name: 'Overflow room', venue_capacity: 30 }
+  assert.equal(
+    largestAllowedCapacity(twoSessions(), [APPROVED_VENUE, BREAKOUT_VENUE, overflow]),
+    230,
+  )
 })
 
-test('a new registration suggests the expected attendance, within the venue', () => {
-  assert.deepEqual(registrationFormFrom(event(), [APPROVED_VENUE]), {
+test("another event's venue does not count", () => {
+  const elsewhere = { ...APPROVED_VENUE, session_id: 'other-session', venue_capacity: 999 }
+  assert.equal(largestAllowedCapacity(event(), [APPROVED_VENUE, elsewhere]), 120)
+})
+
+test('there is no venue limit until every session has an approved venue', () => {
+  assert.equal(largestAllowedCapacity(event(), []), null)
+  assert.equal(largestAllowedCapacity(twoSessions(), [APPROVED_VENUE]), null)
+  assert.equal(
+    largestAllowedCapacity(twoSessions(), [
+      APPROVED_VENUE,
+      { ...BREAKOUT_VENUE, status: 'PENDING_VENUE_APPROVAL' },
+    ]),
+    null,
+  )
+})
+
+test('expected attendance is added up across the sessions', () => {
+  assert.equal(totalExpectedAttendance(twoSessions()), 210)
+  assert.equal(
+    totalExpectedAttendance(twoSessions({
+      sessions: [SESSION, { ...BREAKOUT, expected_attendance: null }],
+    })),
+    150,
+  )
+})
+
+test('an event without sessions uses its own expected attendance', () => {
+  assert.equal(totalExpectedAttendance(event({ sessions: [] })), 150)
+})
+
+test('a new registration suggests the total expected attendance, within the venues', () => {
+  assert.deepEqual(registrationFormFrom(twoSessions(), [APPROVED_VENUE, BREAKOUT_VENUE]), {
     opensAt: '',
     closesAt: '',
-    capacity: '120',
+    capacity: '200',
   })
-  assert.equal(registrationFormFrom(event(), []).capacity, '150')
+  assert.equal(registrationFormFrom(twoSessions(), []).capacity, '210')
+  assert.equal(
+    registrationFormFrom(twoSessions(), [
+      { ...APPROVED_VENUE, venue_capacity: 500 },
+      { ...BREAKOUT_VENUE, venue_capacity: 500 },
+    ]).capacity,
+    '210',
+  )
+})
+
+const noExpectedAttendance = event({ sessions: [{ ...SESSION, expected_attendance: null }] })
+
+test('without an expected attendance, capacity starts at the venue limit', () => {
+  assert.equal(registrationFormFrom(noExpectedAttendance, [APPROVED_VENUE]).capacity, '120')
 })
 
 test('capacity starts blank when there is nothing to suggest', () => {
-  assert.equal(registrationFormFrom(event({ expected_attendance: null }), []).capacity, '')
+  assert.equal(registrationFormFrom(noExpectedAttendance, []).capacity, '')
 })
 
 test('saved settings are shown for editing', () => {
@@ -123,13 +185,15 @@ test('registration must close before the event starts', () => {
   )
 })
 
-test('capacity must be a positive whole number within the venue', () => {
+test('capacity must be a positive whole number within the combined venues', () => {
   const message = 'Attendee capacity must be a whole number above 0.'
   assert.equal(validateRegistration(form({ capacity: '0' }), event(), []), message)
   assert.equal(validateRegistration(form({ capacity: '12.5' }), event(), []), message)
+  const venues = [APPROVED_VENUE, BREAKOUT_VENUE]
+  assert.equal(validateRegistration(form({ capacity: '200' }), twoSessions(), venues), null)
   assert.equal(
-    validateRegistration(form({ capacity: '121' }), event(), [APPROVED_VENUE]),
-    'Attendee capacity cannot exceed the venue capacity of 120.',
+    validateRegistration(form({ capacity: '201' }), twoSessions(), venues),
+    "Attendee capacity cannot exceed 200, the combined capacity of the sessions' venues.",
   )
 })
 
@@ -146,6 +210,7 @@ test('the preview shows each session with its venue', () => {
   const [session] = previewSessions(event(), [APPROVED_VENUE])
   assert.equal(session.venueName, 'Community Hall')
   assert.equal(session.venueLocation, 'Campus West')
+  assert.equal(session.venueCapacity, 120)
   assert.equal(session.venueConfirmed, true)
 })
 
@@ -153,7 +218,23 @@ test('a session with no venue yet is shown without one', () => {
   const [session] = previewSessions(event(), [])
   assert.equal(session.venueName, null)
   assert.equal(session.venueLocation, null)
+  assert.equal(session.venueCapacity, null)
   assert.equal(session.venueConfirmed, false)
+})
+
+test("each session's venue capacity is listed for reference", () => {
+  const sessions = previewSessions(twoSessions(), [
+    APPROVED_VENUE,
+    { ...BREAKOUT_VENUE, status: 'PENDING_VENUE_APPROVAL' },
+  ])
+  assert.deepEqual(sessionCapacityNotes(sessions), [
+    'Main programme: up to 120 at Community Hall',
+    'Breakout: up to 80 at Room 2 (pending approval)',
+  ])
+})
+
+test('a session without a venue is left out of the capacity reference', () => {
+  assert.deepEqual(sessionCapacityNotes(previewSessions(event(), [])), [])
 })
 
 test('a confirmed event with everything approved has nothing pending', () => {

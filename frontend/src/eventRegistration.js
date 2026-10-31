@@ -13,27 +13,54 @@ export const REGISTRATION_STATUSES = [
   'confirmed',
 ]
 
-// Every room an attendee could be in has to hold them, so the smallest
-// approved venue sets the limit. Null while no venue is approved.
-export function largestAllowedCapacity(arrangements) {
-  const capacities = arrangements
-    .filter((item) => item.kind === 'venue' && item.status === 'APPROVED')
-    .map((item) => item.venue_capacity)
-  return capacities.length ? Math.min(...capacities) : null
+// Attendees register for the whole event and the Organiser spreads them
+// across its sessions, so the limit is what every approved venue of every
+// session holds together. Null until every session has one, as the total is
+// not known before then. Mirrors save_event_registration, which has the
+// final say.
+export function largestAllowedCapacity(event, arrangements) {
+  const approvedVenues = arrangements.filter(
+    (item) => item.kind === 'venue' && item.status === 'APPROVED',
+  )
+  const sessions = sessionsOf(event)
+  const everySessionHasVenue = sessions.every((session) => approvedVenues.some(
+    (venue) => venue.session_id === session.id,
+  ))
+  if (!everySessionHasVenue) return null
+  return approvedVenues
+    .filter((venue) => sessions.some((session) => session.id === venue.session_id))
+    .reduce((total, venue) => total + venue.venue_capacity, 0)
+}
+
+// Everyone expected across all the sessions. Null when no session gives a
+// number.
+export function totalExpectedAttendance(event) {
+  const counts = sessionsOf(event)
+    .map((session) => session.expected_attendance)
+    .filter((count) => count != null)
+  return counts.length ? counts.reduce((total, count) => total + count, 0) : null
 }
 
 // The saved settings, or a starting point taken from the event request:
-// the expected attendance, kept within the venue.
+// the total expected attendance, kept within the venues. With no expected
+// attendance, the venue limit is the best guess.
 export function registrationFormFrom(event, arrangements) {
-  const limit = largestAllowedCapacity(arrangements)
-  const suggested = limit === null
-    ? event.expected_attendance
-    : Math.min(event.expected_attendance, limit)
+  const limit = largestAllowedCapacity(event, arrangements)
+  const expected = totalExpectedAttendance(event)
+  const suggested = limit === null || expected === null
+    ? expected ?? limit
+    : Math.min(expected, limit)
   return {
     opensAt: toDateTimeInput(event.registration_opens_at),
     closesAt: toDateTimeInput(event.registration_closes_at),
     capacity: String(event.attendee_capacity ?? suggested ?? ''),
   }
+}
+
+// How many attendees have signed up, against the capacity when one is set.
+// Always a string, so 0 is shown rather than read as "None given".
+export function signUpSummary(count, capacity) {
+  return capacity ? `${count} of ${capacity}` : String(count)
 }
 
 export function registrationHasClosed(event, now = new Date()) {
@@ -57,9 +84,9 @@ export function validateRegistration(form, event, arrangements) {
   if (!Number.isInteger(capacity) || capacity <= 0) {
     return 'Attendee capacity must be a whole number above 0.'
   }
-  const limit = largestAllowedCapacity(arrangements)
+  const limit = largestAllowedCapacity(event, arrangements)
   if (limit !== null && capacity > limit) {
-    return `Attendee capacity cannot exceed the venue capacity of ${limit}.`
+    return `Attendee capacity cannot exceed ${limit}, the combined capacity of the sessions' venues.`
   }
   return null
 }
@@ -86,9 +113,19 @@ export function previewSessions(event, arrangements) {
       ...session,
       venueName: venue?.venue_name ?? null,
       venueLocation: venue?.venue_location ?? null,
+      venueCapacity: venue?.venue_capacity ?? null,
       venueConfirmed: venue?.status === 'APPROVED',
     }
   })
+}
+
+// A reminder of how many each session's venue holds, for the Organiser
+// spreading attendees across sessions. Sessions without a venue are left out.
+export function sessionCapacityNotes(sessions) {
+  return sessions
+    .filter((session) => session.venueCapacity != null)
+    .map((session) => `${session.name}: up to ${session.venueCapacity} at ${session.venueName}`
+      + (session.venueConfirmed ? '' : ' (pending approval)'))
 }
 
 // Everything that must be approved before the event can be published, one

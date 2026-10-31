@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import {
   getMyEvent,
   getMyEventClarifications,
+  getMyEventRegistrationCount,
   respondToEventClarification,
   submitEventCancellationRequest,
 } from '../api/events'
@@ -22,7 +23,7 @@ import {
   optional,
 } from '../eventDisplay'
 import { statusLabel } from '../eventStatus'
-import { REGISTRATION_STATUSES } from '../eventRegistration'
+import { REGISTRATION_STATUSES, signUpSummary } from '../eventRegistration'
 
 function Answer({ label, value, wide }) {
   return (
@@ -49,6 +50,9 @@ export default function MyEventDetailPage() {
   const [historyError, setHistoryError] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  // Declared last: page tests set the states above by their position.
+  const [registrationCount, setRegistrationCount] = useState(null)
+  const [registrationCountError, setRegistrationCountError] = useState('')
 
   useEffect(() => {
     getMyEvent(eventId, token)
@@ -60,6 +64,27 @@ export default function MyEventDetailPage() {
       .then((data) => setClarifications(data.clarifications))
       .catch((caught) => setHistoryError(caught.message))
   }, [eventId, token])
+
+  // Attendees can only sign up once the event is published.
+  const isPublished = Boolean(event?.published_at)
+  useEffect(() => {
+    // Clear the previous event's count so it is never shown for this one.
+    setRegistrationCount(null)
+    setRegistrationCountError('')
+    if (!isPublished) return undefined
+
+    let active = true
+    getMyEventRegistrationCount(eventId, token)
+      .then((data) => {
+        if (active) setRegistrationCount(data.registration_count)
+      })
+      .catch((caught) => {
+        if (active) setRegistrationCountError(caught.message)
+      })
+    return () => {
+      active = false
+    }
+  }, [eventId, token, isPublished])
 
   async function submitClarificationResponse(eventTarget) {
     eventTarget.preventDefault()
@@ -265,7 +290,16 @@ export default function MyEventDetailPage() {
                 />
                 <Answer label="Attendee capacity" value={event.attendee_capacity} />
               </div>
+              {registrationCount !== null && (
+                <Answer
+                  label="Signed up"
+                  value={signUpSummary(registrationCount, event.attendee_capacity)}
+                />
+              )}
             </dl>
+            {registrationCountError && (
+              <p className="note" role="status">{registrationCountError}</p>
+            )}
             <p className="note">
               {event.published_at
                 ? `Published ${formatDateTime(event.published_at)}.`

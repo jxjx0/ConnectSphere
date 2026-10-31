@@ -7,7 +7,7 @@ const id = n => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`
 const sql = file => readFile(new URL(`../../../database/${file}`, import.meta.url), 'utf8')
 // Users: 1, 2 and 3 attendees, 4 organiser, 5 attendee without an email.
 // Events: 21 open with 2 places, 22 confirmed but unpublished,
-// 23 registration closed, 24 registration not yet open.
+// 23 registration closed, 24 registration not yet open. Organiser 4 owns 21.
 await db.exec(`
 create role anon; create role authenticated;
 create schema auth;
@@ -18,7 +18,8 @@ insert into auth.users values ('${id(1)}',' Cara@Example.com '),('${id(2)}','use
 create table public.profiles(id uuid primary key,role text);
 create table public.events(id uuid primary key,name text,description text,purpose text,category text,category_other text,
   start_time timestamptz,end_time timestamptz,accessibility_requirements text,status text,
-  registration_opens_at timestamptz,registration_closes_at timestamptz,attendee_capacity int,published_at timestamptz);
+  registration_opens_at timestamptz,registration_closes_at timestamptz,attendee_capacity int,published_at timestamptz,
+  organiser_id uuid);
 create table public.event_sessions(id uuid primary key,event_id uuid,name text,start_time timestamptz,end_time timestamptz);
 create table public.venues(id uuid primary key,name text,location text);
 create table public.venue_bookings(booking_id uuid primary key,venue_id uuid,session_id uuid,status text);
@@ -40,9 +41,9 @@ async function asUser(user, query, params = []) {
   await db.query(`select set_config('request.jwt.claim.sub',$1,false)`, [user])
   try { return (await db.query(query, params)).rows } finally { await db.exec('reset role') }
 }
-const register = (user, event) => asUser(
-  user, 'select public.register_for_event($1,$2,$3,$4) as id',
-  [event, 'Cara Ng', '1 Orchard Road', '+65 9123 4567'],
+const register = (user, event, contactNumber = '+65 9123 4567') => asUser(
+  user, 'select public.register_for_event($1,$2,$3) as id',
+  [event, 'Cara Ng', contactNumber],
 )
 const listAs = (user, event = null) => asUser(user, 'select * from public.list_published_events($1)', [event])
 const count = async () => (await db.query('select count(*)::int as n from public.event_registrations')).rows[0].n
@@ -80,7 +81,8 @@ await assert.rejects(register(id(1), id(21)), /account is already registered/)
 assert.equal(await count(), 1)
 
 // The last spot goes, then the event is full and nothing more is saved.
-await register(id(2), id(21))
+// The contact number is optional; a blank one is saved as null.
+await register(id(2), id(21), '   ')
 assert.equal((await listAs(id(1), id(21)))[0].spots_left, 0)
 await assert.rejects(register(id(3), id(21)), /Event is full/)
 assert.equal(await count(), 2)
@@ -90,6 +92,10 @@ const mine = await asUser(id(1), 'select * from public.list_my_registrations($1)
 assert.equal(mine.length, 1)
 assert.equal(mine[0].event_name, 'Open')
 assert.equal(mine[0].email, 'cara@example.com')
+assert.equal(mine[0].contact_number, '+65 9123 4567')
+assert.equal('address' in mine[0], false)
+const withoutContact = await asUser(id(2), 'select * from public.list_my_registrations($1)', [null])
+assert.equal(withoutContact[0].contact_number, null)
 assert.equal((await asUser(id(1), 'select * from public.list_my_registrations($1)', [saved.id])).length, 1)
 assert.deepEqual(await asUser(id(3), 'select * from public.list_my_registrations($1)', [saved.id]), [])
 
@@ -97,3 +103,11 @@ assert.deepEqual(await asUser(id(3), 'select * from public.list_my_registrations
 assert.equal((await asUser(id(1), 'select * from public.event_registrations')).length, 1)
 await assert.rejects(asUser(id(3), `insert into public.event_registrations(event_id,attendee_id,full_name,email,address,contact_number)
   values ('${id(21)}','${id(3)}','x','x@example.com','x','12345678')`))
+
+// The owning organiser sees only how many signed up; nobody else sees a count.
+const signUps = (user, event) => asUser(user, 'select public.count_event_registrations($1) as n', [event])
+await db.query('update public.events set organiser_id=$1 where id=$2', [id(4), id(21)])
+assert.equal((await signUps(id(4), id(21)))[0].n, 2)
+assert.equal((await signUps(id(4), id(23)))[0].n, null)
+assert.equal((await signUps(id(1), id(21)))[0].n, null)
+assert.equal((await signUps('', id(21)))[0].n, null)

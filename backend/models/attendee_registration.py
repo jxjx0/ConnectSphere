@@ -21,31 +21,28 @@ def _required_text(value: str, label: str, max_length: int) -> str:
 class AttendeeRegistrationSubmit(BaseModel):
     """The body of POST /attendee/events/<id>/registrations.
 
-    Each field defaults to blank so a missing field gets the same "is
-    required" message as an empty one, naming the field. There is no email:
-    the database always uses the account's own email address.
+    full_name defaults to blank so a missing name gets the same "is
+    required" message as an empty one. The contact number is optional; a
+    blank one is saved as none. There is no email: the database always uses
+    the account's own email address.
     """
 
     model_config = ConfigDict(validate_default=True)
 
     full_name: str = ""
-    address: str = ""
-    contact_number: str = ""
+    contact_number: str | None = None
 
     @field_validator("full_name")
     @classmethod
     def validate_full_name(cls, value: str) -> str:
         return _required_text(value, "Full name", 120)
 
-    @field_validator("address")
-    @classmethod
-    def validate_address(cls, value: str) -> str:
-        return _required_text(value, "Address", 300)
-
     @field_validator("contact_number")
     @classmethod
-    def validate_contact_number(cls, value: str) -> str:
-        contact_number = _required_text(value, "Contact number", 30)
+    def validate_contact_number(cls, value: str | None) -> str | None:
+        contact_number = (value or "").strip()
+        if not contact_number:
+            return None
         if not PHONE_PATTERN.match(contact_number):
             raise ValueError("Contact number must be a valid phone number")
         return contact_number
@@ -63,8 +60,7 @@ class AttendeeRegistration(BaseModel):
     attendee_id: str
     full_name: str
     email: str
-    address: str
-    contact_number: str
+    contact_number: str | None = None
     created_at: datetime | None = None
     event_name: str
     event_start_time: datetime | None = None

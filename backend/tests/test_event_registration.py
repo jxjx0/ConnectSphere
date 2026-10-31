@@ -249,9 +249,17 @@ def test_service_sends_registration_to_the_database_function(monkeypatch):
             "Registration must close before the event starts.",
         ),
         (
+            "Attendee capacity cannot exceed the combined venue capacity",
+            400,
+            "Attendee capacity cannot exceed the combined capacity of the "
+            "sessions' approved venues.",
+        ),
+        # A database not yet updated still enforces the smallest venue.
+        (
             "Attendee capacity cannot exceed the venue capacity",
             400,
-            "Attendee capacity cannot exceed the venue capacity.",
+            "Attendee capacity cannot exceed the capacity of the smallest "
+            "approved venue.",
         ),
         (
             "Every session needs an approved venue before publishing",

@@ -26,7 +26,6 @@ function event(overrides = {}) {
 const VALID_FORM = {
   fullName: 'Cara Ng',
   email: 'cara@example.com',
-  address: '1 Orchard Road',
   contactNumber: '+65 9123 4567',
 }
 
@@ -72,12 +71,18 @@ test('valid details pass', () => {
   assert.deepEqual(validateAttendeeRegistration(VALID_FORM), [])
 })
 
-test('every missing field is reported at once', () => {
+test('only the full name is required', () => {
   assert.deepEqual(validateAttendeeRegistration(EMPTY_REGISTRATION), [
     'Full name is required.',
-    'Address is required.',
-    'Contact number is required.',
   ])
+})
+
+test('the contact number can be left blank', () => {
+  assert.deepEqual(validateAttendeeRegistration({ ...VALID_FORM, contactNumber: '   ' }), [])
+})
+
+test('the form has no address field', () => {
+  assert.equal('address' in EMPTY_REGISTRATION, false)
 })
 
 test('a badly formatted phone number is reported', () => {
@@ -96,8 +101,11 @@ test('the payload is trimmed, uses the API field names and leaves out the email'
     registrationToPayload({ ...VALID_FORM, fullName: '  Cara Ng ' }),
     {
       full_name: 'Cara Ng',
-      address: '1 Orchard Road',
       contact_number: '+65 9123 4567',
     },
   )
+})
+
+test('a blank contact number is sent as none', () => {
+  assert.equal(registrationToPayload({ ...VALID_FORM, contactNumber: '  ' }).contact_number, null)
 })
