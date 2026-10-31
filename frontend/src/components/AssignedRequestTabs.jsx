@@ -1,88 +1,18 @@
-// The Coordinator's assigned event requests, split into tabs by status.
-// DashboardPage loads the events and passes them in.
+// The Coordinator's assigned event requests, split into tabs by whether
+// they are waiting on the Coordinator. DashboardPage loads the events and
+// passes them in.
 
 import { Link, useSearchParams } from 'react-router-dom'
 
 import {
+  COORDINATOR_EVENT_TABS as TABS,
+  coordinatorEventsForTab,
+} from '../coordinatorEventTabs'
+import {
   formatDateRange,
   formatSessionSummary,
-  readableStatus,
 } from '../eventDisplay'
-
-const TABS = [
-  // {
-  //   id: 'incoming',
-  //   label: 'Incoming',
-  //   statuses: ['under_review'],
-  //   empty: 'No requests are waiting for your decision.',
-  // },
-  {
-    id: 'under_review',
-    label: 'Under Review',
-    statuses: ['under_review'],
-    empty: 'No requests are waiting for your decision.',
-  },
-  {
-    id: 'clarification',
-    label: 'Awaiting clarification',
-    statuses: ['awaiting_clarification'],
-    empty: 'No events are awaiting clarification.',
-  },
-  // {
-  //   id: 'ongoing',
-  //   label: 'Ongoing',
-  //   statuses: ['planning', 'confirmed'],
-  //   empty: 'You have no ongoing events.',
-  // },
-  {
-    id: 'planning',
-    label: 'Planning',
-    statuses: ['planning'],
-    empty: 'You have no ongoing events.',
-  },
-  {
-    id: 'awaiting_safety_check',
-    label: 'Awaiting Safety Check',
-    statuses: ['awaiting_safety_check'],
-    empty: 'No events are awaiting safety checks.',
-  },
-  {
-    id: 'confirmed',
-    label: 'Confirmed',
-    statuses: ['confirmed'],
-    empty: 'You have no confirmed events.',
-  },
-  {
-    id: 'change-requested',
-    label: 'Change requested',
-    statuses: ['change_requested'],
-    empty: 'No events are waiting on a change request.',
-  },
-  {
-    id: 'cancellation-requested',
-    label: 'Cancellation requested',
-    statuses: ['cancellation_requested'],
-    empty: 'No cancellation requests are waiting for your review.',
-  },
-  {
-    id: 'completed',
-    label: 'Completed',
-    statuses: ['completed'],
-    empty: 'You have no completed events.',
-  },
-  {
-    id: 'cancelled',
-    label: 'Cancelled',
-    statuses: ['cancelled'],
-    empty: 'You have no cancelled events.',
-  },
-  {
-    id: 'rejected',
-    label: 'Rejected',
-    statuses: ['rejected'],
-    empty: 'You have not rejected any requests.',
-  },
-]
+import { openRequestBadges, statusLabel } from '../eventStatus'
 
 // Helper function to derive the venue status badge. Cancelled bookings
 // hold no venue, so they are left out (T7-282).
@@ -263,11 +193,11 @@ function getEquipmentBadge(equipmentRequests) {
 }
 
 export default function AssignedRequestTabs({ events }) {
-  // The open tab lives in the URL (?tab=planning), so the back button
-  // returns to the same tab. Under Review is the default.
+  // The open tab lives in the URL (?tab=waiting), so the back button
+  // returns to the same tab. "Needs my action" is the default.
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = TABS.find((t) => t.id === searchParams.get('tab')) ?? TABS[0]
-  const tabEvents = events.filter((event) => tab.statuses.includes(event.status))
+  const tabEvents = coordinatorEventsForTab(tab.id, events)
 
   return (
     <>
@@ -287,7 +217,7 @@ export default function AssignedRequestTabs({ events }) {
               setSearchParams(t.id === TABS[0].id ? {} : { tab: t.id })
             }
           >
-            {t.label} ({events.filter((event) => t.statuses.includes(event.status)).length})
+            {t.label} ({coordinatorEventsForTab(t.id, events).length})
           </button>
         ))}
       </div>
@@ -314,7 +244,15 @@ export default function AssignedRequestTabs({ events }) {
                     <span aria-hidden="true">·</span>
                     <span>{formatSessionSummary(event)}</span>
                     <span aria-hidden="true">·</span>
-                    <span className="tag">{readableStatus(event.status)}</span>
+                    <span className="tag">{statusLabel(event.status)}</span>
+                    {openRequestBadges(event, 'coordinator').map((badge) => (
+                      <span
+                        key={badge.kind}
+                        className={badge.yourTurn ? 'tag tag--your-turn' : 'tag'}
+                      >
+                        {badge.label}
+                      </span>
+                    ))}
                     {event.status !== 'cancelled' && (
                       <>
                         <span className="tag" style={venueBadge.style}>

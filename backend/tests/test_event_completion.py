@@ -30,13 +30,13 @@ def test_expired_requests_serialize_and_are_not_reported_as_pending():
         "organiser_id": event.organiser_id, "status": "expired",
     }
     change = EventChangeRequest(
-        **common, event_status_before_request="confirmed", name="Workshop",
+        **common, name="Workshop",
         description="Description", reason_for_change="New title", purpose="Training",
         category="workshop", start_time="2026-10-26T04:00:00Z",
         end_time="2026-10-26T05:00:00Z", expected_attendance=20,
     )
     cancellation = EventCancellationRequest(
-        **common, previous_event_status="change_requested", reason="Cancel"
+        **common, reason="Cancel"
     )
     database = FakeDatabase({
         ("event_change_requests", "select"): [change.model_dump(mode="json")],

@@ -16,6 +16,8 @@ import {
 import AppShell from '../components/AppShell'
 import CancelArrangementForm from '../components/CancelArrangementForm'
 import EquipmentRequestCard from '../components/EquipmentRequestCard'
+import EventStatusPanel from '../components/EventStatusPanel'
+import RequestHistory from '../components/RequestHistory'
 import SessionList from '../components/SessionList'
 import { useAuth } from '../context/AuthContext'
 import { categoryLabel } from '../eventCategories'
@@ -32,6 +34,7 @@ import { cancelEquipmentRequest, getEventEquipmentRequests } from '../api/equipm
 import { canCancelEquipmentRequest, canCancelVenueBooking } from '../cancelArrangements'
 import { sessionsWithoutEquipmentRequest } from '../equipmentRequestEligibility'
 import { sessionChanges, sessionsNeedingRebooking } from '../changeRequestSessions'
+import { ACTIVE_STATUSES, forwardBlocker, statusLabel } from '../eventStatus'
 
 import { requestSafetyCheck } from '../api/events'
 
@@ -229,10 +232,7 @@ export default function EventReviewDetailPage() {
         eventId, clarificationNotes, token,
       )
       setClarifications((history) => [...history, data.clarification])
-      setEvent((current) => ({
-        ...current,
-        status: 'awaiting_clarification',
-      }))
+      setEvent((current) => ({ ...current, has_open_clarification: true }))
       setClarificationNotes('')
       setShowClarificationForm(false)
     } catch (caught) {
@@ -243,97 +243,81 @@ export default function EventReviewDetailPage() {
   }
 
 
-  async function decide(decision) {
-    const reviewingChange = event.status === 'change_requested'
-    const reviewingCancellation = event.status === 'cancellation_requested'
+  // Reload the event, its arrangements and its clarifications: a decision
+  // can change the status, the badges, sessions, bookings and equipment,
+  // and ending the event expires any open clarification.
+  async function reloadEvent() {
+    const [data, bookingData, requestData, clarificationData] = await Promise.all([
+      getAssignedEventRequest(eventId, token),
+      getVenueBookingsForEvent(eventId, token),
+      getEventEquipmentRequests(eventId, token),
+      getAssignedEventClarifications(eventId, token),
+    ])
+    setEvent(data.event)
+    setVenueBookings(bookingData.bookings || [])
+    setEquipmentRequests(requestData.requests || [])
+    setClarifications(clarificationData.clarifications)
+  }
+
+  // kind is 'event' (accept or reject the request), 'change' or
+  // 'cancellation'.
+  async function decide(kind, decision) {
     const trimmedReason = rejectionReason.trim()
-    if ((reviewingChange || reviewingCancellation) && !trimmedReason) {
-      setDecisionError(
-        reviewingCancellation
-          ? 'Give a decision reason before approving or rejecting this cancellation request.'
-          : 'Give a reason for rejecting this change request.'
-      )
+    if (kind === 'cancellation' && !trimmedReason) {
+      setDecisionError('Give a decision reason before approving or rejecting this cancellation request.')
       return
     }
-    if (reviewingCancellation) {
-      const confirmation = decision === 'reject'
-        ? 'Reject this cancellation request?'
-        : 'Approve this cancellation request and cancel the event?'
-      if (!window.confirm(confirmation)) {
-        return
-      }
+    if (kind === 'change' && decision === 'reject' && !trimmedReason) {
+      setDecisionError('Give a reason for rejecting this change request.')
+      return
     }
-
-    const rejectConfirmation = reviewingChange
-      ? 'Reject this proposed change?'
-      : 'Reject this event request?'
-    if (decision === 'reject' && !reviewingCancellation && !window.confirm(rejectConfirmation)) {
+    const confirmation = {
+      cancellation: decision === 'reject'
+        ? 'Reject this cancellation request?'
+        : 'Approve this cancellation request and cancel the event?',
+      change: decision === 'reject' ? 'Reject this proposed change?' : null,
+      event: decision === 'reject' ? 'Reject this event request?' : null,
+    }[kind]
+    if (confirmation && !window.confirm(confirmation)) {
       return
     }
 
     setDecisionError('')
     setDeciding(true)
     try {
-      if (reviewingCancellation) {
-        const data = decision === 'approve'
-          ? await approveAssignedCancellationRequest(eventId, trimmedReason, token)
-          : await rejectAssignedCancellationRequest(eventId, trimmedReason, token)
-        setEvent({
-          ...data.event,
-          change_request: decision === 'approve'
-            && event.change_request?.status === 'pending'
-            ? {
-                ...event.change_request,
-                status: 'expired',
-                rejection_reason: null,
-              }
-            : event.change_request,
-          has_pending_change_request: decision === 'approve'
-            && event.change_request?.status === 'pending'
-            ? false
-            : event.has_pending_change_request,
-          cancellation_request: data.cancellation_request,
-          has_pending_cancellation_request: false,
-        })
-      } else if (reviewingChange && decision === 'approve') {
-        await approveAssignedChangeRequest(
-          eventId,
-          pendingBookingsAffectedBy(event, venueBookings)
-            .filter((booking) => !keptPendingIds.has(booking.booking_id))
-            .map((booking) => booking.booking_id),
-          token,
-        )
-        // Sessions, bookings and equipment may all have changed, so load
-        // them again rather than patching the page.
-        const [data, bookingData, requestData] = await Promise.all([
-          getAssignedEventRequest(eventId, token),
-          getVenueBookingsForEvent(eventId, token),
-          getEventEquipmentRequests(eventId, token),
-        ])
-        setEvent(data.event)
-        setVenueBookings(bookingData.bookings || [])
-        setEquipmentRequests(requestData.requests || [])
-      } else if (reviewingChange) {
-        const data = await rejectAssignedChangeRequest(eventId, trimmedReason, token)
-        setEvent({
-          ...data.event,
-          change_request: data.change_request,
-          has_pending_change_request: false,
-        })
+      if (kind === 'cancellation') {
+        if (decision === 'approve') {
+          await approveAssignedCancellationRequest(eventId, trimmedReason, token)
+        } else {
+          await rejectAssignedCancellationRequest(eventId, trimmedReason, token)
+        }
+      } else if (kind === 'change') {
+        if (decision === 'approve') {
+          await approveAssignedChangeRequest(
+            eventId,
+            pendingBookingsAffectedBy(event, venueBookings)
+              .filter((booking) => !keptPendingIds.has(booking.booking_id))
+              .map((booking) => booking.booking_id),
+            token,
+          )
+        } else {
+          await rejectAssignedChangeRequest(eventId, trimmedReason, token)
+        }
+      } else if (decision === 'approve') {
+        await approveAssignedEvent(eventId, token)
       } else {
-        const data = decision === 'approve'
-          ? await approveAssignedEvent(eventId, token)
-          : await rejectAssignedEvent(eventId, token)
-        setEvent(data.event)
+        await rejectAssignedEvent(eventId, token)
       }
+      setRejectionReason('')
+      await reloadEvent()
     } catch (caught) {
       setDecisionError(caught.message)
-      // 409: someone else already decided. Reload so the page shows the
-      // current state instead of buttons that will keep failing.
+      // 409: someone else already decided, or a request is still open.
+      // Reload so the page shows the current state instead of buttons that
+      // will keep failing.
       if (caught.status === 409) {
         try {
-          const data = await getAssignedEventRequest(eventId, token)
-          setEvent(data.event)
+          await reloadEvent()
         } catch {
           // Keep the decision error on screen; the page can be refreshed.
         }
@@ -386,6 +370,16 @@ export default function EventReviewDetailPage() {
 
 
   const pendingBookingsToCancel = pendingBookingsAffectedBy(event, venueBookings)
+  const blocker = forwardBlocker(event, 'coordinator')
+  const pendingChange = event.change_request?.status === 'pending' ? event.change_request : null
+  const pendingCancellation = event.cancellation_request?.status === 'pending'
+    ? event.cancellation_request
+    : null
+  const openClarification = clarifications.find((item) => item.status === 'pending')
+  // Questions can be asked at any active stage, one at a time, and not while
+  // a cancellation is waiting for review.
+  const canAskClarification = ACTIVE_STATUSES.includes(event.status)
+    && !event.has_open_clarification && !pendingCancellation
 
   const liveVenueStatuses = venueBookings
     .map((booking) => (booking.status || '').toUpperCase())
@@ -433,13 +427,13 @@ export default function EventReviewDetailPage() {
             <span className="record-head__dot" aria-hidden="true">·</span>
             {formatSessionSummary(event)}
             <span className="record-head__dot" aria-hidden="true">·</span>
-            <span className="tag">{readableStatus(event.status)}</span>
+            <span className="tag">{statusLabel(event.status)}</span>
           </p>
 
           {venueError && <p role="alert">Unable to load venue arrangements. Please refresh and try again.</p>}
           {/* Venues are requested only after the request is approved: an
               Under review event can be held by Venue Staff but not booked. */}
-          {hasActiveHold && ['change_requested', 'confirmed'].includes(event.status) && (
+          {hasActiveHold && event.status === 'confirmed' && (
             <div className="form-actions">
               <Link to={`/venues/search?eventId=${encodeURIComponent(eventId)}`} className="button">
                 Find / Request Venue
@@ -481,7 +475,7 @@ export default function EventReviewDetailPage() {
                 <button
                   type="button"
                   className="button button--secondary"
-                  disabled={submittingSafety || !hasApprovedVenue}
+                  disabled={submittingSafety || !hasApprovedVenue || Boolean(blocker)}
                   onClick={async () => {
                     setSubmittingSafety(true)
                     setSafetyError('')
@@ -502,6 +496,7 @@ export default function EventReviewDetailPage() {
                 </button>
               </div>
 
+              {blocker && <p className="note">{blocker}</p>}
               {!hasApprovedVenue && (
                 <p className="note">
                   A safety check can be requested once every session has an approved venue booking (rejected or cancelled ones don't count), every session that needs equipment has an equipment request, and no equipment request is still pending.
@@ -518,6 +513,229 @@ export default function EventReviewDetailPage() {
             </div>
           )}
         </header>
+
+        <EventStatusPanel event={event} role="coordinator" />
+
+        {/* Open requests and decisions come first: they are what needs doing. */}
+        {event.status === 'under_review' && (
+          <section className="stack stack--tight">
+            <h2 className="section-title">Review decision</h2>
+            {decisionError && !pendingChange && !pendingCancellation && (
+              <p className="form-error" role="alert">{decisionError}</p>
+            )}
+            {blocker && <p className="note">{blocker}</p>}
+            <div className="form-actions">
+              <button
+                type="button"
+                className="button"
+                onClick={() => decide('event', 'approve')}
+                disabled={deciding || Boolean(blocker)}
+              >
+                {deciding ? 'Saving…' : 'Approve'}
+              </button>
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => decide('event', 'reject')}
+                disabled={deciding}
+              >
+                Reject
+              </button>
+            </div>
+          </section>
+        )}
+
+        {pendingCancellation && (
+          <section className="stack stack--tight">
+            <h2 className="section-title">Review cancellation request</h2>
+            <p><strong>Organiser reason:</strong> {pendingCancellation.reason}</p>
+            {decisionError && (
+              <p className="form-error" role="alert">{decisionError}</p>
+            )}
+            <label className="field">
+              <span>Coordinator decision reason (required)</span>
+              <textarea
+                value={rejectionReason}
+                onChange={(change) => {
+                  setRejectionReason(change.target.value)
+                  setDecisionError('')
+                }}
+                maxLength={2000}
+              />
+            </label>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="button"
+                onClick={() => decide('cancellation', 'approve')}
+                disabled={deciding}
+              >
+                {deciding ? 'Saving…' : 'Approve cancellation'}
+              </button>
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => decide('cancellation', 'reject')}
+                disabled={deciding}
+              >
+                Reject cancellation
+              </button>
+            </div>
+          </section>
+        )}
+
+        {pendingChange && (
+          <section className="stack stack--tight">
+            <h2 className="section-title">Review proposed changes</h2>
+            <p><strong>Reason for change:</strong> {pendingChange.reason_for_change}</p>
+            <dl className="answers">
+              {CHANGE_FIELDS
+                .filter(({ key }) => normalizedValue(key, event[key])
+                  !== normalizedValue(key, pendingChange[key]))
+                .map(({ key, label }) => (
+                  <div className="answer answer--wide" key={key}>
+                    <dt>{label}</dt>
+                    <dd>
+                      {displayChangeValue(key, event[key], event.category_other)}
+                      {' → '}
+                      {displayChangeValue(
+                        key,
+                        pendingChange[key],
+                        pendingChange.category_other,
+                      )}
+                    </dd>
+                  </div>
+                ))}
+            </dl>
+            <h3>Sessions</h3>
+            <ProposedSessionChanges event={event} />
+            {decisionError && !pendingCancellation && (
+              <p className="form-error" role="alert">{decisionError}</p>
+            )}
+            {pendingCancellation ? (
+              <p className="note">Review the cancellation request first.</p>
+            ) : (
+              <>
+                <label className="field">
+                  <span>Reason for rejection (required if rejecting)</span>
+                  <textarea
+                    value={rejectionReason}
+                    onChange={(change) => {
+                      setRejectionReason(change.target.value)
+                      setDecisionError('')
+                    }}
+                    maxLength={2000}
+                  />
+                </label>
+                {pendingBookingsToCancel.length > 0 && (
+                  <fieldset className="stack stack--tight">
+                    <legend>Pending venue bookings for moved or removed sessions</legend>
+                    <p className="note">
+                      Ticked bookings are cancelled when you approve. Unticked ones stay pending.
+                      Approved bookings and equipment for these sessions are kept but marked as
+                      affected, so you can cancel and book them again.
+                    </p>
+                    {pendingBookingsToCancel.map((booking) => (
+                      <label key={booking.booking_id} style={{ display: 'block' }}>
+                        <input
+                          type="checkbox"
+                          checked={!keptPendingIds.has(booking.booking_id)}
+                          onChange={(change) => setKeptPendingIds((current) => {
+                            const next = new Set(current)
+                            if (change.target.checked) next.delete(booking.booking_id)
+                            else next.add(booking.booking_id)
+                            return next
+                          })}
+                        />
+                        {' '}Cancel {booking.venues?.name || 'venue'} for {booking.session?.name || 'its session'}
+                        {' '}({formatDateTime(booking.start_at)} – {formatDateTime(booking.end_at)})
+                      </label>
+                    ))}
+                  </fieldset>
+                )}
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="button"
+                    onClick={() => decide('change', 'approve')}
+                    disabled={deciding}
+                  >
+                    {deciding ? 'Saving…' : 'Approve and apply changes'}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button--secondary"
+                    onClick={() => decide('change', 'reject')}
+                    disabled={deciding}
+                  >
+                    Reject change request
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+        )}
+
+        {openClarification && (
+          <section className="stack stack--tight">
+            <h2 className="section-title">Your question to the Organiser</h2>
+            <article className="notice">
+              <p><strong>You · {formatDateTime(openClarification.created_at)}</strong></p>
+              <p>{openClarification.coordinator_notes}</p>
+              <p className="note">Waiting for the Organiser's reply.</p>
+            </article>
+          </section>
+        )}
+
+        {canAskClarification && (
+          <section className="stack stack--tight">
+            {!showClarificationForm ? (
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  onClick={() => setShowClarificationForm(true)}
+                >
+                  Request Clarification
+                </button>
+              </div>
+            ) : (
+              <form className="stack stack--tight" onSubmit={requestClarification}>
+                <label className="field">
+                  <span className="field__label">What needs clarification?</span>
+                  <textarea
+                    value={clarificationNotes}
+                    onChange={(e) => setClarificationNotes(e.target.value)}
+                    rows={3}
+                    maxLength={5000}
+                    required
+                    autoFocus
+                    placeholder="Describe the information or amendments needed."
+                  />
+                </label>
+                {clarificationError && (
+                  <p className="form-error" role="alert">{clarificationError}</p>
+                )}
+                <div className="form-actions">
+                  <button className="button" disabled={clarifying}>
+                    {clarifying ? 'Sending…' : 'Send request'}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button--secondary"
+                    disabled={clarifying}
+                    onClick={() => {
+                      setShowClarificationForm(false)
+                      setClarificationError('')
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+          </section>
+        )}
 
         {event.status === 'confirmed' && canRequestEquipment && (
           <div className="form-actions">
@@ -713,23 +931,6 @@ export default function EventReviewDetailPage() {
           )}
         </section>
 
-        {clarifications.length > 0 && (
-          <section className="stack stack--tight">
-            <h2 className="section-title">Clarification history</h2>
-            {clarifications.map((item) => (
-              <article className="notice" key={item.id}>
-                <p><strong>Coordinator · {formatDateTime(item.requested_at)}</strong></p>
-                <p>{item.coordinator_notes}</p>
-                {item.organiser_response && (
-                  <>
-                    <p><strong>Organiser · {formatDateTime(item.responded_at)}</strong></p>
-                    <p>{item.organiser_response}</p>
-                  </>
-                )}
-              </article>
-            ))}
-          </section>
-        )}
         {historyError && <p className="note" role="status">{historyError}</p>}
 
         <section className="stack stack--tight">
@@ -747,251 +948,7 @@ export default function EventReviewDetailPage() {
             session (T7-277). */}
         <SessionList event={event} />
 
-        {/* Shown while the change is pending, including while a clarification
-            is open, so the Coordinator can see what they asked about. */}
-        {event.change_request?.status === 'pending' && (
-          <section className="stack stack--tight">
-            <h2 className="section-title">Organiser's proposed changes</h2>
-            <p><strong>Reason for change:</strong> {event.change_request.reason_for_change}</p>
-            <dl className="answers">
-              {CHANGE_FIELDS
-                .filter(({ key }) => normalizedValue(key, event[key])
-                  !== normalizedValue(key, event.change_request[key]))
-                .map(({ key, label }) => (
-                  <div className="answer answer--wide" key={key}>
-                    <dt>{label}</dt>
-                    <dd>
-                      {displayChangeValue(key, event[key], event.category_other)}
-                      {' → '}
-                      {displayChangeValue(
-                        key,
-                        event.change_request[key],
-                        event.change_request.category_other,
-                      )}
-                    </dd>
-                  </div>
-                ))}
-            </dl>
-            <h3>Sessions</h3>
-            <ProposedSessionChanges event={event} />
-          </section>
-        )}
-
-        {event.change_request && event.change_request.status !== 'pending' && (
-          <section className="stack stack--tight">
-            <h2 className="section-title">Latest change request</h2>
-            <p className="note">
-              Status: {readableStatus(event.change_request.status)}.
-              {' '}Reason for change: {event.change_request.reason_for_change}
-            </p>
-            {event.change_request.status === 'expired' && (
-              <p className="notice" role="status">
-                This change request has expired and can no longer be reviewed.
-              </p>
-            )}
-            {event.change_request.rejection_reason && (
-              <p className="form-error" role="status">
-                The Coordinator rejected this change request:
-                {' '}{event.change_request.rejection_reason}
-              </p>
-            )}
-          </section>
-        )}
-
-        {event.cancellation_request && (
-          <section className="stack stack--tight">
-            <h2 className="section-title">Cancellation request</h2>
-            <p className="note">
-              Status: {readableStatus(event.cancellation_request.status)}
-            </p>
-            <p><strong>Organiser reason:</strong> {event.cancellation_request.reason}</p>
-            {event.cancellation_request.decision_reason && (
-              <p>
-                <strong>Coordinator decision reason:</strong>{' '}
-                {event.cancellation_request.decision_reason}
-              </p>
-            )}
-            {event.cancellation_request.status === 'pending'
-              && event.status === 'cancellation_requested' && (
-                <>
-                  <h3 className="section-title">Review cancellation request</h3>
-                  {decisionError && (
-                    <p className="form-error" role="alert">{decisionError}</p>
-                  )}
-                  <label className="field">
-                    <span>Coordinator decision reason (required)</span>
-                    <textarea
-                      value={rejectionReason}
-                      onChange={(change) => {
-                        setRejectionReason(change.target.value)
-                        setDecisionError('')
-                      }}
-                      maxLength={2000}
-                    />
-                  </label>
-                  <div className="form-actions">
-                    <button
-                      type="button"
-                      className="button"
-                      onClick={() => decide('approve')}
-                      disabled={deciding}
-                    >
-                      {deciding ? 'Saving…' : 'Approve cancellation'}
-                    </button>
-                    <button
-                      type="button"
-                      className="button button--secondary"
-                      onClick={() => decide('reject')}
-                      disabled={deciding}
-                    >
-                      Reject cancellation
-                    </button>
-                  </div>
-                </>
-              )}
-          </section>
-        )}
-
-        {event.status === 'under_review' && (
-          <section className="stack stack--tight">
-            <h2 className="section-title">Review decision</h2>
-            {decisionError && (
-              <p className="form-error" role="alert">{decisionError}</p>
-            )}
-            <div className="form-actions">
-              <button
-                type="button"
-                className="button"
-                onClick={() => decide('approve')}
-                disabled={deciding}
-              >
-                {deciding ? 'Saving…' : 'Approve'}
-              </button>
-              <button
-                type="button"
-                className="button button--secondary"
-                onClick={() => decide('reject')}
-                disabled={deciding}
-              >
-                Reject
-              </button>
-            </div>
-          </section>
-        )}
-
-        {event.status === 'change_requested'
-          && event.change_request?.status === 'pending' && (
-            <section className="stack stack--tight">
-              <h2 className="section-title">Review proposed changes</h2>
-              {decisionError && (
-                <p className="form-error" role="alert">{decisionError}</p>
-              )}
-              <label className="field">
-                <span>Reason for rejection (required if rejecting)</span>
-                <textarea
-                  value={rejectionReason}
-                  onChange={(change) => {
-                    setRejectionReason(change.target.value)
-                    setDecisionError('')
-                  }}
-                  maxLength={2000}
-                />
-              </label>
-              {pendingBookingsToCancel.length > 0 && (
-                <fieldset className="stack stack--tight">
-                  <legend>Pending venue bookings for moved or removed sessions</legend>
-                  <p className="note">
-                    Ticked bookings are cancelled when you approve. Unticked ones stay pending.
-                    Approved bookings and equipment for these sessions are kept but marked as
-                    affected, so you can cancel and book them again.
-                  </p>
-                  {pendingBookingsToCancel.map((booking) => (
-                    <label key={booking.booking_id} style={{ display: 'block' }}>
-                      <input
-                        type="checkbox"
-                        checked={!keptPendingIds.has(booking.booking_id)}
-                        onChange={(change) => setKeptPendingIds((current) => {
-                          const next = new Set(current)
-                          if (change.target.checked) next.delete(booking.booking_id)
-                          else next.add(booking.booking_id)
-                          return next
-                        })}
-                      />
-                      {' '}Cancel {booking.venues?.name || 'venue'} for {booking.session?.name || 'its session'}
-                      {' '}({formatDateTime(booking.start_at)} – {formatDateTime(booking.end_at)})
-                    </label>
-                  ))}
-                </fieldset>
-              )}
-              <div className="form-actions">
-                <button
-                  type="button"
-                  className="button"
-                  onClick={() => decide('approve')}
-                  disabled={deciding}
-                >
-                  {deciding ? 'Saving…' : 'Approve and apply changes'}
-                </button>
-                <button
-                  type="button"
-                  className="button button--secondary"
-                  onClick={() => decide('reject')}
-                  disabled={deciding}
-                >
-                  Reject change request
-                </button>
-              </div>
-            </section>
-          )}
-
-        {['under_review', 'planning', 'change_requested'].includes(event.status) && (
-          <section className="stack stack--tight">
-            {!showClarificationForm ? (
-              <button
-                type="button"
-                className="button button--secondary"
-                onClick={() => setShowClarificationForm(true)}
-              >
-                Request Clarification
-              </button>
-            ) : (
-              <form className="stack stack--tight" onSubmit={requestClarification}>
-                <label className="field">
-                  <span className="field__label">What needs clarification?</span>
-                  <textarea
-                    value={clarificationNotes}
-                    onChange={(e) => setClarificationNotes(e.target.value)}
-                    rows={3}
-                    maxLength={5000}
-                    required
-                    autoFocus
-                    placeholder="Describe the information or amendments needed."
-                  />
-                </label>
-                {clarificationError && (
-                  <p className="form-error" role="alert">{clarificationError}</p>
-                )}
-                <div className="form-actions">
-                  <button className="button" disabled={clarifying}>
-                    {clarifying ? 'Sending…' : 'Send request'}
-                  </button>
-                  <button
-                    type="button"
-                    className="button button--secondary"
-                    disabled={clarifying}
-                    onClick={() => {
-                      setShowClarificationForm(false)
-                      setClarificationError('')
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            )}
-          </section>
-
-        )}
+        <RequestHistory clarifications={clarifications} event={event} role="coordinator" />
       </div>
     </AppShell>
   )

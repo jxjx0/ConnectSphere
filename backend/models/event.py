@@ -14,8 +14,9 @@ class EventStatus(str, Enum):
     """Every status an event row may hold.
 
     Kept in step with the events_status_valid constraint in
-    database/events.sql. A cancellation request saves the previous event
-    status so a rejection can restore it.
+    database/event_status_badges.sql. The status only says where the event
+    is in the main path. Open clarifications, change requests and
+    cancellation requests live in their own tables and never replace it.
     """
 
     DRAFT = "draft"
@@ -24,10 +25,7 @@ class EventStatus(str, Enum):
     PLANNING = "planning"
     CONFIRMED = "confirmed"
     COMPLETED = "completed"
-    CHANGE_REQUESTED = "change_requested"
-    AWAITING_CLARIFICATION = "awaiting_clarification"
     AWAITING_SAFETY_CHECK = "awaiting_safety_check"
-    CANCELLATION_REQUESTED = "cancellation_requested"
     CANCELLED = "cancelled"
 
 
@@ -84,11 +82,10 @@ class EventCancellationRequest(BaseModel):
     event_id: str
     organiser_id: str
     reason: str
-    previous_event_status: EventStatus
     status: str = "pending"
     decision_reason: str | None = None
-    decision_by: str | None = None
-    decided_at: datetime | None = None
+    closed_by: str | None = None
+    closed_at: datetime | None = None
     created_at: datetime | None = None
 
 
@@ -98,10 +95,11 @@ class EventClarification(BaseModel):
     organiser_id: str
     coordinator_id: str
     coordinator_notes: str
-    previous_status: EventStatus | None = None
     organiser_response: str | None = None
-    requested_at: datetime
-    responded_at: datetime | None = None
+    status: str = "pending"
+    created_at: datetime
+    closed_at: datetime | None = None
+    closed_by: str | None = None
 
 
 class EventCategory(str, Enum):
@@ -526,7 +524,6 @@ class EventChangeRequest(BaseModel):
     id: str
     event_id: str
     organiser_id: str
-    event_status_before_request: EventStatus
     name: str
     description: str
     reason_for_change: str
@@ -542,8 +539,9 @@ class EventChangeRequest(BaseModel):
     equipment_requirements: str | None = None
     status: str
     created_at: datetime | None = None
-    reviewed_at: datetime | None = None
-    rejection_reason: str | None = None
+    closed_at: datetime | None = None
+    closed_by: str | None = None
+    decision_reason: str | None = None
     # The proposed sessions (T7-280). start_time, end_time and
     # expected_attendance above are their overall span and largest session.
     sessions: list[EventChangeRequestSession] = []
@@ -590,10 +588,16 @@ class Event(BaseModel):
     attendee_capacity: int | None = None
     published_at: datetime | None = None
     coordinator_name: str | None = None
+    # Open requests, shown as badges on top of the status.
+    has_open_clarification: bool = False
     has_pending_change_request: bool = False
     change_request: EventChangeRequest | None = None
     has_pending_cancellation_request: bool = False
     cancellation_request: EventCancellationRequest | None = None
+    # Every request on the event, newest first, for the history timeline.
+    # change_request and cancellation_request above are the newest of each.
+    change_requests: list[EventChangeRequest] = []
+    cancellation_requests: list[EventCancellationRequest] = []
     sessions: list[EventSession] = []
 
     @classmethod
@@ -631,6 +635,9 @@ class Event(BaseModel):
 
             coordinator = evt.get("coordinator") or {}
 
+            def has_pending(key):
+                return any(row.get("status") == "pending" for row in evt.get(key) or [])
+
             formatted_events.append({
                 "id": evt.get("id"),
                 "name": evt.get("name", "Untitled Event"),
@@ -643,6 +650,10 @@ class Event(BaseModel):
                 "coordinator_name": coordinator.get("full_name", "Unassigned"),
                 "expected_attendance": evt.get("expected_attendance", 0),
                 "sessions": evt.get("sessions") or [],
+                # Open requests, shown as badges on top of the status.
+                "has_open_clarification": has_pending("clarifications"),
+                "has_pending_change_request": has_pending("change_requests"),
+                "has_pending_cancellation_request": has_pending("cancellation_requests"),
             })
 
         return formatted_events
@@ -704,6 +715,10 @@ class EventReviewSummary(BaseModel):
     venue_bookings: list[dict] = Field(default_factory=list)
     equipment_requests: list[dict] = Field(default_factory=list)
     sessions: list[dict] = Field(default_factory=list)
+    # Open requests, shown as badges on top of the status.
+    has_open_clarification: bool = False
+    has_pending_change_request: bool = False
+    has_pending_cancellation_request: bool = False
 
 
 class EventOrganiser(BaseModel):

@@ -273,11 +273,22 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
         raise AuthError(f"Internal error processing event details: {str(exc)}", status_code=500)
 
 
+def _has_open_requests(client, event_id: str) -> bool:
+    """Whether a clarification, change or cancellation request is still open.
+
+    An event cannot move forward while one is open; the database enforces
+    this too, but checking first gives the user a clear message.
+    """
+    return bool(client.rpc("event_has_open_requests", {"p_event_id": event_id}).execute().data)
+
+
 def _safety_check_blockers(client, event: dict) -> list[str]:
     """What still stops this event from being sent for its safety check."""
     blockers = []
     if event.get("status") != "planning":
         blockers.append("the event must be in Planning")
+    if _has_open_requests(client, event["id"]):
+        blockers.append("close the open clarification, change or cancellation request first")
 
     bookings = (
         client.table("venue_bookings")
@@ -499,6 +510,13 @@ def submit_safety_decision(
 
         if event.get("status") != "awaiting_safety_check":
             raise AuthError("This event is not currently awaiting an operational safety review.", status_code=409)
+
+        if decision == "approved" and _has_open_requests(client, event_id):
+            raise AuthError(
+                "This event has an open clarification, change or cancellation request. "
+                "It can be approved once the Coordinator has closed it.",
+                status_code=409,
+            )
 
         client.table("event_safety_reviews").insert({
             "event_id": event_id,

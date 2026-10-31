@@ -85,7 +85,7 @@ ASSIGNED_EVENT = Event(
     organiser_id=ORGANISER_ID,
     coordinator_id=COORDINATOR_ID,
     name="Annual Client Summit",
-    status=EventStatus.AWAITING_CLARIFICATION,
+    status=EventStatus.PLANNING,
 )
 
 SAVED_CLARIFICATION = EventClarification(
@@ -94,8 +94,7 @@ SAVED_CLARIFICATION = EventClarification(
     organiser_id=ORGANISER_ID,
     coordinator_id=COORDINATOR_ID,
     coordinator_notes="Confirm the room layout.",
-    previous_status=EventStatus.PLANNING,
-    requested_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
+    created_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
 )
 
 
@@ -131,10 +130,10 @@ def test_assigned_event_in_supported_status_can_request_clarification(monkeypatc
         "organiser_id": ORGANISER_ID,
         "coordinator_id": COORDINATOR_ID,
         "coordinator_notes": "Confirm the date.",
-        "previous_status": "under_review",
         "organiser_response": "The date is confirmed.",
-        "requested_at": datetime(2026, 9, 1, tzinfo=timezone.utc).isoformat(),
-        "responded_at": datetime(2026, 9, 2, tzinfo=timezone.utc).isoformat(),
+        "status": "answered",
+        "created_at": datetime(2026, 9, 1, tzinfo=timezone.utc).isoformat(),
+        "closed_at": datetime(2026, 9, 2, tzinfo=timezone.utc).isoformat(),
     }
     new_row = {
         "id": "44444444-4444-4444-4444-444444444444",
@@ -142,8 +141,8 @@ def test_assigned_event_in_supported_status_can_request_clarification(monkeypatc
         "organiser_id": ORGANISER_ID,
         "coordinator_id": COORDINATOR_ID,
         "coordinator_notes": "Confirm the room layout.",
-        "previous_status": "planning",
-        "requested_at": datetime(2026, 10, 1, tzinfo=timezone.utc).isoformat(),
+        "status": "pending",
+        "created_at": datetime(2026, 10, 1, tzinfo=timezone.utc).isoformat(),
     }
     fake_client(
         monkeypatch,
@@ -176,7 +175,7 @@ def test_assigned_event_in_supported_status_can_request_clarification(monkeypatc
     assert isinstance(clarification, EventClarification)
     assert clarification.id == new_row["id"]
     assert clarification.coordinator_notes == "Confirm the room layout."
-    assert clarification.previous_status is EventStatus.PLANNING
+    assert clarification.status == "pending"
 
 
 def test_event_in_unsupported_status_cannot_request_clarification(monkeypatch):
@@ -210,8 +209,7 @@ def test_coordinator_route_saves_and_returns_clarification(client, monkeypatch):
         organiser_id=ORGANISER_ID,
         coordinator_id=COORDINATOR_ID,
         coordinator_notes="Confirm the room layout.",
-        previous_status=EventStatus.PLANNING,
-        requested_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
+        created_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
     )
     captured = {}
 
@@ -244,7 +242,7 @@ def test_coordinator_route_saves_and_returns_clarification(client, monkeypatch):
     assert response.get_json()["clarification"]["coordinator_notes"] == (
         "Confirm the room layout."
     )
-    assert response.get_json()["clarification"]["previous_status"] == "planning"
+    assert response.get_json()["clarification"]["status"] == "pending"
 
 
 def test_non_coordinator_cannot_request_clarification(client, monkeypatch):
@@ -319,7 +317,7 @@ def test_clarification_request_notifies_the_organiser(client, monkeypatch):
     assert title == "Clarification requested"
     assert "Ben Lim" in body
     assert "Annual Client Summit" in body
-    assert "Awaiting Clarification" in body
+    assert "needs your reply" in body
     assert "Confirm the room layout." in body
     assert event_id == EVENT_ID
 

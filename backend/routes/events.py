@@ -296,7 +296,7 @@ def _review_change_request(event_id, decision):
     except ValidationError as error:
         return jsonify({"errors": _validation_messages(error)}), 400
 
-    event, change_request = event_service.review_assigned_change_request(
+    event, change_request, back_to_planning = event_service.review_assigned_change_request(
         g.access_token,
         g.user_id,
         event_id,
@@ -305,12 +305,6 @@ def _review_change_request(event_id, decision):
         approval,
     )
     approved = decision == "approve"
-    # A material change to a Confirmed event sends it back to Planning (T7-281).
-    back_to_planning = (
-        approved
-        and change_request.event_status_before_request == EventStatus.CONFIRMED
-        and event.status == EventStatus.PLANNING
-    )
     notification_service.notify(
         change_request.organiser_id,
         "event_change_approved" if approved else "event_change_rejected",
@@ -324,7 +318,7 @@ def _review_change_request(event_id, decision):
             )
             if approved
             else f"The proposed changes to '{change_request.name}' were rejected. "
-            f"Reason: {change_request.rejection_reason}"
+            f"Reason: {change_request.decision_reason}"
         ),
         change_request.event_id,
     )
@@ -474,8 +468,8 @@ def _notify_clarification_requested(coordinator, clarification) -> None:
         "Clarification requested",
         (
             f"{coordinator.full_name} has requested clarification on "
-            f"'{event.name}'. Your event is now Awaiting Clarification and "
-            f"needs your response. Notes: {clarification.coordinator_notes}"
+            f"'{event.name}' and needs your reply before the event can move "
+            f"forward. Notes: {clarification.coordinator_notes}"
         ),
         clarification.event_id,
     )

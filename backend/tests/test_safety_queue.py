@@ -65,7 +65,11 @@ def mock_database_clients(monkeypatch, rows_by_table=None, raise_postgrest=False
     def get_table(table_name):
         return FakeQuery(rows_by_table, table_name, raise_postgrest, raise_generic)
 
-    fake_client = SimpleNamespace(from_=get_table, table=get_table)
+    fake_client = SimpleNamespace(
+        from_=get_table,
+        table=get_table,
+        rpc=lambda name, params: SimpleNamespace(execute=lambda: SimpleNamespace(data=False)),
+    )
 
     monkeypatch.setattr(config, "get_admin_client", lambda: fake_client)
     monkeypatch.setattr(config, "get_user_client", lambda token: fake_client)

@@ -26,7 +26,7 @@ test('rejected and cancelled bookings cannot be cancelled', () => {
 })
 
 test('nothing can be cancelled outside Planning', () => {
-  for (const status of ['change_requested', 'confirmed', 'awaiting_safety_check']) {
+  for (const status of ['under_review', 'confirmed', 'awaiting_safety_check']) {
     const other = { ...event, status }
     assert.equal(canCancelVenueBooking(other, { status: 'APPROVED', session_id: 'future' }, NOW), false)
     assert.equal(canCancelEquipmentRequest(other, { status: 'Approved', session_id: 'future' }, NOW), false)

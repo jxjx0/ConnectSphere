@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import AppShell from '../components/AppShell'
 import { formatSessionSummary, readableStatus } from '../eventDisplay'
+import { openRequestBadges, statusLabel } from '../eventStatus'
 import {
   getLeadCoordinatorEvents,
   getCoordinatorsList,
@@ -8,12 +9,11 @@ import {
   getEventActivityLogs,
 } from '../api/events'
 
-// Helper function to convert snake_case strings to Title Case
-const formatStatus = (status) => {
-  if (!status) return 'Pending'
-  return status
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase())
+// Open requests are filtered by the badge flags, not the status.
+const OPEN_REQUEST_FLAGS = {
+  clarification: 'has_open_clarification',
+  change: 'has_pending_change_request',
+  cancellation: 'has_pending_cancellation_request',
 }
 
 const formatDateTime = (isoString) => {
@@ -46,6 +46,7 @@ export default function LeadDashboardPage() {
   const [nameFilter, setNameFilter] = useState('')
   const [coordinatorFilter, setCoordinatorFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [openRequestFilter, setOpenRequestFilter] = useState('')
 
   // Selected Event & Audit Trail State
   const [selectedEvent, setSelectedEvent] = useState(null)
@@ -133,7 +134,11 @@ export default function LeadDashboardPage() {
       statusFilter === '' ||
       (event.status || '').toLowerCase() === statusFilter.toLowerCase()
 
-    return nameMatch && coordinatorMatch && statusMatch
+    const openRequestMatch =
+      openRequestFilter === '' ||
+      Boolean(event[OPEN_REQUEST_FLAGS[openRequestFilter]])
+
+    return nameMatch && coordinatorMatch && statusMatch && openRequestMatch
   })
 
   const handleOpenReassignModal = async (event) => {
@@ -264,7 +269,7 @@ export default function LeadDashboardPage() {
 
               <div className="form-group">
                 <label className="form-label" htmlFor="status-filter">
-                  Filter by Status
+                  Filter by Stage
                 </label>
                 <select
                   id="status-filter"
@@ -272,12 +277,29 @@ export default function LeadDashboardPage() {
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
-                  <option value="">All Statuses</option>
-                  <option value="under_review">Under Review</option>
-                  <option value="change_requested">Change Requested</option>
-                  <option value="awaiting_clarification">Awaiting Clarification</option>
+                  <option value="">All stages</option>
+                  <option value="under_review">Under review</option>
                   <option value="planning">Planning</option>
+                  <option value="awaiting_safety_check">Awaiting safety check</option>
                   <option value="confirmed">Confirmed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="open-request-filter">
+                  Filter by Open Request
+                </label>
+                <select
+                  id="open-request-filter"
+                  className="form-input"
+                  value={openRequestFilter}
+                  onChange={(e) => setOpenRequestFilter(e.target.value)}
+                >
+                  <option value="">Any</option>
+                  <option value="clarification">Clarification open</option>
+                  <option value="change">Change pending</option>
+                  <option value="cancellation">Cancellation pending</option>
                 </select>
               </div>
             </div>
@@ -288,7 +310,7 @@ export default function LeadDashboardPage() {
               Showing <strong>{filteredEvents.length}</strong> of{' '}
               <strong>{events.length}</strong> total assigned events
             </p>
-            {(nameFilter || coordinatorFilter || statusFilter) && (
+            {(nameFilter || coordinatorFilter || statusFilter || openRequestFilter) && (
               <button
                 type="button"
                 className="button button--secondary button--small"
@@ -296,6 +318,7 @@ export default function LeadDashboardPage() {
                   setNameFilter('')
                   setCoordinatorFilter('')
                   setStatusFilter('')
+                  setOpenRequestFilter('')
                 }}
               >
                 Clear Filters
@@ -324,8 +347,13 @@ export default function LeadDashboardPage() {
                       <td>{event.coordinator_name}</td>
                       <td>
                         <span className="tag">
-                          {formatStatus(event.status)}
+                          {statusLabel(event.status)}
                         </span>
+                        {openRequestBadges(event, 'lead coordinator').map((badge) => (
+                          <span key={badge.kind}>
+                            {' '}<span className="tag">{badge.label}</span>
+                          </span>
+                        ))}
                       </td>
                       <td className="venue-table__actions">
                         <div className="venue-table__action-buttons">
@@ -399,7 +427,7 @@ export default function LeadDashboardPage() {
                 <div className="form-group">
                   <label className="form-label">Status</label>
                   <p className="form-input" style={{ background: '#f5f5f5' }}>
-                    {formatStatus(selectedEvent.status)}
+                    {statusLabel(selectedEvent.status)}
                   </p>
                 </div>
 

@@ -61,6 +61,10 @@ def fake_database(monkeypatch, tables):
     client = SimpleNamespace(
         table=lambda name: FakeQuery(name, list(tables.get(name, [])), filters, updates),
         from_=lambda name: FakeQuery(name, list(tables.get(name, [])), filters, updates),
+        # event_has_open_requests: pass "open_requests": True to simulate one.
+        rpc=lambda name, params: SimpleNamespace(
+            execute=lambda: SimpleNamespace(data=tables.get("open_requests", False))
+        ),
     )
     monkeypatch.setattr(config, "get_admin_client", lambda: client)
     monkeypatch.setattr(config, "get_user_client", lambda token: client)

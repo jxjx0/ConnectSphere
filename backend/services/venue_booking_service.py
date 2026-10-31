@@ -160,7 +160,7 @@ def _local_label(value: datetime) -> str:
 
 # Venues are requested only once the event request is approved. An Under
 # review event may be held by Venue Staff, but not booked.
-BOOKABLE_EVENT_STATUSES = ("planning", "change_requested", "confirmed")
+BOOKABLE_EVENT_STATUSES = ("planning", "confirmed")
 
 
 def check_event_is_bookable(client, event_id: str) -> None:

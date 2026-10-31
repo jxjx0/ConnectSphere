@@ -10,18 +10,33 @@ import * as categories from '../src/eventCategories.js'
 import * as eligibility from '../src/equipmentRequestEligibility.js'
 import * as cancelRules from '../src/cancelArrangements.js'
 import * as changeSessions from '../src/changeRequestSessions.js'
+import * as eventStatus from '../src/eventStatus.js'
+import * as coordinatorTabs from '../src/coordinatorEventTabs.js'
+
+// Shared modules every page may import; the status components are added
+// once they are compiled below.
+const shared = {
+  react: React,
+  'react/jsx-runtime': jsxRuntime,
+  '../eventDisplay': display,
+  '../eventStatus': eventStatus,
+  '../coordinatorEventTabs': coordinatorTabs,
+}
 
 async function compile(path, imports = {}) {
   const source = await readFile(new URL(path, import.meta.url), 'utf8')
   const { code } = await transformWithEsbuild(source, path, { format: 'cjs', jsx: 'automatic', tsconfigRaw: '{}' })
   const module = { exports: {} }
-  const dependencies = { react: React, 'react/jsx-runtime': jsxRuntime, '../eventDisplay': display, ...imports }
+  const dependencies = { ...shared, ...imports }
   new Function('require', 'module', 'exports', code)(name => {
     assert.ok(name in dependencies, `unexpected dependency: ${name}`)
     return dependencies[name]
   }, module, module.exports)
   return module.exports.default
 }
+shared['../components/EventStatusPanel'] = { default: await compile('../src/components/EventStatusPanel.jsx'), __esModule: true }
+shared['../components/RequestHistory'] = { default: await compile('../src/components/RequestHistory.jsx'), __esModule: true }
+
 const equipmentCard = () => compile('../src/components/EquipmentRequestCard.jsx', {
   './VenueBookingCard.module.css': { default: {}, __esModule: true },
 })
@@ -52,7 +67,7 @@ test('existing booking card explains original approval and alternative arrangeme
 
 test('dashboard flags an affected venue even when another venue remains approved', async () => {
   const Tabs = await compile('../src/components/AssignedRequestTabs.jsx', {
-    'react-router-dom': { Link: link, useSearchParams: () => [new URLSearchParams('tab=planning'), () => {}] },
+    'react-router-dom': { Link: link, useSearchParams: () => [new URLSearchParams('tab=in-progress'), () => {}] },
   })
   const value = { ...event, venue_bookings: [affected, { status: 'APPROVED' }] }
   const markup = renderToStaticMarkup(React.createElement(Tabs, { events: [value] }))
@@ -79,13 +94,13 @@ test('Coordinator dashboard shows equipment request status without changing even
     status: 'confirmed',
     equipment_requests: [{ status: 'Approved' }],
   }
-  const planning = await renderTab('planning', [pendingEvent, approvedEvent])
-  const confirmed = await renderTab('confirmed', [pendingEvent, approvedEvent])
+  // Planning and Confirmed events share the "In progress" tab.
+  const inProgress = await renderTab('in-progress', [pendingEvent, approvedEvent])
 
-  assert.match(planning, /Equipment Pending/)
-  assert.match(planning, />Planning<\/span>/)
-  assert.match(confirmed, /Equipment Approved/)
-  assert.match(confirmed, />Confirmed<\/span>/)
+  assert.match(inProgress, /Equipment Pending/)
+  assert.match(inProgress, />Planning<\/span>/)
+  assert.match(inProgress, /Equipment Approved/)
+  assert.match(inProgress, />Confirmed<\/span>/)
   assert.equal(pendingEvent.status, 'planning')
   assert.equal(approvedEvent.status, 'confirmed')
 })
@@ -158,7 +173,7 @@ test('Coordinator event page shows stored affected status and retains other appr
 })
 
 
-for (const status of ['under_review', 'change_requested', 'confirmed', 'rejected', 'completed']) {
+for (const status of ['under_review', 'confirmed', 'rejected', 'completed']) {
   for (const activeHold of [true, false]) {
     test(`contextual booking journey: ${status}, active hold ${activeHold}`, async () => {
       const states = [], effects = []
@@ -190,7 +205,7 @@ for (const status of ['under_review', 'change_requested', 'confirmed', 'rejected
       await new Promise(resolve => setImmediate(resolve)); index = 0
       const markup = renderToStaticMarkup(Page())
       // Under review events can be held but not booked until approved.
-      const eligible = activeHold && ['change_requested', 'confirmed'].includes(status)
+      const eligible = activeHold && status === 'confirmed'
       assert.equal(markup.includes(`/venues/search?eventId=${event.id}`), eligible)
       assert.equal(markup.includes('Find / Request Venue'), eligible)
       assert.equal(markup.includes('Venue Booking Requests'), status !== 'under_review')

@@ -40,10 +40,11 @@ def clarification_row(**overrides):
         "organiser_id": ORGANISER_ID,
         "coordinator_id": COORDINATOR_ID,
         "coordinator_notes": "Confirm the room layout and attendance.",
-        "previous_status": "planning",
         "organiser_response": "Theatre layout for 80 attendees.",
-        "requested_at": datetime(2026, 10, 1, tzinfo=timezone.utc).isoformat(),
-        "responded_at": datetime(2026, 10, 2, tzinfo=timezone.utc).isoformat(),
+        "status": "answered",
+        "created_at": datetime(2026, 10, 1, tzinfo=timezone.utc).isoformat(),
+        "closed_at": datetime(2026, 10, 2, tzinfo=timezone.utc).isoformat(),
+        "closed_by": ORGANISER_ID,
     }
     row.update(overrides)
     return row
@@ -146,7 +147,7 @@ def test_service_saves_reply_for_the_event_and_returns_updated_history(monkeypat
     assert ("eq", "organiser_id", ORGANISER_ID) in calls
     assert ("eq", "event_id", EVENT_ID) in calls
     assert clarification.event_id == EVENT_ID
-    assert clarification.previous_status.value == "planning"
+    assert clarification.status == "answered"
     assert clarification.organiser_response == "Theatre layout for 80 attendees."
 
 
@@ -294,11 +295,11 @@ def test_blank_clarification_response_is_rejected_before_service_call(
     assert "Your response must not be blank" in result.get_json()["errors"]
 
 
-def test_response_is_rejected_when_event_is_not_awaiting_clarification(
+def test_response_is_rejected_when_no_clarification_is_open(
     monkeypatch,
 ):
     error = APIError(
-        {"code": "P0001", "message": "Event is not awaiting clarification"}
+        {"code": "P0001", "message": "No clarification is awaiting a response"}
     )
     monkeypatch.setattr(
         config,
@@ -318,20 +319,3 @@ def test_response_is_rejected_when_event_is_not_awaiting_clarification(
 
     assert caught.value.status_code == 409
 
-
-def test_clarification_sql_saves_and_restores_the_previous_event_status():
-    migration_path = (
-        Path(__file__).resolve().parents[2]
-        / "database"
-        / "event_clarifications.sql"
-    )
-    sql = re.sub(r"\s+", " ", migration_path.read_text(encoding="utf-8")).lower()
-
-    assert (
-        "event_id, organiser_id, coordinator_id, coordinator_notes, previous_status ) "
-        "values ( p_event_id, current_event.organiser_id, p_coordinator_id, "
-        "btrim(p_notes), current_event.status )"
-    ) in sql
-    assert (
-        "set status = coalesce(current_clarification.previous_status, 'under_review')"
-    ) in sql

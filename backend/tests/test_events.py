@@ -808,13 +808,12 @@ def test_coordinator_detail_includes_the_events_sessions(monkeypatch):
 def test_coordinator_detail_includes_pending_cancellation_request(monkeypatch):
     assigned = EVENT_RESPONSE.model_dump(mode="json")
     assigned["coordinator_id"] = COORDINATOR_PROFILE.id
-    assigned["status"] = EventStatus.CANCELLATION_REQUESTED.value
+    assigned["status"] = EventStatus.CONFIRMED.value
     cancellation_request = {
         "id": "44444444-4444-4444-4444-444444444444",
         "event_id": EVENT_RESPONSE.id,
         "organiser_id": ORGANISER_PROFILE.id,
         "reason": "Plans have changed",
-        "previous_event_status": EventStatus.CONFIRMED.value,
         "status": "pending",
     }
     fake_client(
@@ -841,6 +840,21 @@ def test_lead_overview_keeps_each_events_sessions():
     )
 
     assert event["sessions"] == [{"id": "s1"}]
+
+
+def test_lead_overview_shows_open_requests_as_badges():
+    [event] = Event.format_lead_overview([{
+        "id": "event-1",
+        "status": "confirmed",
+        "clarifications": [{"status": "answered"}, {"status": "pending"}],
+        "change_requests": [{"status": "rejected"}],
+        "cancellation_requests": [],
+    }])
+
+    assert event["status"] == "confirmed"
+    assert event["has_open_clarification"] is True
+    assert event["has_pending_change_request"] is False
+    assert event["has_pending_cancellation_request"] is False
 
 
 def test_lead_overview_lists_each_sessions_venue_and_skips_settled_ones():

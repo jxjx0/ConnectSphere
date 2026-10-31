@@ -9,8 +9,6 @@ import { toDateTimeInput } from './eventSessions.js'
 // (database/event_registration.sql).
 export const REGISTRATION_STATUSES = [
   'planning',
-  'change_requested',
-  'awaiting_clarification',
   'awaiting_safety_check',
   'confirmed',
 ]

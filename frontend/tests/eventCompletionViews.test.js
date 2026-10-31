@@ -14,9 +14,12 @@ import * as registration from '../src/eventRegistration.js'
 import * as equipmentEligibility from '../src/equipmentRequestEligibility.js'
 import * as changeSessions from '../src/changeRequestSessions.js'
 import * as cancellations from '../src/cancelArrangements.js'
+import * as eventStatus from '../src/eventStatus.js'
+import * as coordinatorTabs from '../src/coordinatorEventTabs.js'
 
 const files = ['components/AssignedRequestTabs', 'pages/MyEventsPage',
-  'pages/MyEventDetailPage', 'pages/EventReviewDetailPage']
+  'pages/MyEventDetailPage', 'pages/EventReviewDetailPage',
+  'components/EventStatusPanel', 'components/RequestHistory']
 const compiled = new Map(await Promise.all(files.map(async file => {
   const source = await readFile(new URL(`../src/${file}.jsx`, import.meta.url), 'utf8')
   const { code } = await transformWithEsbuild(source, file + '.jsx', {
@@ -26,7 +29,22 @@ const compiled = new Map(await Promise.all(files.map(async file => {
 })))
 const defaultModule = component => ({ __esModule: true, default: component })
 
-function render(file, { tab = 'completed', states = {}, props = {} } = {}) {
+// The shared status components, loaded with the real status module.
+function load(file, imports) {
+  const module = { exports: {} }
+  new Function('require', 'module', 'exports', compiled.get(file))(
+    name => { assert.ok(name in imports, `unexpected import: ${name}`); return imports[name] },
+    module, module.exports,
+  )
+  return module.exports.default
+}
+const statusImports = {
+  'react/jsx-runtime': jsxRuntime, '../eventStatus': eventStatus, '../eventDisplay': eventDisplay,
+}
+const EventStatusPanel = load('components/EventStatusPanel', statusImports)
+const RequestHistory = load('components/RequestHistory', statusImports)
+
+function render(file, { tab = 'closed', states = {}, props = {} } = {}) {
   let stateIndex = 0
   const imports = {
     react: {
@@ -47,6 +65,9 @@ function render(file, { tab = 'completed', states = {}, props = {} } = {}) {
     '../api/events': {}, '../api/venues': {}, '../api/equipmentRequests': {},
     '../eventDisplay': eventDisplay, '../eventCategories': eventCategories,
     '../organiserEventTabs': organiserTabs, '../eventRegistration': registration,
+    '../eventStatus': eventStatus, '../coordinatorEventTabs': coordinatorTabs,
+    '../components/EventStatusPanel': defaultModule(EventStatusPanel),
+    '../components/RequestHistory': defaultModule(RequestHistory),
     '../equipmentRequestEligibility': equipmentEligibility,
     '../changeRequestSessions': changeSessions, '../cancelArrangements': cancellations,
     '../components/AppShell': defaultModule(({ children }) => React.createElement('main', null, children)),
@@ -68,46 +89,51 @@ const completed = {
   start_time: '2026-10-01T01:00:00Z', end_time: '2026-10-01T02:00:00Z',
   completed_at: '2026-10-01T02:01:00Z',
   has_pending_change_request: false, has_pending_cancellation_request: false,
-  change_request: { status: 'expired', reason_for_change: 'New title', sessions: [] },
-  cancellation_request: { status: 'expired', reason: 'Cancel' },
+  change_request: { id: 'change-1', status: 'expired', reason_for_change: 'New title', sessions: [],
+    created_at: '2026-09-20T00:00:00Z', closed_at: '2026-10-01T02:01:00Z' },
+  cancellation_request: { id: 'cancel-1', status: 'expired', reason: 'Cancel',
+    created_at: '2026-09-21T00:00:00Z', closed_at: '2026-10-01T02:01:00Z' },
 }
+completed.change_requests = [completed.change_request]
+completed.cancellation_requests = [completed.cancellation_request]
 const events = [completed, { ...completed, id: 'active-event', status: 'confirmed', name: 'Upcoming workshop' }]
 
-test('coordinator completed history links to the event and every active tab excludes it', () => {
+test('coordinator closed tab links to the completed event and every other tab excludes it', () => {
   const file = 'components/AssignedRequestTabs'
-  const history = render(file, { props: { events } })
-  assert.match(history, /href="\/event-reviews\/completed-event"/)
-  assert.match(history, />Completed<\/span>/)
-  assert.doesNotMatch(history, /href="\/event-reviews\/active-event"/)
-  for (const tab of ['under_review', 'clarification', 'planning', 'awaiting_safety_check', 'confirmed', 'change-requested']) {
+  const closed = render(file, { props: { events } })
+  assert.match(closed, /href="\/event-reviews\/completed-event"/)
+  assert.match(closed, />Completed<\/span>/)
+  assert.doesNotMatch(closed, /href="\/event-reviews\/active-event"/)
+  for (const tab of ['needs-action', 'waiting', 'in-progress']) {
     assert.doesNotMatch(render(file, { tab, props: { events } }), /href="\/event-reviews\/completed-event"/)
   }
 })
 
-test('organiser completed history links to the event and all other tabs exclude it', () => {
+test('organiser closed tab links to the completed event and all other tabs exclude it', () => {
   const states = { 0: events, 1: [], 3: false }
-  const history = render('pages/MyEventsPage', { states })
-  assert.match(history, /href="\/my-events\/completed-event"/)
-  assert.match(history, />Completed<\/span>/)
-  assert.doesNotMatch(history, /href="\/my-events\/active-event"/)
-  for (const tab of organiserTabs.ORGANISER_EVENT_TABS.filter(item => item.id !== 'completed')) {
+  const closed = render('pages/MyEventsPage', { states })
+  assert.match(closed, /href="\/my-events\/completed-event"/)
+  assert.match(closed, />Completed<\/span>/)
+  assert.doesNotMatch(closed, /href="\/my-events\/active-event"/)
+  for (const tab of organiserTabs.ORGANISER_EVENT_TABS.filter(item => item.id !== 'closed')) {
     assert.doesNotMatch(render('pages/MyEventsPage', { tab: tab.id, states }), /href="\/my-events\/completed-event"/)
   }
 })
 
-test('organiser completed detail shows expiry and removes registration/change/cancellation actions', () => {
+test('organiser completed detail shows expired requests in the history and no actions', () => {
   const html = render('pages/MyEventDetailPage', { states: { 0: completed, 11: false } })
-  assert.match(html, /This event has finished/)
-  assert.match(html, /This change request has expired and can no longer be reviewed\./)
-  assert.match(html, /This cancellation request expired when the event completed/)
+  assert.match(html, /The event has ended/)
+  assert.match(html, /Change request.*Expired/)
+  assert.match(html, /Cancellation request.*Expired/)
+  assert.match(html, /It was not reviewed before the event ended/)
   assert.doesNotMatch(html, /href="[^\"]*\/(registration|change-request)"/)
-  assert.doesNotMatch(html, /Request cancellation|waiting for review|waiting for the Coordinator/)
+  assert.doesNotMatch(html, /Request cancellation|Waiting for the Coordinator to review/)
 })
 
-test('coordinator completed detail shows the updated status and offers no expired-request review', () => {
+test('coordinator completed detail shows the stage and offers no expired-request review', () => {
   const html = render('pages/EventReviewDetailPage', { states: { 0: completed, 12: false } })
   assert.match(html, />Completed<\/span>/)
-  assert.match(html, /This change request has expired and can no longer be reviewed\./)
+  assert.match(html, /Change request.*Expired/)
   assert.doesNotMatch(html, /Approve and apply changes|Reject change request|Request Clarification/)
 })
 
@@ -116,11 +142,10 @@ for (const status of ['completed', 'cancelled']) {
     ['organiser', 'pages/MyEventDetailPage', 11],
     ['coordinator', 'pages/EventReviewDetailPage', 12],
   ]) {
-    test(label + ' expired change notice is generic on a ' + status + ' event', () => {
-      const event = { ...completed, status, cancellation_request: null }
+    test(label + ' sees an expired change in the history of a ' + status + ' event', () => {
+      const event = { ...completed, status, cancellation_request: null, cancellation_requests: [] }
       const html = render(file, { states: { 0: event, [loadingIndex]: false } })
-      assert.match(html, /This change request has expired and can no longer be reviewed\./)
-      assert.doesNotMatch(html, /change request expired when (?:this|the) event completed/)
+      assert.match(html, /Change request.*Expired/)
       assert.doesNotMatch(html, /Approve and apply changes|Reject change request/)
     })
   }

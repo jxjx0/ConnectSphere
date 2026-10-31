@@ -8,6 +8,8 @@ import {
   submitEventCancellationRequest,
 } from '../api/events'
 import AppShell from '../components/AppShell'
+import EventStatusPanel from '../components/EventStatusPanel'
+import RequestHistory from '../components/RequestHistory'
 import SessionList from '../components/SessionList'
 import { useAuth } from '../context/AuthContext'
 import { categoryLabel } from '../eventCategories'
@@ -18,9 +20,8 @@ import {
   formatDateTime,
   formatSessionSummary,
   optional,
-  progressFor,
-  readableStatus,
 } from '../eventDisplay'
+import { statusLabel } from '../eventStatus'
 import { REGISTRATION_STATUSES } from '../eventRegistration'
 
 function Answer({ label, value, wide }) {
@@ -72,7 +73,7 @@ export default function MyEventDetailPage() {
         item.id === data.clarification.id ? data.clarification : item
       )))
       setResponseText('')
-      // The event returns to its status before clarification, so reload it.
+      // Reload so the clarification badge clears.
       const eventData = await getMyEvent(eventId, token)
       setEvent(eventData.event)
     } catch (caught) {
@@ -96,8 +97,8 @@ export default function MyEventDetailPage() {
       const data = await submitEventCancellationRequest(eventId, reason, token)
       setEvent((current) => ({
         ...current,
-        status: 'cancellation_requested',
         cancellation_request: data.cancellation_request,
+        cancellation_requests: [data.cancellation_request, ...(current.cancellation_requests || [])],
         has_pending_cancellation_request: true,
       }))
       setCancellationReason('')
@@ -130,7 +131,16 @@ export default function MyEventDetailPage() {
     )
   }
 
-  const progress = progressFor(event.status)
+  const openClarification = clarifications.find((item) => item.status === 'pending')
+  const pendingChange = event.change_request?.status === 'pending' ? event.change_request : null
+  const pendingCancellation = event.cancellation_request?.status === 'pending'
+    ? event.cancellation_request
+    : null
+  // A pending cancellation pauses new change requests.
+  const canRequestChange = CHANGEABLE_STATUSES.includes(event.status)
+    && !pendingChange && !pendingCancellation
+  const canRequestCancellation = CANCELLABLE_STATUSES.includes(event.status)
+    && !pendingCancellation
 
   return (
     <AppShell>
@@ -154,59 +164,19 @@ export default function MyEventDetailPage() {
           </p>
         </header>
 
-        <section className="progress" aria-label="Request progress">
-          {!['cancellation_requested', 'cancelled'].includes(event.status) && (
-            <ol className="track">
-              {progress.steps.map((step) => (
-                <li
-                  key={step.status}
-                  className={`track__step track__step--${step.state}`}
-                  aria-current={step.state === 'current' ? 'step' : undefined}
-                >
-                  <span className="track__dot" aria-hidden="true" />
-                  <span className="track__label">{step.label}</span>
-                </li>
-              ))}
-            </ol>
-          )}
+        <EventStatusPanel event={event} role="organiser" />
 
-          {progress.notice && <p className="notice">{progress.notice}</p>}
-
-          {progress.next && (
-            <p className="progress__next">{progress.next}</p>
-          )}
-        </section>
-
-        {clarifications.length > 0 && (
+        {/* Open requests come first: one of them may be waiting on you. */}
+        {openClarification && (
           <section className="stack stack--tight">
-            <h2 className="section-title">Clarification history</h2>
-            <div className="stack stack--tight">
-              {clarifications.map((item, index) => (
-                <article className="notice" key={item.id}>
-                  <p><strong>Coordinator · {formatDateTime(item.requested_at)}</strong></p>
-                  <p>{item.coordinator_notes}</p>
-                  {item.organiser_response ? (
-                    <>
-                      <p><strong>You · {formatDateTime(item.responded_at)}</strong></p>
-                      <p>{item.organiser_response}</p>
-                    </>
-                  ) : event.status === 'awaiting_clarification' && index === clarifications.length - 1 ? (
-                    <p className="note">Your response is needed.</p>
-                  ) : null}
-                </article>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {historyError && <p className="note" role="status">{historyError}</p>}
-
-        {event.status === 'awaiting_clarification' && (
-          <section className="stack stack--tight">
-            <h2 className="section-title">Respond to clarification</h2>
+            <h2 className="section-title">The Coordinator has a question</h2>
+            <article className="notice">
+              <p><strong>Coordinator · {formatDateTime(openClarification.created_at)}</strong></p>
+              <p>{openClarification.coordinator_notes}</p>
+            </article>
             <form className="stack stack--tight" onSubmit={submitClarificationResponse}>
               <label className="field">
-                <span className="field__label">Your response</span>
+                <span className="field__label">Your reply</span>
                 <textarea
                   value={responseText}
                   onChange={(e) => setResponseText(e.target.value)}
@@ -219,12 +189,35 @@ export default function MyEventDetailPage() {
               {responseError && <p className="form-error" role="alert">{responseError}</p>}
               <div className="form-actions">
                 <button className="button" disabled={responding}>
-                  {responding ? 'Submitting…' : 'Submit response'}
+                  {responding ? 'Sending…' : 'Send reply'}
                 </button>
               </div>
             </form>
           </section>
         )}
+
+        {pendingChange && (
+          <section className="stack stack--tight">
+            <h2 className="section-title">Your change request</h2>
+            <p className="notice" role="status">
+              Waiting for the Coordinator to review it. You can submit another
+              request after this one has been reviewed.
+            </p>
+            <p><strong>Reason for change:</strong> {pendingChange.reason_for_change}</p>
+          </section>
+        )}
+
+        {pendingCancellation && (
+          <section className="stack stack--tight">
+            <h2 className="section-title">Your cancellation request</h2>
+            <p className="notice" role="status">
+              Waiting for the Coordinator to review it.
+            </p>
+            <p><strong>Your reason:</strong> {pendingCancellation.reason}</p>
+          </section>
+        )}
+
+        {historyError && <p className="note" role="status">{historyError}</p>}
 
         <section className="stack stack--tight">
           <h2 className="section-title">Who is handling this</h2>
@@ -236,8 +229,8 @@ export default function MyEventDetailPage() {
                 value={event.coordinator_name}
               />
               <Answer
-                label="Current status"
-                value={readableStatus(event.status)}
+                label="Current stage"
+                value={statusLabel(event.status)}
               />
             </div>
           </dl>
@@ -284,130 +277,75 @@ export default function MyEventDetailPage() {
           </section>
         )}
 
-        <section className="stack stack--tight">
-          {event.change_request && (
-            <>
-              <h2 className="section-title">Latest change request</h2>
-              <p className="note">
-                Status: {readableStatus(event.change_request.status)}.
-                {' '}Reason for change: {event.change_request.reason_for_change}
-              </p>
-              {event.change_request.rejection_reason && (
-                <p className="form-error" role="status">
-                  The Coordinator rejected this change request:
-                  {' '}{event.change_request.rejection_reason}
-                </p>
-              )}
-              {event.change_request.status === 'approved' && (
-                <p className="form-success" role="status">
-                  The Coordinator approved and applied the proposed changes.
-                </p>
-              )}
-              {event.change_request.status === 'expired' && (
-                <p className="notice" role="status">
-                  This change request has expired and can no longer be reviewed.
-                </p>
-              )}
-            </>
-          )}
-          {event.has_pending_change_request ? (
-            <p className="notice" role="status">
-              Your change request is waiting for review. You can submit another
-              request after this one has been reviewed.
-            </p>
-          ) : CHANGEABLE_STATUSES.includes(event.status) ? (
-            <Link
-              to={`/my-events/${event.id}/change-request`}
-              className="button"
-            >
-              Request for change
-            </Link>
-          ) : null}
-        </section>
-
-        <section className="stack stack--tight">
-          {event.cancellation_request && (
-            <>
-              <h2 className="section-title">Latest cancellation request</h2>
-              <p className="note">
-                Status: {readableStatus(event.cancellation_request.status)}.
-              </p>
-              {event.cancellation_request.status === 'expired' && (
-                <p className="notice" role="status">
-                  This cancellation request expired when the event completed.
-                </p>
-              )}
-              <p><strong>Your reason:</strong> {event.cancellation_request.reason}</p>
-              {event.cancellation_request.decision_reason && (
-                <p>
-                  <strong>Coordinator decision reason:</strong>{' '}
-                  {event.cancellation_request.decision_reason}
-                </p>
-              )}
-            </>
-          )}
-          {event.has_pending_cancellation_request ? (
-            <>
-              <p className="notice" role="status">
-                Your cancellation request is waiting for the Coordinator.
-              </p>
-            </>
-          ) : CANCELLABLE_STATUSES.includes(event.status) ? (
-            <>
-              {cancellationFormOpen ? (
-                <>
-                  <h2 className="section-title">Request cancellation</h2>
-                  <form
-                    className="stack stack--tight"
-                    onSubmit={submitCancellationRequest}
-                  >
-                    <label className="field">
-                      <span className="field__label">Reason for cancellation</span>
-                      <textarea
-                        value={cancellationReason}
-                        onChange={(change) => {
-                          setCancellationReason(change.target.value)
-                          setCancellationError('')
-                        }}
-                        rows={3}
-                        required
-                      />
-                    </label>
-                    {cancellationError && (
-                      <p className="form-error" role="alert">
-                        {cancellationError}
-                      </p>
-                    )}
-                    <div className="form-actions">
-                      <button className="button" disabled={cancellationSubmitting}>
-                        {cancellationSubmitting ? 'Submitting…' : 'Submit cancellation request'}
-                      </button>
-                      <button
-                        className="button button--secondary"
-                        type="button"
-                        disabled={cancellationSubmitting}
-                        onClick={() => {
-                          setCancellationFormOpen(false)
-                          setCancellationError('')
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                </>
-              ) : (
-                <button
-                  className="button button--secondary"
-                  type="button"
-                  onClick={() => setCancellationFormOpen(true)}
+        {(canRequestChange || canRequestCancellation) && (
+          <section className="stack stack--tight">
+            {cancellationFormOpen ? (
+              <>
+                <h2 className="section-title">Request cancellation</h2>
+                <form
+                  className="stack stack--tight"
+                  onSubmit={submitCancellationRequest}
                 >
-                  Request cancellation
-                </button>
-              )}
-            </>
-          ) : null}
-        </section>
+                  <label className="field">
+                    <span className="field__label">Reason for cancellation</span>
+                    <textarea
+                      value={cancellationReason}
+                      onChange={(change) => {
+                        setCancellationReason(change.target.value)
+                        setCancellationError('')
+                      }}
+                      rows={3}
+                      required
+                    />
+                  </label>
+                  {cancellationError && (
+                    <p className="form-error" role="alert">
+                      {cancellationError}
+                    </p>
+                  )}
+                  <div className="form-actions">
+                    <button className="button" disabled={cancellationSubmitting}>
+                      {cancellationSubmitting ? 'Submitting…' : 'Submit cancellation request'}
+                    </button>
+                    <button
+                      className="button button--secondary"
+                      type="button"
+                      disabled={cancellationSubmitting}
+                      onClick={() => {
+                        setCancellationFormOpen(false)
+                        setCancellationError('')
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </>
+            ) : (
+              <div className="form-actions">
+                {canRequestChange && (
+                  <Link
+                    to={`/my-events/${event.id}/change-request`}
+                    className="button"
+                  >
+                    Request for change
+                  </Link>
+                )}
+                {canRequestCancellation && (
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={() => setCancellationFormOpen(true)}
+                  >
+                    Request cancellation
+                  </button>
+                )}
+              </div>
+            )}
+          </section>
+        )}
+
+        <RequestHistory clarifications={clarifications} event={event} role="organiser" />
 
         <p className="record-foot">
           Submitted {formatDateTime(event.created_at)}

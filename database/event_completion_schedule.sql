@@ -1,5 +1,6 @@
 -- Optional Supabase Cron setup. Run only after deployment approval.
--- Prerequisites: pg_cron enabled and event_completion.sql applied.
+-- Prerequisites: pg_cron enabled, event_completion.sql and
+-- event_status_badges.sql applied.
 -- A new job is INACTIVE. Activate separately after reviewing its configuration.
 -- Reapplying preserves an existing job's active/paused state.
 -- The DO block is one transaction: the worker never sees an interim active job.
@@ -9,7 +10,6 @@ declare
     previous_active boolean;
     previous_database text;
     required_column text;
-    request_table text;
 begin
     -- A fixed owner prevents duplicate named jobs under different deployers.
     if current_user <> 'postgres' then
@@ -53,23 +53,9 @@ begin
     if row_security_active('public.events'::regclass) then
         raise exception 'service_role must bypass events row-level security for system completion';
     end if;
-    foreach request_table in array array['event_change_requests', 'event_cancellation_requests'] loop
-        foreach required_column in array array[
-            'id', 'event_id', 'status',
-            case when request_table = 'event_change_requests'
-                then 'event_status_before_request' else 'previous_event_status' end
-        ] loop
-            if not has_column_privilege(current_user, 'public.' || request_table, required_column, 'SELECT') then
-                raise exception 'service_role needs SELECT on %.%', request_table, required_column;
-            end if;
-        end loop;
-        if not has_column_privilege(current_user, 'public.' || request_table, 'status', 'UPDATE') then
-            raise exception 'service_role needs UPDATE on %.status', request_table;
-        end if;
-        if row_security_active(('public.' || request_table)::regclass) then
-            raise exception 'service_role must bypass request row-level security for system completion';
-        end if;
-    end loop;
+    -- Open change and cancellation requests are expired by the
+    -- events_expire_open_requests trigger (database/event_status_badges.sql),
+    -- which runs with its own privileges, so the job needs none on those tables.
     set local role postgres;
 
     completion_job := cron.schedule(
