@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 
-import { getMyRegistration } from '../api/events'
+import { getMyRegistration, getPublishedEvent, withdrawRegistration } from '../api/events'
 import AppShell from '../components/AppShell'
 import { useAuth } from '../context/AuthContext'
 import { formatDateRange, formatDateTime, optional } from '../eventDisplay'
 import { attendeeEventNote } from '../eventStatus'
+import { registrationAvailability } from '../attendeeRegistration'
 
 // The confirmation shown straight after registering, and the page each
 // entry in My registrations opens.
@@ -18,13 +19,62 @@ export default function AttendeeRegistrationPage() {
   const [registration, setRegistration] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [withdrawing, setWithdrawing] = useState(false)
+  const [withdrawalError, setWithdrawalError] = useState('')
+  const [canRegisterAgain, setCanRegisterAgain] = useState(false)
+  const requestScope = useRef(0)
 
   useEffect(() => {
+    let active = true
+    requestScope.current += 1
+    setLoading(true)
+    setError('')
+    setWithdrawalError('')
+    setWithdrawing(false)
     getMyRegistration(registrationId, token)
-      .then((data) => setRegistration(data.registration))
-      .catch((caught) => setError(caught.message))
-      .finally(() => setLoading(false))
+      .then((data) => { if (active) setRegistration(data.registration) })
+      .catch((caught) => { if (active) setError(caught.message) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false; requestScope.current += 1 }
   }, [registrationId, token])
+
+  useEffect(() => {
+    let active = true
+    setCanRegisterAgain(false)
+    if (registration?.status === 'withdrawn') {
+      getPublishedEvent(registration.event_id, token)
+        .then((data) => {
+          if (active) setCanRegisterAgain(registrationAvailability(data.event).open)
+        })
+        .catch(() => { /* An unavailable event must not hide withdrawal history. */ })
+    }
+    return () => { active = false }
+  }, [registration?.id, registration?.status, token])
+
+  async function withdraw() {
+    if (withdrawing || !window.confirm(
+      'Withdraw your registration? You will no longer hold a place at this event.',
+    )) return
+    const scope = requestScope.current
+    setWithdrawing(true)
+    setWithdrawalError('')
+    try {
+      const data = await withdrawRegistration(registrationId, token)
+      if (scope === requestScope.current) setRegistration(data.registration)
+    } catch (caught) {
+      if (scope !== requestScope.current) return
+      setWithdrawalError(caught.message)
+      // The event may have started or been cancelled since the page loaded.
+      if (caught.status === 409) {
+        try {
+          const data = await getMyRegistration(registrationId, token)
+          if (scope === requestScope.current) setRegistration(data.registration)
+        } catch { /* Keep the withdrawal error visible if refreshing fails. */ }
+      }
+    } finally {
+      if (scope === requestScope.current) setWithdrawing(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -51,13 +101,20 @@ export default function AttendeeRegistrationPage() {
         <Link to="/attendee/registrations" className="backlink">← My registrations</Link>
 
         <div className="content__header">
-          <h1>{justRegistered ? 'Registration successful' : 'Your registration'}</h1>
+          <h1>{justRegistered && registration.status !== 'withdrawn' ? 'Registration successful' : 'Your registration'}</h1>
           <p className="lead">
-            You are registered for <strong>{registration.event_name}</strong>.
+            {registration.status === 'withdrawn' ? 'You withdrew your registration for ' : 'You are registered for '}
+            <strong>{registration.event_name}</strong>.
           </p>
         </div>
 
-        {justRegistered && (
+        {registration.status === 'withdrawn' && (
+          <p className="form-success" role="status">
+            Your registration is withdrawn. You no longer hold a place at this event.
+          </p>
+        )}
+
+        {justRegistered && registration.status !== 'withdrawn' && (
           <p className="form-success" role="status">
             Your spot is secured.
             {emailSent
@@ -74,6 +131,10 @@ export default function AttendeeRegistrationPage() {
         )}
 
         <dl className="detail-list">
+          <div className="detail-list__row">
+            <dt>Registration status</dt>
+            <dd>{registration.status === 'withdrawn' ? 'Withdrawn' : 'Registered'}</dd>
+          </div>
           <div className="detail-list__row">
             <dt>Event</dt>
             <dd>{registration.event_name}</dd>
@@ -98,13 +159,41 @@ export default function AttendeeRegistrationPage() {
             <dt>Registered</dt>
             <dd>{formatDateTime(registration.created_at)}</dd>
           </div>
+          {registration.status === 'withdrawn' && (
+            <div className="detail-list__row">
+              <dt>Withdrawn</dt>
+              <dd>{formatDateTime(registration.withdrawn_at)}</dd>
+            </div>
+          )}
           <div className="detail-list__row">
             <dt>Reference</dt>
             <dd>{registration.id}</dd>
           </div>
         </dl>
 
+        {withdrawalError && <p className="form-error" role="alert">{withdrawalError}</p>}
+        {registration.can_withdraw && (
+          <div className="stack stack--tight">
+            <p className="note">You can withdraw before the event's first session starts.</p>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="button button--secondary"
+                disabled={withdrawing}
+                onClick={withdraw}
+              >
+                {withdrawing ? 'Withdrawing…' : 'Withdraw registration'}
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="form-actions">
+          {canRegisterAgain && (
+            <Link to={`/attendee/events/${registration.event_id}`} className="button">
+              Register again
+            </Link>
+          )}
           <Link to="/attendee/registrations" className="button">
             View my registrations
           </Link>

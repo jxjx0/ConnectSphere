@@ -49,7 +49,11 @@ export default function MyRegistrationsPage() {
               </p>
             </header>
             <div className="session-card__body">
+              <p><span className="tag">{registration.status === 'withdrawn' ? 'Withdrawn' : 'Registered'}</span></p>
               <p>Registered {formatDateTime(registration.created_at)} as {registration.email}</p>
+              {registration.status === 'withdrawn' && (
+                <p>Withdrawn {formatDateTime(registration.withdrawn_at)}</p>
+              )}
               {attendeeEventNote(registration.event_status, registration.event_end_time) && (
                 <p className="note">
                   {attendeeEventNote(registration.event_status, registration.event_end_time)}
