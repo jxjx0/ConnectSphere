@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 
-import { getMyRegistration, getPublishedEvent, withdrawRegistration } from '../api/events'
+import { getMyRegistration, getPublishedEvent } from '../api/events'
 import AppShell from '../components/AppShell'
+import RegistrationWithdrawal from '../components/RegistrationWithdrawal'
 import { useAuth } from '../context/AuthContext'
 import { formatDateRange, formatDateTime, optional } from '../eventDisplay'
 import { attendeeEventNote } from '../eventStatus'
@@ -19,23 +20,17 @@ export default function AttendeeRegistrationPage() {
   const [registration, setRegistration] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
-  const [withdrawing, setWithdrawing] = useState(false)
-  const [withdrawalError, setWithdrawalError] = useState('')
   const [canRegisterAgain, setCanRegisterAgain] = useState(false)
-  const requestScope = useRef(0)
 
   useEffect(() => {
     let active = true
-    requestScope.current += 1
     setLoading(true)
     setError('')
-    setWithdrawalError('')
-    setWithdrawing(false)
     getMyRegistration(registrationId, token)
       .then((data) => { if (active) setRegistration(data.registration) })
       .catch((caught) => { if (active) setError(caught.message) })
       .finally(() => { if (active) setLoading(false) })
-    return () => { active = false; requestScope.current += 1 }
+    return () => { active = false }
   }, [registrationId, token])
 
   useEffect(() => {
@@ -50,31 +45,6 @@ export default function AttendeeRegistrationPage() {
     }
     return () => { active = false }
   }, [registration?.id, registration?.status, token])
-
-  async function withdraw() {
-    if (withdrawing || !window.confirm(
-      'Withdraw your registration? You will no longer hold a place at this event.',
-    )) return
-    const scope = requestScope.current
-    setWithdrawing(true)
-    setWithdrawalError('')
-    try {
-      const data = await withdrawRegistration(registrationId, token)
-      if (scope === requestScope.current) setRegistration(data.registration)
-    } catch (caught) {
-      if (scope !== requestScope.current) return
-      setWithdrawalError(caught.message)
-      // The event may have started or been cancelled since the page loaded.
-      if (caught.status === 409) {
-        try {
-          const data = await getMyRegistration(registrationId, token)
-          if (scope === requestScope.current) setRegistration(data.registration)
-        } catch { /* Keep the withdrawal error visible if refreshing fails. */ }
-      }
-    } finally {
-      if (scope === requestScope.current) setWithdrawing(false)
-    }
-  }
 
   if (loading) {
     return (
@@ -171,22 +141,11 @@ export default function AttendeeRegistrationPage() {
           </div>
         </dl>
 
-        {withdrawalError && <p className="form-error" role="alert">{withdrawalError}</p>}
-        {registration.can_withdraw && (
-          <div className="stack stack--tight">
-            <p className="note">You can withdraw before the event's first session starts.</p>
-            <div className="form-actions">
-              <button
-                type="button"
-                className="button button--secondary"
-                disabled={withdrawing}
-                onClick={withdraw}
-              >
-                {withdrawing ? 'Withdrawing…' : 'Withdraw registration'}
-              </button>
-            </div>
-          </div>
-        )}
+        <RegistrationWithdrawal
+          key={registration.id}
+          registration={registration}
+          onUpdate={setRegistration}
+        />
 
         <div className="form-actions">
           {canRegisterAgain && (

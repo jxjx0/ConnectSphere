@@ -347,6 +347,25 @@ a:hover {
   gap: var(--space-4);
 }
 
+.registration-history > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.registration-history__list {
+  display: grid;
+  gap: var(--space-4);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.registration-history__item {
+  border-top: 1px solid var(--rule);
+  padding-top: var(--space-4);
+  overflow-wrap: anywhere;
+}
+
 /* Requested and booked side by side, so they can be compared at a glance;
    stacked on narrow screens. */
 @media (min-width: 720px) {
