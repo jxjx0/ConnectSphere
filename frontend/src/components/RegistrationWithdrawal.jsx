@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 
 import { getMyRegistration, withdrawRegistration } from '../api/events'
 import { useAuth } from '../context/AuthContext'
+import { formatDateTime } from '../eventDisplay'
 
-export default function RegistrationWithdrawal({ registration, onUpdate }) {
+export default function RegistrationWithdrawal({ registration, onUpdate, compact = false }) {
   const { token } = useAuth()
   const [withdrawing, setWithdrawing] = useState(false)
   const [error, setError] = useState('')
@@ -18,7 +19,7 @@ export default function RegistrationWithdrawal({ registration, onUpdate }) {
 
   async function withdraw() {
     if (withdrawing || !window.confirm(
-      'Withdraw your registration? You will no longer hold a place at this event.',
+      `Withdraw your registration for "${registration.event_name}"? You will no longer hold a place at this event.`,
     )) return
     const scope = requestScope.current
     setWithdrawing(true)
@@ -44,9 +45,14 @@ export default function RegistrationWithdrawal({ registration, onUpdate }) {
   return (
     <>
       {error && <p className="form-error" role="alert">{error}</p>}
+      {!compact && registration.status !== 'withdrawn' && !registration.can_withdraw && (
+        <p className="note">Withdrawal is no longer available for this registration.</p>
+      )}
       {registration.can_withdraw && (
         <div className="stack stack--tight">
-          <p className="note">You can withdraw before the event's first session starts.</p>
+          {!compact && <p className="note">{registration.event_start_time
+            ? `You can withdraw before ${formatDateTime(registration.event_start_time)}.`
+            : "You can withdraw before the event's first session starts."}</p>}
           <div className="form-actions">
             <button
               type="button"

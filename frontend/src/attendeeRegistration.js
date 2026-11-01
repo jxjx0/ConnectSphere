@@ -46,6 +46,32 @@ export function spotsLeftLabel(event) {
   return event.spots_left === 1 ? '1 spot left' : `${event.spots_left} spots left`
 }
 
+// Event-wide availability stays separate from the attendee's own place.
+export function registrationStatusLabel(event, now = new Date()) {
+  if (event.status === 'cancelled') return 'Event cancelled'
+  if (event.status === 'completed' || (event.end_time && now >= new Date(event.end_time))) return 'Event ended'
+  if (event.registration_opens_at && now < new Date(event.registration_opens_at)) return 'Registration not yet open'
+  if (!event.registration_closes_at || now >= new Date(event.registration_closes_at)) return 'Registration closed'
+  if (!event.spots_left) return 'Fully booked'
+  return 'Registration open'
+}
+
+export function filterAttendeeEvents(events, query, filter, now = new Date()) {
+  const search = query.trim().toLowerCase()
+  return events.filter((event) => {
+    if (!event.name.toLowerCase().includes(search)) return false
+    if (filter === 'available') return registrationAvailability(event, now).open
+    if (filter === 'registered') return event.is_registered
+    return true
+  })
+}
+
+export function filterRegistrationGroups(groups, query, filter) {
+  const search = query.trim().toLowerCase()
+  return groups.filter(({ latest }) => latest.event_name.toLowerCase().includes(search)
+    && (filter === 'all' || latest.status === filter))
+}
+
 export function groupRegistrationsByEvent(registrations) {
   const groups = new Map()
   const newestFirst = [...registrations].sort(
@@ -66,13 +92,18 @@ export function groupRegistrationsByEvent(registrations) {
 // Mirrors AttendeeRegistrationSubmit in backend/models/attendee_registration.py,
 // so every problem is shown at once before a round trip.
 export function validateAttendeeRegistration(form) {
-  const errors = []
-  if (!form.fullName.trim()) errors.push('Full name is required.')
+  return Object.values(attendeeRegistrationFieldErrors(form))
+}
+
+export function attendeeRegistrationFieldErrors(form) {
+  const errors = {}
+  if (!form.fullName.trim()) errors.fullName = 'Full name is required.'
+  else if (form.fullName.trim().length > 120) errors.fullName = 'Full name must be 120 characters or fewer.'
 
   // Optional, but checked when given.
   const contactNumber = form.contactNumber.trim()
   if (contactNumber && !PHONE_PATTERN.test(contactNumber)) {
-    errors.push('Contact number must be a valid phone number.')
+    errors.contactNumber = 'Contact number must be a valid phone number.'
   }
   return errors
 }

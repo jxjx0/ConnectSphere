@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { getMyRegistrations, getPublishedEvents } from '../api/events'
-import AppShell from '../components/AppShell'
-import AttendeeTabs from '../components/AttendeeTabs'
+import AttendeeShell from '../components/AttendeeShell'
+import AttendeeListTools from '../components/AttendeeListTools'
 import RegistrationWithdrawal from '../components/RegistrationWithdrawal'
 import { useAuth } from '../context/AuthContext'
-import { registrationAvailability, spotsLeftLabel } from '../attendeeRegistration'
+import { filterAttendeeEvents, registrationAvailability, spotsLeftLabel } from '../attendeeRegistration'
 import { categoryLabel } from '../eventCategories'
 import { formatDateRange } from '../eventDisplay'
 
@@ -19,6 +19,11 @@ export default function AttendeeEventsPage() {
   const [registrationError, setRegistrationError] = useState('')
   const requestScope = useRef(0)
   const latestRefresh = useRef(0)
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState('all')
+  const [notice, setNotice] = useState('')
+  const [reload, setReload] = useState(0)
+  const visibleEvents = filterAttendeeEvents(events, query, filter)
 
   useEffect(() => {
     requestScope.current += 1
@@ -45,9 +50,10 @@ export default function AttendeeEventsPage() {
       .catch((caught) => { if (scope === requestScope.current) setError(caught.message) })
       .finally(() => { if (scope === requestScope.current) setLoading(false) })
     return () => { requestScope.current += 1 }
-  }, [token])
+  }, [token, reload])
 
   function updateRegistration(updated) {
+    setNotice(updated.status === 'withdrawn' ? 'Registration withdrawn. You no longer hold a place at this event.' : '')
     const scope = requestScope.current
     const refresh = ++latestRefresh.current
     setRegistrationError('')
@@ -67,58 +73,76 @@ export default function AttendeeEventsPage() {
   }
 
   return (
-    <AppShell>
+    <AttendeeShell>
       <div className="content">
         <div className="content__header">
+          <p className="attendee-eyebrow">DISCOVER & CONNECT</p>
           <h1>Events</h1>
           <p className="lead">
-            Browse confirmed events and register to secure your spot.
+            Browse events and register to secure your spot.
           </p>
         </div>
 
-        <AttendeeTabs current="/attendee/events" />
+        {notice && <p className="form-success" role="status">{notice}</p>}
+        {!loading && !error && <AttendeeListTools
+          query={query} onQueryChange={setQuery} filter={filter} onFilterChange={setFilter}
+          options={[['all', 'All events'], ['available', 'Available to register'], ['registered', 'My registered events']]}
+          count={visibleEvents.length}
+        />}
 
         {loading && <p className="note">Loading events…</p>}
-        {error && <p className="form-error" role="alert">{error}</p>}
+        {error && <div className="stack stack--tight">
+          <p className="form-error" role="alert">{error}</p>
+          <button type="button" className="button button--secondary" onClick={() => setReload((value) => value + 1)}>Try again</button>
+        </div>}
         {registrationError && <p className="form-error" role="alert">{registrationError}</p>}
         {!loading && !error && events.length === 0 && (
           <p className="note">No events are open to attendees yet.</p>
         )}
 
-        {events.map((event) => {
-          const availability = registrationAvailability(event)
-          const registration = registrations.find((item) => item.event_id === event.id)
-          return (
-            <article className="session-card" key={event.id}>
-              <header className="session-card__head">
-                <h2>{event.name}</h2>
-                <p className="session-card__meta">
-                  {categoryLabel(event.category, event.category_other)}
-                  {' · '}
-                  {formatDateRange(event.start_time, event.end_time)}
-                </p>
-              </header>
-              <div className="session-card__body">
-                <p>{spotsLeftLabel(event)}</p>
-                {!availability.open && <p className="note">{availability.message}</p>}
-                {registration?.status === 'withdrawn' && (
-                  <p className="form-success" role="status">Your registration has been withdrawn.</p>
-                )}
-                <Link to={`/attendee/events/${event.id}`} className="button button--small">
-                  View details
-                </Link>
-                {registration && event.is_registered && (
-                  <RegistrationWithdrawal
-                    key={registration.id}
-                    registration={registration}
-                    onUpdate={updateRegistration}
-                  />
-                )}
-              </div>
-            </article>
-          )
-        })}
+        {!loading && !error && events.length > 0 && visibleEvents.length === 0 && (
+          <p className="attendee-empty">No events match your search. Try another name or clear the filters.</p>
+        )}
+        <div className="attendee-grid">
+          {!loading && !error && visibleEvents.map((event) => {
+            const availability = registrationAvailability(event)
+            const registration = registrations.find((item) => item.event_id === event.id)
+            return (
+              <article className="session-card" key={event.id}>
+                <header className="session-card__head">
+                  <div className="attendee-card-labels">
+                    <span className="attendee-category">{categoryLabel(event.category, event.category_other)}</span>
+                    {event.is_registered && <span className="tag tag--registered">Registered</span>}
+                  </div>
+                  <h2>{event.name}</h2>
+                  <p className="session-card__meta">
+                    {formatDateRange(event.start_time, event.end_time)}
+                  </p>
+                </header>
+                <div className="session-card__body">
+                  {!event.is_registered && <p>{spotsLeftLabel(event)}</p>}
+                  {!availability.open && !event.is_registered && <p className="note">{availability.message}</p>}
+                  <div className="attendee-card-actions">
+                    <Link to={event.is_registered && registration
+                      ? `/attendee/registrations/${registration.id}` : `/attendee/events/${event.id}`}
+                      className="button button--small">
+                      {event.is_registered ? 'View registration' : availability.open ? 'View event & register' : 'View event'}
+                    </Link>
+                  {registration && event.is_registered && (
+                    <RegistrationWithdrawal
+                      key={registration.id}
+                      compact
+                      registration={registration}
+                      onUpdate={updateRegistration}
+                    />
+                  )}
+                  </div>
+                </div>
+              </article>
+            )
+          })}
+        </div>
       </div>
-    </AppShell>
+    </AttendeeShell>
   )
 }
