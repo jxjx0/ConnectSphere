@@ -10,7 +10,7 @@ const TABS = [
 
 export default function AttendeeTabs({ current }) {
   return (
-    <nav className="form-actions" aria-label="Attendee pages">
+    <nav className="form-actions attendee-tabs" aria-label="Attendee pages">
       {TABS.map((tab) => (
         <Link
           key={tab.path}
