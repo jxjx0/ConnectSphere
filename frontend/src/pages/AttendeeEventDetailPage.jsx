@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
-import { getPublishedEvent, registerForEvent } from '../api/events'
+import { getMyRegistrations, getPublishedEvent, registerForEvent } from '../api/events'
 import AppShell from '../components/AppShell'
+import RegistrationWithdrawal from '../components/RegistrationWithdrawal'
 import { useAuth } from '../context/AuthContext'
 import {
   EMPTY_REGISTRATION,
@@ -36,16 +37,59 @@ export default function AttendeeEventDetailPage() {
   const [loadError, setLoadError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [registration, setRegistration] = useState(null)
+  const [registrationError, setRegistrationError] = useState('')
+  const requestScope = useRef(0)
 
   useEffect(() => {
+    requestScope.current += 1
+    const scope = requestScope.current
+    setLoading(true)
+    setLoadError('')
+    setRegistration(null)
+    setRegistrationError('')
     getPublishedEvent(eventId, token)
-      .then((data) => {
+      .then(async (data) => {
+        if (scope !== requestScope.current) return
         setEvent(data.event)
         setForm((current) => ({ ...current, email: data.account_email ?? '' }))
+        if (data.event.is_registered && data.event.status === 'confirmed') {
+          try {
+            const owned = await getMyRegistrations(token)
+            if (scope !== requestScope.current) return
+            const current = owned.registrations.find(
+              (item) => item.event_id === eventId && item.status === 'registered',
+            )
+            setRegistration(current ?? null)
+            if (!current) setRegistrationError('Refresh the page to load your latest registration.')
+          } catch (caught) {
+            if (scope === requestScope.current) setRegistrationError(caught.message)
+          }
+        }
       })
-      .catch((caught) => setLoadError(caught.message))
-      .finally(() => setLoading(false))
+      .catch((caught) => { if (scope === requestScope.current) setLoadError(caught.message) })
+      .finally(() => { if (scope === requestScope.current) setLoading(false) })
+    return () => { requestScope.current += 1 }
   }, [eventId, token])
+
+  function updateRegistration(updated) {
+    const scope = requestScope.current
+    setRegistration(updated)
+    setRegistrationError('')
+    setEvent((current) => ({
+      ...current,
+      is_registered: updated.status === 'registered',
+      status: updated.event_status,
+    }))
+    // Place counts come from the server after withdrawal, never a local counter.
+    getPublishedEvent(eventId, token)
+      .then((data) => { if (scope === requestScope.current) setEvent(data.event) })
+      .catch(() => {
+        if (scope === requestScope.current) {
+          setRegistrationError('Your registration was updated. Refresh the page for the latest event availability.')
+        }
+      })
+  }
 
   function updateField(name) {
     return (changeEvent) => {
@@ -171,6 +215,19 @@ export default function AttendeeEventDetailPage() {
           <h2 className="section-title">Register</h2>
 
           {!availability.open && <p className="note">{availability.message}</p>}
+          {registration?.status === 'withdrawn' && (
+            <p className="form-success" role="status">
+              Your registration has been withdrawn. You no longer hold a place at this event.
+            </p>
+          )}
+          {registrationError && <p className="form-error" role="alert">{registrationError}</p>}
+          {registration && (
+            <RegistrationWithdrawal
+              key={registration.id}
+              registration={registration}
+              onUpdate={updateRegistration}
+            />
+          )}
           {event.is_registered && (
             <Link to="/attendee/registrations" className="button button--small">
               View my registrations

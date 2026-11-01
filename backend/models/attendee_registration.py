@@ -2,6 +2,7 @@
 
 import re
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -66,6 +67,9 @@ class AttendeeRegistration(BaseModel):
     event_start_time: datetime | None = None
     event_end_time: datetime | None = None
     event_status: str
+    status: Literal["registered", "withdrawn"] = "registered"
+    withdrawn_at: datetime | None = None
+    can_withdraw: bool = False
 
 
 class PublishedEventSession(BaseModel):

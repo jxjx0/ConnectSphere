@@ -1,14 +1,14 @@
 -- Attendees registering for published events.
 -- Run this only if events.sql, event_sessions.sql, venue_bookings.sql and
 -- event_registration.sql have already been applied.
--- Backward compatible: adds one table and four functions; changes no
--- existing table, column or rule, so code on main keeps working.
+-- Includes T7-47 withdrawal support. Existing registrations remain active;
+-- withdrawn rows stay as history and no longer occupy a place.
 --
 -- Design notes:
 --   * Attendees cannot read events, sessions or venue bookings under
 --     row-level security, so published events are listed through a
 --     function that returns only what an attendee needs to see.
---   * Spots left is the event's attendee_capacity minus its registrations,
+--   * Spots left is the event's attendee_capacity minus active registrations,
 --     so every registration lowers it by one and there is no second
 --     counter that could drift out of step.
 --   * register_for_event locks the event row before counting, so two
@@ -19,7 +19,7 @@
 --   * The registration email is always the account's own email, read from
 --     auth.users, so nobody can register (and receive the confirmation,
 --     with their details) under someone else's address. Each account
---     registers at most once, so no per-email rule is needed.
+--     holds at most one active registration per event.
 --   * Attendees no longer give an address, and the contact number is
 --     optional. The address column stays, nullable, so registrations made
 --     before keep their data.
@@ -44,14 +44,31 @@ alter table public.event_registrations
     alter column address drop not null,
     alter column contact_number drop not null;
 
-create unique index if not exists event_registrations_one_per_attendee
-    on public.event_registrations (event_id, attendee_id);
+alter table public.event_registrations
+    add column if not exists status text not null default 'registered',
+    add column if not exists withdrawn_at timestamptz;
+alter table public.event_registrations
+    drop constraint if exists event_registrations_status_valid,
+    drop constraint if exists event_registrations_withdrawal_time_valid;
+alter table public.event_registrations
+    add constraint event_registrations_status_valid
+        check (status in ('registered', 'withdrawn')),
+    add constraint event_registrations_withdrawal_time_valid
+        check ((status = 'withdrawn') = (withdrawn_at is not null));
+
+-- Re-registration creates a new row, preserving earlier withdrawal history.
+drop index if exists public.event_registrations_one_per_attendee;
+create unique index if not exists event_registrations_one_active_per_attendee
+    on public.event_registrations (event_id, attendee_id)
+    where status = 'registered';
 
 -- Removed: the email is now the account's own, so one per account covers it.
 drop index if exists public.event_registrations_one_per_email;
 
 alter table public.event_registrations enable row level security;
 grant select on public.event_registrations to authenticated;
+-- Writes are authorised by the RPCs, never by broad table UPDATE access.
+revoke insert, update, delete on public.event_registrations from public, anon, authenticated;
 
 drop policy if exists "Attendees can view their own registrations"
     on public.event_registrations;
@@ -62,10 +79,27 @@ create policy "Attendees can view their own registrations"
     using (attendee_id = (select auth.uid()));
 
 -- 2. Published events as an attendee sees them. Pass an event id for one
---    event, or nothing for all of them. Browsing returns only confirmed,
---    published events. Direct links also show cancelled published events so
---    registered attendees can see the final status; they cannot register.
-drop function if exists public.list_published_events(uuid);
+--    event, or nothing for all of them. The catalogue contains confirmed
+--    events; a cancelled published event remains accessible by id.
+-- Preserve the shared database's status output. Only the older repository
+-- signature needs recreation; RESTRICT stops rather than deleting dependants.
+do $upgrade_published_events$
+begin
+    if exists (
+        select 1 from pg_proc p
+        where p.oid = to_regprocedure('public.list_published_events(uuid)')
+          and p.proargnames[2:array_length(p.proargnames, 1)] = array[
+              'id', 'name', 'description', 'purpose', 'category', 'category_other',
+              'start_time', 'end_time', 'accessibility_requirements',
+              'registration_opens_at', 'registration_closes_at', 'attendee_capacity',
+              'spots_left', 'is_registered', 'sessions'
+          ]::text[]
+    ) then
+        drop function public.list_published_events(uuid) restrict;
+    end if;
+end;
+$upgrade_published_events$;
+
 create or replace function public.list_published_events(p_event_id uuid default null)
 returns table (
     id uuid,
@@ -106,13 +140,14 @@ as $$
         greatest(
             e.attendee_capacity - (
                 select count(*) from public.event_registrations r
-                where r.event_id = e.id
+                where r.event_id = e.id and r.status = 'registered'
             ),
             0
         )::integer,
         exists (
             select 1 from public.event_registrations r
             where r.event_id = e.id and r.attendee_id = auth.uid()
+              and r.status = 'registered'
         ),
         coalesce((
             select jsonb_agg(
@@ -211,13 +246,14 @@ begin
     if exists (
         select 1 from public.event_registrations r
         where r.event_id = p_event_id and r.attendee_id = auth.uid()
+          and r.status = 'registered'
     ) then
         raise exception 'This account is already registered for the event';
     end if;
 
     select count(*) into registered_count
     from public.event_registrations r
-    where r.event_id = p_event_id;
+    where r.event_id = p_event_id and r.status = 'registered';
 
     if current_event.attendee_capacity is null
         or registered_count >= current_event.attendee_capacity then
@@ -249,7 +285,7 @@ grant execute on function public.register_for_event(uuid, text, text)
 --    newest first. Pass a registration id for one, or nothing for all.
 --    The event is included even if it is later cancelled, so the attendee
 --    can see what happened to it.
--- Dropped first because the address column was removed from its result.
+-- Dropped first because the result now includes withdrawal information.
 drop function if exists public.list_my_registrations(uuid);
 
 create or replace function public.list_my_registrations(p_registration_id uuid default null)
@@ -264,7 +300,10 @@ returns table (
     event_name text,
     event_start_time timestamptz,
     event_end_time timestamptz,
-    event_status text
+    event_status text,
+    status text,
+    withdrawn_at timestamptz,
+    can_withdraw boolean
 )
 language sql
 stable
@@ -282,7 +321,12 @@ as $$
         e.name,
         e.start_time,
         e.end_time,
-        e.status
+        e.status,
+        r.status,
+        r.withdrawn_at,
+        (r.status = 'registered'
+         and e.status in ('under_review', 'planning', 'awaiting_safety_check', 'confirmed')
+         and e.start_time > now()) is true
     from public.event_registrations r
     join public.events e on e.id = r.event_id
     where r.attendee_id = auth.uid()
@@ -293,7 +337,7 @@ $$;
 revoke all on function public.list_my_registrations(uuid) from public;
 grant execute on function public.list_my_registrations(uuid) to authenticated;
 
--- 5. How many attendees have registered for the Organiser's own event.
+-- 5. How many attendees hold active places at the Organiser's own event.
 --    Organisers cannot read event_registrations under row-level security,
 --    and only need the number, not attendees' names or phone numbers.
 --    Null when the event is not the caller's own, so an id cannot be used
@@ -307,7 +351,7 @@ set search_path = ''
 as $$
     select (
         select count(*) from public.event_registrations r
-        where r.event_id = e.id
+        where r.event_id = e.id and r.status = 'registered'
     )::integer
     from public.events e
     where e.id = p_event_id
@@ -316,3 +360,70 @@ $$;
 
 revoke all on function public.count_event_registrations(uuid) from public;
 grant execute on function public.count_event_registrations(uuid) to authenticated;
+
+-- 6. Withdraw an owned registration. Use the same parent-first lock order
+-- as registration, so concurrent actions cannot release or occupy a place twice.
+create or replace function public.withdraw_event_registration(p_registration_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+    target_event_id uuid;
+    current_event public.events%rowtype;
+    current_registration public.event_registrations%rowtype;
+    changed boolean := false;
+    registration jsonb;
+begin
+    if auth.uid() is null or not exists (
+        select 1 from public.profiles
+        where id = auth.uid() and role = 'attendee'
+    ) then
+        raise exception 'Only a signed-in attendee can withdraw a registration';
+    end if;
+
+    -- Locate the owned row without locking the child before its parent.
+    select event_id into target_event_id
+    from public.event_registrations
+    where id = p_registration_id and attendee_id = auth.uid();
+    if not found then
+        raise exception 'Registration was not found';
+    end if;
+
+    select * into current_event from public.events
+    where id = target_event_id for update;
+    if not found then
+        raise exception 'Registration was not found';
+    end if;
+
+    select * into current_registration from public.event_registrations
+    where id = p_registration_id and attendee_id = auth.uid() for update;
+    if not found then
+        raise exception 'Registration was not found';
+    end if;
+
+    -- Retries preserve the first withdrawal's timestamp and notification state.
+    if current_registration.status <> 'withdrawn' then
+        if current_event.status not in ('under_review', 'planning', 'awaiting_safety_check', 'confirmed') then
+            raise exception 'Withdrawal is unavailable for an event that has ended or been cancelled';
+        end if;
+        -- A lock wait may cross the cutoff, so transaction start time is unsafe.
+        if current_event.start_time is null or current_event.start_time <= clock_timestamp() then
+            raise exception 'Withdrawal is unavailable once the event has started';
+        end if;
+
+        update public.event_registrations
+        set status = 'withdrawn', withdrawn_at = clock_timestamp()
+        where id = p_registration_id;
+        changed := true;
+    end if;
+
+    select to_jsonb(r) into registration
+    from public.list_my_registrations(p_registration_id) r;
+    return jsonb_build_object('registration', registration, 'changed', changed);
+end;
+$$;
+
+revoke all on function public.withdraw_event_registration(uuid) from public, anon;
+grant execute on function public.withdraw_event_registration(uuid) to authenticated;

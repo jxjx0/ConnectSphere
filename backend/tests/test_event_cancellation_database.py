@@ -40,6 +40,7 @@ def postgres_connection():
     connection = psycopg.connect(database_url, autocommit=True)
 
     connection.execute("create role authenticated")
+    connection.execute("create role anon")
     for sql_file in (
         SCHEMA_SQL,
         REQUEST_MIGRATION,

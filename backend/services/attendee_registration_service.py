@@ -132,7 +132,7 @@ def list_published_events(access_token: str) -> list[PublishedEvent]:
 
 
 def get_published_event(access_token: str, event_id: str) -> PublishedEvent:
-    """Return one confirmed, published event, or 404."""
+    """Return a published event's details, including a later cancellation, or 404."""
     rows = _load_published_events(access_token, event_id)
     if not rows:
         raise AuthError(EVENT_NOT_FOUND, status_code=404)
@@ -247,6 +247,64 @@ def register_for_event(
             status_code=502,
         )
     return AttendeeRegistration(**rows[0])
+
+
+def withdraw_registration(
+    access_token: str, registration_id: str
+) -> AttendeeRegistration:
+    """Withdraw through the atomic RPC and notify only on the first transition."""
+    client = config.get_user_client(access_token)
+    try:
+        result = client.rpc(
+            "withdraw_event_registration", {"p_registration_id": registration_id}
+        ).execute()
+    except PostgrestAPIError as error:
+        raise _withdrawal_error(error) from error
+
+    registration = AttendeeRegistration(**result.data["registration"])
+    if result.data["changed"]:
+        notification_service.notify(
+            registration.attendee_id,
+            "registration_withdrawn",
+            "Registration withdrawn",
+            f"Your registration for '{registration.event_name}' has been withdrawn. "
+            "You no longer hold a place at this event.",
+            registration.event_id,
+        )
+    return registration
+
+
+def _withdrawal_error(error: PostgrestAPIError) -> AuthError:
+    """Keep withdrawal errors specific to the attempted action."""
+    message = str(error).lower()
+    if "only a signed-in attendee" in message:
+        return AuthError("Only Attendees can withdraw registrations.", status_code=403)
+    if "registration was not found" in message or error.code == "22P02":
+        return AuthError(REGISTRATION_NOT_FOUND, status_code=404)
+    if "event that has ended or been cancelled" in message:
+        return AuthError(
+            "You cannot withdraw from an event that has ended or been cancelled.",
+            status_code=409,
+        )
+    if "once the event has started" in message:
+        return AuthError(
+            "You can only withdraw before the event's first session starts.",
+            status_code=409,
+        )
+    if error.code in {
+        "42P01", "42703", "PGRST202", "PGRST204", "PGRST205", "42883"
+    }:
+        return AuthError(
+            "Registration withdrawal is not available yet. Please try again later.",
+            status_code=503,
+        )
+    if error.code in {"42501", "PGRST301"}:
+        return AuthError(
+            "You do not have permission to withdraw this registration.", status_code=403
+        )
+    return AuthError(
+        "Unable to withdraw your registration. Please try again.", status_code=502
+    )
 
 
 def _local_label(value: datetime | None) -> str:

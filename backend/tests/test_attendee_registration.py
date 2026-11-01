@@ -39,6 +39,11 @@ def valid_details(**overrides) -> dict:
     }
 
 
+def test_published_event_preserves_shared_database_status():
+    event = PublishedEvent(**_event_row(status="cancelled"))
+    assert event.model_dump()["status"] == "cancelled"
+
+
 def authenticate_as(monkeypatch, profile: Profile) -> None:
     monkeypatch.setattr(auth_service, "get_user_id", lambda access_token: profile.id)
     monkeypatch.setattr(

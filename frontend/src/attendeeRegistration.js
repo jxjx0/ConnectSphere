@@ -46,6 +46,23 @@ export function spotsLeftLabel(event) {
   return event.spots_left === 1 ? '1 spot left' : `${event.spots_left} spots left`
 }
 
+export function groupRegistrationsByEvent(registrations) {
+  const groups = new Map()
+  const newestFirst = [...registrations].sort(
+    (first, second) => new Date(second.created_at) - new Date(first.created_at),
+  )
+
+  for (const registration of newestFirst) {
+    const group = groups.get(registration.event_id)
+    if (group) {
+      group.history.push(registration)
+    } else {
+      groups.set(registration.event_id, { latest: registration, history: [] })
+    }
+  }
+  return [...groups.values()]
+}
+
 // Mirrors AttendeeRegistrationSubmit in backend/models/attendee_registration.py,
 // so every problem is shown at once before a round trip.
 export function validateAttendeeRegistration(form) {

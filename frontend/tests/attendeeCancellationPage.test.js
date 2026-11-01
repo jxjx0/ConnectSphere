@@ -72,6 +72,12 @@ test('cancelled event detail shows its status and no registration form', async (
       __esModule: true,
       default: ({ children }) => React.createElement('main', null, children),
     },
+    '../components/RegistrationWithdrawal': {
+      __esModule: true,
+      default: ({ registration }) => registration.can_withdraw
+        ? React.createElement('button', null, 'Withdraw registration')
+        : null,
+    },
     '../context/AuthContext': {
       useAuth: () => ({
         user: { full_name: 'Casey Attendee', contact_number: null },
@@ -105,5 +111,6 @@ test('cancelled event detail shows its status and no registration form', async (
   assert.match(html, /This event has been cancelled\. Registration is closed\./)
   assert.doesNotMatch(html, /<form/)
   assert.doesNotMatch(html, />Register<\/button>/)
+  assert.doesNotMatch(html, /Withdraw registration/)
   assert.deepEqual(navigations, [])
 })

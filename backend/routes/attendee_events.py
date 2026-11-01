@@ -94,3 +94,13 @@ def get_my_registration(registration_id):
         g.access_token, registration_id
     )
     return jsonify({"registration": registration.model_dump(mode="json")}), 200
+
+
+@attendee_events_bp.post("/registrations/<registration_id>/withdraw")
+@require_auth
+def withdraw_registration(registration_id):
+    _require_attendee("withdraw their event registrations")
+    registration = attendee_registration_service.withdraw_registration(
+        g.access_token, registration_id
+    )
+    return jsonify({"registration": registration.model_dump(mode="json")}), 200

@@ -261,3 +261,9 @@ export function getMyRegistrations(token) {
 export function getMyRegistration(registrationId, token) {
   return request(`/attendee/registrations/${registrationId}`, { token })
 }
+
+export function withdrawRegistration(registrationId, token) {
+  return request(`/attendee/registrations/${registrationId}/withdraw`, {
+    method: 'POST', token,
+  })
+}
