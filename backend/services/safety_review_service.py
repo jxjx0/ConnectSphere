@@ -52,6 +52,40 @@ def get_safety_review_queue(access_token: str) -> list[dict]:
         raise AuthError(f"Internal server error while fetching safety queue: {str(exc)}", status_code=500)
 
 
+def get_safety_review_history(access_token: str) -> dict:
+    """Decisions made, and events that ended while waiting for a safety check."""
+    try:
+        client = _get_client(access_token)
+
+        reviewed = (
+            client.table("event_safety_reviews")
+            .select(
+                "id, event_id, decision, reason, created_at, "
+                "event:events(id, name), officer:profiles(full_name)"
+            )
+            .order("created_at", desc=True)
+            .execute()
+        )
+        # The trigger in event_safety_queue_tracking.sql keeps this timestamp
+        # only when an event ends in the queue.
+        expired = (
+            client.table("events")
+            .select(
+                "id, name, category, category_other, start_time, end_time, status, "
+                "updated_at, expected_attendance, sessions:event_sessions(id)"
+            )
+            .in_("status", ["cancelled", "rejected", "completed"])
+            .not_.is_("safety_check_requested_at", "null")
+            .order("updated_at", desc=True)
+            .execute()
+        )
+        return {"reviewed": reviewed.data or [], "expired": expired.data or []}
+    except PostgrestAPIError as exc:
+        raise AuthError(f"Failed to fetch safety review history: {exc.message}", status_code=400)
+    except Exception as exc:
+        raise AuthError(f"Internal server error while fetching safety history: {str(exc)}", status_code=500)
+
+
 def _layout_capacity(venue: dict, layout_name: str | None) -> int:
     """The booked layout's capacity in this venue, or 0 when it is unknown."""
     layouts = venue.get("layouts") or []

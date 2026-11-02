@@ -94,14 +94,14 @@ export default function EventRegistrationPage() {
       <AppShell>
         <div className="page-state">
           <p>{loadError}</p>
-          <Link to="/my-events">Back to my event requests</Link>
+          <Link to="/my-events">← Back</Link>
         </div>
       </AppShell>
     )
   }
 
   const backlink = (
-    <Link to={`/my-events/${eventId}`} className="backlink">← Event details</Link>
+    <Link to={`/my-events/${eventId}`} className="backlink">← Back</Link>
   )
 
   if (!REGISTRATION_STATUSES.includes(event.status)) {

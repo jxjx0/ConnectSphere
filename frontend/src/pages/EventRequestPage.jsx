@@ -198,7 +198,7 @@ export default function EventRequestPage() {
       <AppShell>
         <div className="page-state">
           <p>{loadError}</p>
-          <Link to="/my-events?tab=drafts">Back to my drafts</Link>
+          <Link to="/my-events?tab=drafts">← Back</Link>
         </div>
       </AppShell>
     )
@@ -235,7 +235,7 @@ export default function EventRequestPage() {
             <Link to="/my-events" className="button button--secondary">
               View my requests
             </Link>
-            <Link to="/dashboard">Back to dashboard</Link>
+            <Link to="/my-events">← Back</Link>
           </div>
         </div>
       </AppShell>
@@ -501,7 +501,7 @@ export default function EventRequestPage() {
                 {deleting ? 'Deleting…' : 'Delete draft'}
               </button>
             )}
-            <Link to={draftId ? '/my-events?tab=drafts' : '/dashboard'}>
+            <Link to={draftId ? '/my-events?tab=drafts' : '/my-events'}>
               Cancel
             </Link>
           </div>

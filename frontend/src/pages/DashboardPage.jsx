@@ -47,29 +47,17 @@ export default function DashboardPage() {
 
   return (
     <AppShell>
-      <div className={user.role === 'venue_staff' ? 'content__header venue-overview__header' : 'content__header'}>
-        <h1>{user.role === 'venue_staff' ? 'Venue management' : 'Dashboard'}</h1>
-        {user.role === 'venue_staff' && <Link to="/venues/create" className="button">
+      <div className={isVenueStaff ? 'content__header venue-overview__header' : 'content__header'}>
+        <h1>{isVenueStaff ? 'Venue management' : isCoordinator ? 'My Events' : 'Dashboard'}</h1>
+        {isVenueStaff && <Link to="/venues/create" className="button">
           <span aria-hidden="true">+</span> Create venue profile
         </Link>}
-        {user.role !== 'venue_staff' && <p className="lead">
-          Access your tasks and manage the arrangements relevant to your role.
+        {!isVenueStaff && <p className="lead">
+          {isCoordinator
+            ? 'See what needs you next, and manage the arrangements for each event.'
+            : 'Access your tasks and manage the arrangements relevant to your role.'}
         </p>}
       </div>
-
-      {user.role === 'organiser' && (
-        <section className="stack stack--tight">
-          <h2 className="section-title">Event Requests</h2>
-          <div className="form-actions">
-            <Link to="/my-events/new" className="button">
-              Request an Event
-            </Link>
-            <Link to="/my-events" className="button button--secondary">
-              My Event Requests
-            </Link>
-          </div>
-        </section>
-      )}
 
       {isCoordinator && (
         <section className="stack stack--tight">
@@ -83,9 +71,6 @@ export default function DashboardPage() {
           {!assignedLoading && !assignedError && (
             <AssignedRequestTabs events={assignedEvents} />
           )}
-          <div className="form-actions">
-            <Link to="/venues/search" className="backlink">Browse Venues</Link>
-          </div>
         </section>
       )}
 
@@ -114,67 +99,25 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {user.role === 'tech_support' && ( 
-        <section className="stack stack--tight"> 
-          <h2 className="section-title">Equipment Management</h2>
-          <div className="form-actions"> 
-            <Link to="/equipment-requests" className="button">
-              Review equipment requests
-            </Link>
-            <Link to="/equipment" className="button"> 
-              View Equipment Catalogue 
-            </Link> 
-            <Link to="/equipment/new" className="button button--secondary"> 
-              Create Equipment Profile 
-            </Link> 
-          </div> 
-        </section> 
-      )} 
+      {/* Coordinators and Venue Staff already have their name in the top bar. */}
+      {!isCoordinator && !isVenueStaff && (
+        <section className="stack stack--tight">
+          <h2 className="section-title">Your account</h2>
 
-      {user.role === 'safety_officer' && ( 
-        <section className="stack stack--tight"> 
-          <h2 className="section-title">Safety Check</h2>
-          <div className="form-actions"> 
-            <Link to="/safetyreview" className="button">
-              View Safety Check Queue
-            </Link>
-            {/* <Link to="/equipment/new" className="button button--secondary"> 
-              Create Equipment Profile 
-            </Link>  */}
-          </div> 
-        </section> 
-      )} 
-
-      {user.role === 'event_coordinator_lead' && ( 
-        <section className="stack stack--tight"> 
-          <h2 className="section-title">Event Overview</h2>
-          <div className="form-actions"> 
-            <Link to="/lead/dashboard" className="button"> 
-              View Event Overview 
-            </Link> 
-            <Link to="/events/unassigned-queue" className="button button--secondary"> 
-              View Unassigned Events 
-            </Link> 
-          </div> 
-        </section> 
-      )} 
-
-      {user.role !== 'venue_staff' && <section className="stack stack--tight">
-        <h2 className="section-title">Your account</h2>
-
-        <dl className="detail-list">
-          <div className="detail-list__row">
-            <dt>Name</dt>
-            <dd>{user.full_name}</dd>
-          </div>
-          <div className="detail-list__row">
-            <dt>Role</dt>
-            <dd>
-              <span className="tag">{readableRole(user.role)}</span>
-            </dd>
-          </div>
-        </dl>
-      </section>}
+          <dl className="detail-list">
+            <div className="detail-list__row">
+              <dt>Name</dt>
+              <dd>{user.full_name}</dd>
+            </div>
+            <div className="detail-list__row">
+              <dt>Role</dt>
+              <dd>
+                <span className="tag">{readableRole(user.role)}</span>
+              </dd>
+            </div>
+          </dl>
+        </section>
+      )}
     </AppShell>
   )
 }

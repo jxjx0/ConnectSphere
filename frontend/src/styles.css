@@ -501,7 +501,9 @@ a:hover {
   border-radius: 2px;
   background: var(--accent-faint);
   font-size: 0.75rem;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .booking-calendar__booking-button {

@@ -1,13 +1,21 @@
-import { useState, useEffect, useMemo } from 'react'
-import AppShell from '../components/AppShell'
-import { formatSessionSummary, readableStatus } from '../eventDisplay'
-import { openRequestBadges, statusLabel } from '../eventStatus'
+import { useEffect, useMemo, useState } from 'react'
+
 import {
-  getLeadCoordinatorEvents,
-  getCoordinatorsList,
   assignCoordinatorToEvent,
+  getCoordinatorsList,
   getEventActivityLogs,
+  getLeadCoordinatorEvents,
 } from '../api/events'
+import AppShell from '../components/AppShell'
+import WorkspaceDialog from '../components/WorkspaceDialog'
+import {
+  formatDateRange,
+  formatDateTime,
+  formatSessionSummary,
+  readableStatus,
+} from '../eventDisplay'
+import { openRequestBadges, statusLabel } from '../eventStatus'
+import { coordinatorOptionLabel } from '../leadCoordinatorView'
 
 // Open requests are filtered by the badge flags, not the status.
 const OPEN_REQUEST_FLAGS = {
@@ -16,44 +24,33 @@ const OPEN_REQUEST_FLAGS = {
   cancellation: 'has_pending_cancellation_request',
 }
 
-const formatDateTime = (isoString) => {
-  if (!isoString) return { date: 'Unassigned', time: '' }
-  const dateObj = new Date(isoString)
-  if (isNaN(dateObj.getTime())) return { date: isoString, time: '' }
+const STAGE_OPTIONS = [
+  'under_review', 'planning', 'awaiting_safety_check', 'confirmed',
+  'completed', 'rejected', 'cancelled',
+]
 
-  const formattedDate = dateObj.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-
-  const formattedTime = dateObj.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  })
-
-  return { date: formattedDate, time: formattedTime }
+function isAssigned(event) {
+  return (event.status || '').toLowerCase() !== 'draft'
+    && event.coordinator_id
+    && event.coordinator_name
+    && event.coordinator_name.toLowerCase() !== 'unassigned'
 }
 
 export default function LeadDashboardPage() {
   const [events, setEvents] = useState([])
   const [coordinators, setCoordinators] = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState('')
 
-  // Filters
   const [nameFilter, setNameFilter] = useState('')
   const [coordinatorFilter, setCoordinatorFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [openRequestFilter, setOpenRequestFilter] = useState('')
 
-  // Selected Event & Audit Trail State
   const [selectedEvent, setSelectedEvent] = useState(null)
   const [activityLogs, setActivityLogs] = useState([])
   const [loadingLogs, setLoadingLogs] = useState(false)
 
-  // Reassignment Form State
   const [showReassignForm, setShowReassignForm] = useState(false)
   const [selectedCoordinatorId, setSelectedCoordinatorId] = useState('')
   const [reassignReason, setReassignReason] = useState('')
@@ -61,256 +58,144 @@ export default function LeadDashboardPage() {
   const [reassignError, setReassignError] = useState('')
   const [actionSuccess, setActionSuccess] = useState('')
 
-  useEffect(() => {
-    fetchDashboardData()
-  }, [])
-
-  const fetchDashboardData = async () => {
+  async function fetchDashboardData() {
+    setLoading(true)
+    setError('')
     try {
-      setLoading(true)
-      setError(null)
       const token = localStorage.getItem('connectsphere.token')
-      
-      const [eventsData, coordsRes] = await Promise.all([
+      const [eventsData, coordinatorsRes] = await Promise.all([
         getLeadCoordinatorEvents(token),
         getCoordinatorsList(token),
       ])
-
-      // Strictly exclude draft events AND unassigned events
-      const assignedNonDraftEvents = (eventsData || []).filter((evt) => {
-        const isDraft = (evt.status || '').toLowerCase() === 'draft'
-        const isUnassigned =
-          !evt.coordinator_id ||
-          !evt.coordinator_name ||
-          evt.coordinator_name.toLowerCase() === 'unassigned'
-
-        return !isDraft && !isUnassigned
-      })
-
-      setEvents(assignedNonDraftEvents)
-      
-      const coordsList = Array.isArray(coordsRes)
-        ? coordsRes
-        : coordsRes?.coordinators || []
-      setCoordinators(coordsList)
-    } catch (err) {
-      const message =
-        err.response?.data?.error || err.message || 'Failed to load lead coordinator events.'
-      setError(message)
+      setEvents((eventsData || []).filter(isAssigned))
+      setCoordinators(Array.isArray(coordinatorsRes) ? coordinatorsRes : coordinatorsRes?.coordinators || [])
+    } catch (caught) {
+      setError(caught.response?.data?.error || caught.message || 'Could not load events.')
     } finally {
       setLoading(false)
     }
   }
 
-  // Derive coordinator options for filter bar (Only assigned coordinator names)
-  const coordinatorOptions = useMemo(() => {
-    const names = events
-      .map((evt) => evt.coordinator_name)
-      .filter((name) => Boolean(name) && name.toLowerCase() !== 'unassigned')
-    return Array.from(new Set(names))
-  }, [events])
+  useEffect(() => {
+    fetchDashboardData()
+  }, [])
 
-  // Filter Logic
-  const filteredEvents = events.filter((event) => {
-    // Safety check: ignore drafts and unassigned events
-    if ((event.status || '').toLowerCase() === 'draft') return false
-    if (
-      !event.coordinator_id ||
-      !event.coordinator_name ||
-      event.coordinator_name.toLowerCase() === 'unassigned'
-    ) {
-      return false
-    }
+  const coordinatorNames = useMemo(
+    () => Array.from(new Set(events.map((event) => event.coordinator_name))).sort(),
+    [events],
+  )
 
-    const nameMatch = (event.name || '')
-      .toLowerCase()
-      .includes(nameFilter.toLowerCase())
+  const filteredEvents = events.filter((event) => (
+    (event.name || '').toLowerCase().includes(nameFilter.trim().toLowerCase())
+    && (!coordinatorFilter || event.coordinator_name === coordinatorFilter)
+    && (!statusFilter || (event.status || '').toLowerCase() === statusFilter)
+    && (!openRequestFilter || Boolean(event[OPEN_REQUEST_FLAGS[openRequestFilter]]))
+  ))
+  const hasFilters = Boolean(nameFilter || coordinatorFilter || statusFilter || openRequestFilter)
 
-    const coordinatorMatch =
-      coordinatorFilter === '' ||
-      event.coordinator_name === coordinatorFilter
-
-    const statusMatch =
-      statusFilter === '' ||
-      (event.status || '').toLowerCase() === statusFilter.toLowerCase()
-
-    const openRequestMatch =
-      openRequestFilter === '' ||
-      Boolean(event[OPEN_REQUEST_FLAGS[openRequestFilter]])
-
-    return nameMatch && coordinatorMatch && statusMatch && openRequestMatch
-  })
-
-  const handleOpenReassignModal = async (event) => {
+  async function openDetails(event) {
     setSelectedEvent(event)
     setShowReassignForm(false)
     setSelectedCoordinatorId('')
     setReassignReason('')
     setReassignError('')
     setActionSuccess('')
+    setActivityLogs([])
 
-    // Fetch activity logs for audit trail
     setLoadingLogs(true)
     try {
       const token = localStorage.getItem('connectsphere.token')
       const logsData = await getEventActivityLogs(event.id, token)
       setActivityLogs(logsData.logs || logsData || [])
-    } catch (err) {
+    } catch {
       setActivityLogs([])
     } finally {
       setLoadingLogs(false)
     }
   }
 
-  const handleCloseModal = () => {
-    setSelectedEvent(null)
-    setShowReassignForm(false)
-    setSelectedCoordinatorId('')
-    setReassignReason('')
-    setReassignError('')
-    setActivityLogs([])
-  }
-
-  const handleReassignSubmit = async (e) => {
-    e.preventDefault()
+  async function handleReassign(submit) {
+    submit.preventDefault()
     if (!selectedCoordinatorId) {
-      setReassignError('Please select a coordinator.')
+      setReassignError('Choose a coordinator.')
       return
     }
 
     setReassigning(true)
     setReassignError('')
-
     try {
       const token = localStorage.getItem('connectsphere.token')
-      await assignCoordinatorToEvent(
-        selectedEvent.id,
-        selectedCoordinatorId,
-        reassignReason,
-        token
-      )
-
-      setActionSuccess(`Successfully reassigned "${selectedEvent.name}"!`)
-      handleCloseModal()
+      await assignCoordinatorToEvent(selectedEvent.id, selectedCoordinatorId, reassignReason, token)
+      setActionSuccess(`${selectedEvent.name} has been reassigned.`)
+      setSelectedEvent(null)
       fetchDashboardData()
-    } catch (err) {
-      const message =
-        err.response?.data?.error || err.message || 'Failed to reassign event.'
-      setReassignError(message)
+    } catch (caught) {
+      setReassignError(caught.response?.data?.error || caught.message || 'Could not reassign this event.')
     } finally {
       setReassigning(false)
     }
   }
 
-  const start = selectedEvent ? formatDateTime(selectedEvent.start_time || selectedEvent.start_date) : null
-  const end = selectedEvent ? formatDateTime(selectedEvent.end_time || selectedEvent.end_date) : null
+  const otherCoordinators = coordinators.filter((coordinator) => coordinator.id !== selectedEvent?.coordinator_id)
 
   return (
     <AppShell>
       <div className="content__header">
-        <div>
-          <h1>Event Coordinator Overview</h1>
-        </div>
+        <h1>All Events</h1>
+        <p className="lead">See every assigned event, and reassign one when plans change.</p>
       </div>
 
-      {loading && <p className="note">Loading lead overview dashboard...</p>}
-
+      {loading && <p className="note">Loading events…</p>}
       {error && <p className="form-error" role="alert">{error}</p>}
-
-      {actionSuccess && (
-        <p className="note" style={{ color: 'green', fontWeight: 'bold' }}>
-          {actionSuccess}
-        </p>
-      )}
+      {actionSuccess && <p className="form-success" role="status">{actionSuccess}</p>}
 
       {!loading && !error && events.length === 0 && (
-        <section className="stack stack--tight">
-          <p className="note">No assigned events found under coordinator oversight yet.</p>
-        </section>
+        <p className="workspace-empty">No events have been assigned to a coordinator yet.</p>
       )}
 
       {!loading && !error && events.length > 0 && (
         <section className="stack stack--tight">
-          {/* Filter Bar */}
-          <div className="filter-card">
-            <div className="filter-grid">
-              <div className="form-group">
-                <label className="form-label" htmlFor="name-filter">
-                  Search Event Name
-                </label>
-                <input
-                  id="name-filter"
-                  type="text"
-                  className="form-input"
-                  placeholder="Filter by event name..."
-                  value={nameFilter}
-                  onChange={(e) => setNameFilter(e.target.value)}
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label" htmlFor="coordinator-filter">
-                  Filter by Coordinator
-                </label>
-                <select
-                  id="coordinator-filter"
-                  className="form-input"
-                  value={coordinatorFilter}
-                  onChange={(e) => setCoordinatorFilter(e.target.value)}
-                >
-                  <option value="">All Coordinators</option>
-                  {coordinatorOptions.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label" htmlFor="status-filter">
-                  Filter by Stage
-                </label>
-                <select
-                  id="status-filter"
-                  className="form-input"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                >
-                  <option value="">All stages</option>
-                  <option value="under_review">Under review</option>
-                  <option value="planning">Planning</option>
-                  <option value="awaiting_safety_check">Awaiting safety check</option>
-                  <option value="confirmed">Confirmed</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label" htmlFor="open-request-filter">
-                  Filter by Open Request
-                </label>
-                <select
-                  id="open-request-filter"
-                  className="form-input"
-                  value={openRequestFilter}
-                  onChange={(e) => setOpenRequestFilter(e.target.value)}
-                >
-                  <option value="">Any</option>
-                  <option value="clarification">Clarification open</option>
-                  <option value="change">Change pending</option>
-                  <option value="cancellation">Cancellation pending</option>
-                </select>
-              </div>
+          <div className="workspace-filters">
+            <div className="field">
+              <label htmlFor="name-filter">Event</label>
+              <input
+                id="name-filter"
+                type="search"
+                placeholder="Search by event name…"
+                value={nameFilter}
+                onChange={(change) => setNameFilter(change.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="coordinator-filter">Coordinator</label>
+              <select id="coordinator-filter" value={coordinatorFilter} onChange={(change) => setCoordinatorFilter(change.target.value)}>
+                <option value="">All coordinators</option>
+                {coordinatorNames.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="status-filter">Stage</label>
+              <select id="status-filter" value={statusFilter} onChange={(change) => setStatusFilter(change.target.value)}>
+                <option value="">All stages</option>
+                {STAGE_OPTIONS.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="open-request-filter">Open request</label>
+              <select id="open-request-filter" value={openRequestFilter} onChange={(change) => setOpenRequestFilter(change.target.value)}>
+                <option value="">Any</option>
+                <option value="clarification">Clarification open</option>
+                <option value="change">Change pending</option>
+                <option value="cancellation">Cancellation pending</option>
+              </select>
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <p className="note">
-              Showing <strong>{filteredEvents.length}</strong> of{' '}
-              <strong>{events.length}</strong> total assigned events
+          <div className="workspace-result-bar">
+            <p className="note" role="status">
+              Showing <strong>{filteredEvents.length}</strong> of <strong>{events.length}</strong> events
             </p>
-            {(nameFilter || coordinatorFilter || statusFilter || openRequestFilter) && (
+            {hasFilters && (
               <button
                 type="button"
                 className="button button--secondary button--small"
@@ -321,21 +206,22 @@ export default function LeadDashboardPage() {
                   setOpenRequestFilter('')
                 }}
               >
-                Clear Filters
+                Clear filters
               </button>
             )}
           </div>
 
           {filteredEvents.length === 0 ? (
-            <p className="note">No assigned events match your selected criteria.</p>
+            <p className="workspace-empty">No events match these filters.</p>
           ) : (
             <div className="table-wrapper">
               <table className="venue-table">
-                <caption className="visually-hidden">Events overview</caption>
+                <caption className="visually-hidden">All assigned events</caption>
                 <thead>
                   <tr>
-                    <th scope="col">Event Name</th>
+                    <th scope="col">Event</th>
                     <th scope="col">Coordinator</th>
+                    <th scope="col">When</th>
                     <th scope="col">Status</th>
                     <th scope="col" className="venue-table__actions">Actions</th>
                   </tr>
@@ -345,26 +231,19 @@ export default function LeadDashboardPage() {
                     <tr key={event.id}>
                       <th scope="row">{event.name}</th>
                       <td>{event.coordinator_name}</td>
+                      <td>{formatDateRange(event.start_time, event.end_time)}</td>
                       <td>
-                        <span className="tag">
-                          {statusLabel(event.status)}
-                        </span>
-                        {openRequestBadges(event, 'lead coordinator').map((badge) => (
-                          <span key={badge.kind}>
-                            {' '}<span className="tag">{badge.label}</span>
-                          </span>
-                        ))}
+                        <div className="event-card__tags" style={{ marginTop: 0 }}>
+                          <span className="tag">{statusLabel(event.status)}</span>
+                          {openRequestBadges(event, 'lead coordinator').map((badge) => (
+                            <span className="tag tag--warning" key={badge.kind}>{badge.label}</span>
+                          ))}
+                        </div>
                       </td>
                       <td className="venue-table__actions">
-                        <div className="venue-table__action-buttons">
-                          <button
-                            type="button"
-                            className="button button--secondary button--small"
-                            onClick={() => handleOpenReassignModal(event)}
-                          >
-                            View & Reassign
-                          </button>
-                        </div>
+                        <button type="button" className="button button--secondary button--small" onClick={() => openDetails(event)}>
+                          View details
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -375,210 +254,118 @@ export default function LeadDashboardPage() {
         </section>
       )}
 
-      {/* Details & Reassignment Modal */}
       {selectedEvent && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            background: 'rgba(0,0,0,0.5)',
-            display: 'grid',
-            placeItems: 'center',
-            zIndex: 1000,
-            padding: '1.5rem',
-            boxSizing: 'border-box',
-          }}
-        >
-          <div 
-            className="form-card" 
-            style={{ 
-              width: '100%', 
-              maxWidth: '550px', 
-              maxHeight: '85vh', 
-              overflowY: 'auto', 
-              margin: 'auto' 
-            }}
-          >
-            <h2>{selectedEvent.name}</h2>
-
-            {!showReassignForm ? (
-              /* View Details View with Audit Trail */
-              <div className="stack stack--tight" style={{ marginTop: '1rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Current Coordinator</label>
-                  <p className="form-input" style={{ background: '#f5f5f5' }}>
-                    {selectedEvent.coordinator_name}
-                  </p>
+        <WorkspaceDialog title={selectedEvent.name} onClose={() => setSelectedEvent(null)}>
+          {!showReassignForm ? (
+            <div className="stack stack--tight">
+              <dl className="detail-list">
+                <div className="detail-list__row">
+                  <dt>Coordinator</dt>
+                  <dd>{selectedEvent.coordinator_name}</dd>
                 </div>
-
-                <div className="form-group">
-                  <label className="form-label">Event Schedule</label>
-                  <p className="form-input" style={{ background: '#f5f5f5', marginBottom: '0.5rem' }}>
-                    <strong>Start:</strong> {start.date} {start.time && `at ${start.time}`}
-                  </p>
-                  <p className="form-input" style={{ background: '#f5f5f5' }}>
-                    <strong>End:</strong> {end.date} {end.time && `at ${end.time}`}
-                  </p>
+                <div className="detail-list__row">
+                  <dt>When</dt>
+                  <dd>{formatDateRange(selectedEvent.start_time, selectedEvent.end_time)}</dd>
                 </div>
-
-                <div className="form-group">
-                  <label className="form-label">Status</label>
-                  <p className="form-input" style={{ background: '#f5f5f5' }}>
-                    {statusLabel(selectedEvent.status)}
-                  </p>
+                <div className="detail-list__row">
+                  <dt>Status</dt>
+                  <dd>{statusLabel(selectedEvent.status)}</dd>
                 </div>
-
-                <div className="form-group">
-                  <label className="form-label">Venues</label>
+                <div className="detail-list__row">
+                  <dt>Sessions</dt>
+                  <dd>{formatSessionSummary(selectedEvent)}</dd>
+                </div>
+                <div className="detail-list__row">
+                  <dt>Venues</dt>
                   {/* One per session (T7-278); cancelled and rejected ones are left out. */}
-                  <p className="form-input" style={{ background: '#f5f5f5' }}>
+                  <dd>
                     {selectedEvent.venues?.length
                       ? selectedEvent.venues.map((venue) => (
                         <span key={`${venue.session_name}-${venue.venue_name}`} style={{ display: 'block' }}>
                           {venue.session_name}: {venue.venue_name} ({readableStatus(venue.status).toLowerCase()})
                         </span>
                       ))
-                      : 'No venue assigned'}
+                      : 'No venue yet'}
+                  </dd>
+                </div>
+              </dl>
+
+              <h3>Assignment history</h3>
+              {loadingLogs && <p className="note">Loading history…</p>}
+              {!loadingLogs && activityLogs.length === 0 && (
+                <p className="note">No assignments have been recorded.</p>
+              )}
+              {!loadingLogs && activityLogs.map((log) => (
+                <article className="notice" key={log.id}>
+                  <p>
+                    <strong>{log.action_type === 'ASSIGNMENT' ? 'Assigned to' : 'Reassigned to'}</strong>
+                    {' '}{log.new_coordinator?.full_name || 'Coordinator'}
+                    {log.previous_coordinator && ` (previously ${log.previous_coordinator.full_name})`}
                   </p>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Sessions and attendance</label>
-                  <p className="form-input" style={{ background: '#f5f5f5' }}>
-                    {formatSessionSummary(selectedEvent)}
+                  <p className="field__hint">
+                    By {log.changed_by?.full_name || 'System'} on {formatDateTime(log.created_at)}
                   </p>
-                </div>
+                  {log.reason && <p>Reason: {log.reason}</p>}
+                </article>
+              ))}
 
-                {/* Audit Trail & Reassignment History */}
-                <div className="form-group" style={{ marginTop: '1rem' }}>
-                  <label className="form-label">Audit Trail & Reassignment History</label>
-                  {loadingLogs ? (
-                    <p className="note">Loading history logs...</p>
-                  ) : activityLogs.length === 0 ? (
-                    <p className="note">No previous reassignments recorded.</p>
-                  ) : (
-                    <ul className="stack stack--tight" style={{ listStyle: 'none', paddingLeft: 0, marginTop: '0.5rem' }}>
-                      {activityLogs.map((log) => {
-                        const logTime = formatDateTime(log.created_at)
-                        return (
-                          <li
-                            key={log.id}
-                            style={{
-                              border: '1px solid #e2e8f0',
-                              borderRadius: '6px',
-                              padding: '0.75rem',
-                              background: '#fafafa',
-                            }}
-                          >
-                            <div>
-                              <strong>
-                                {log.action_type === 'ASSIGNMENT' ? 'Assigned to: ' : 'Reassigned to: '}
-                              </strong>
-                              {log.new_coordinator?.full_name || 'Coordinator'}
-                              {log.previous_coordinator && (
-                                <span> (previously {log.previous_coordinator.full_name})</span>
-                              )}
-                            </div>
-                            <div style={{ fontSize: '0.85rem', color: '#666' }}>
-                              By {log.changed_by?.full_name || 'System'} on {logTime.date} {logTime.time && `at ${logTime.time}`}
-                            </div>
-                            {log.reason && (
-                              <div style={{ marginTop: '0.25rem', fontSize: '0.9rem' }}>
-                                <em>Reason: "{log.reason}"</em>
-                              </div>
-                            )}
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
-                  <button
-                    type="button"
-                    className="button button--primary"
-                    onClick={() => setShowReassignForm(true)}
-                  >
-                    Reassign Coordinator
-                  </button>
-                  <button
-                    type="button"
-                    className="button button--secondary"
-                    onClick={handleCloseModal}
-                  >
-                    Close
-                  </button>
-                </div>
+              <div className="form-actions">
+                <button type="button" className="button" onClick={() => setShowReassignForm(true)}>
+                  Reassign
+                </button>
+                <button type="button" className="button button--secondary" onClick={() => setSelectedEvent(null)}>
+                  Close
+                </button>
               </div>
-            ) : (
-              /* Reassignment Form View */
-              <form onSubmit={handleReassignSubmit} className="stack stack--tight" style={{ marginTop: '1rem' }}>
-                <h3>Reassign Event</h3>
-                
-                {reassignError && <p className="form-error" role="alert">{reassignError}</p>}
-
-                <div className="form-group">
-                  <label className="form-label" htmlFor="reassign-select">
-                    Select New Coordinator
-                  </label>
-                  <select
-                    id="reassign-select"
-                    className="form-input"
-                    value={selectedCoordinatorId}
-                    onChange={(e) => setSelectedCoordinatorId(e.target.value)}
-                    required
-                  >
-                    <option value="">-- Choose Coordinator --</option>
-                    {coordinators
-                      .filter((c) => c.id !== selectedEvent.coordinator_id)
-                      .map((coord) => (
-                        <option key={coord.id} value={coord.id}>
-                          {coord.full_name || coord.email}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label" htmlFor="reassign-reason">
-                    Reason for Reassignment
-                  </label>
-                  <textarea
-                    id="reassign-reason"
-                    className="form-input"
-                    value={reassignReason}
-                    onChange={(e) => setReassignReason(e.target.value)}
-                    rows={3}
-                    placeholder="Provide a reason for changing the assigned coordinator..."
-                    required
-                  />
-                </div>
-
-                <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
-                  <button
-                    type="submit"
-                    className="button button--primary"
-                    disabled={reassigning}
-                  >
-                    {reassigning ? 'Reassigning...' : 'Confirm Reassignment'}
-                  </button>
-                  <button
-                    type="button"
-                    className="button button--secondary"
-                    onClick={() => setShowReassignForm(false)}
-                    disabled={reassigning}
-                  >
-                    Back to Details
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
+            </div>
+          ) : (
+            <form className="form" onSubmit={handleReassign}>
+              <p className="note">Currently with <strong>{selectedEvent.coordinator_name}</strong>.</p>
+              <div className="field">
+                <label htmlFor="reassign-select">New coordinator</label>
+                <select
+                  id="reassign-select"
+                  value={selectedCoordinatorId}
+                  onChange={(change) => setSelectedCoordinatorId(change.target.value)}
+                  required
+                  autoFocus
+                >
+                  <option value="">Choose a coordinator…</option>
+                  {otherCoordinators.map((coordinator) => (
+                    <option key={coordinator.id} value={coordinator.id}>
+                      {coordinatorOptionLabel(coordinator, events)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="reassign-reason">Reason</label>
+                <textarea
+                  id="reassign-reason"
+                  rows={3}
+                  value={reassignReason}
+                  onChange={(change) => setReassignReason(change.target.value)}
+                  placeholder="Why is this event moving to someone else?"
+                  required
+                />
+              </div>
+              {reassignError && <p className="form-error" role="alert">{reassignError}</p>}
+              <div className="form-actions">
+                <button type="submit" className="button" disabled={reassigning}>
+                  {reassigning ? 'Reassigning…' : 'Confirm reassignment'}
+                </button>
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  onClick={() => setShowReassignForm(false)}
+                  disabled={reassigning}
+                >
+                  Back
+                </button>
+              </div>
+            </form>
+          )}
+        </WorkspaceDialog>
       )}
     </AppShell>
   )

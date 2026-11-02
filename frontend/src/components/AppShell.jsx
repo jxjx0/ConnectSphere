@@ -4,9 +4,22 @@
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
+import CoordinatorTabs from './CoordinatorTabs'
+import LeadTabs from './LeadTabs'
 import NotificationDropdown from './NotificationDropdown'
 import './AttendeeLayout.css'
 import '../styles/venueStaff.css'
+import OrganiserTabs from './OrganiserTabs'
+import SafetyTabs from './SafetyTabs'
+import './WorkspaceLayout.css'
+
+// Roles with their own tabs and workspace, on every page they share with others.
+const WORKSPACE_TABS = {
+  coordinator: CoordinatorTabs,
+  event_coordinator_lead: LeadTabs,
+  organiser: OrganiserTabs,
+  safety_officer: SafetyTabs,
+}
 
 export default function AppShell({ children }) {
   const { user, logout } = useAuth()
@@ -20,6 +33,7 @@ export default function AppShell({ children }) {
     navigate('/')
   }
 
+  const WorkspaceTabs = WORKSPACE_TABS[user.role]
   const shell = (
     <>
       <header className="topbar">
@@ -49,14 +63,16 @@ export default function AppShell({ children }) {
           <NavLink to="/venues/availability" className="button button--small button--secondary">Availability</NavLink>
           <Link to="/venues" aria-current={inCatalogue ? 'page' : undefined} className="button button--small button--secondary">Venue catalogue</Link>
         </nav>}
+        {WorkspaceTabs && <WorkspaceTabs />}
         {children}
       </main>
     </>
   )
 
   // Reuse the existing Attendee theme; staff CSS only adapts task layouts.
-  return isVenueStaff ? <div className="attendee-ui venue-workspace">
+  if (isVenueStaff) return <div className="attendee-ui venue-workspace">
     <a className="venue-workspace__skip" href="#venue-workspace-main">Skip to content</a>
     {shell}
-  </div> : shell
+  </div>
+  return WorkspaceTabs ? <div className="workspace-ui">{shell}</div> : shell
 }

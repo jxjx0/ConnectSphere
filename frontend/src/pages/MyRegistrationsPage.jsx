@@ -5,7 +5,11 @@ import { getMyRegistrations } from '../api/events'
 import AttendeeShell from '../components/AttendeeShell'
 import AttendeeListTools from '../components/AttendeeListTools'
 import { useAuth } from '../context/AuthContext'
-import { filterRegistrationGroups, groupRegistrationsByEvent } from '../attendeeRegistration'
+import {
+  filterRegistrationGroups,
+  groupRegistrationsByEvent,
+  isPastRegistration,
+} from '../attendeeRegistration'
 import { formatDateRange } from '../eventDisplay'
 import { attendeeEventNote } from '../eventStatus'
 
@@ -17,7 +21,12 @@ export default function MyRegistrationsPage() {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
   const [reload, setReload] = useState(0)
-  const visibleGroups = filterRegistrationGroups(groupRegistrationsByEvent(registrations), query, filter)
+  const [view, setView] = useState('upcoming')
+  // Each event appears once, however many times the attendee registered.
+  const groups = groupRegistrationsByEvent(registrations)
+  const pastGroups = groups.filter((group) => isPastRegistration(group))
+  const visibleGroups = filterRegistrationGroups(groups, query, filter)
+    .filter((group) => isPastRegistration(group) === (view === 'past'))
 
   useEffect(() => {
     let active = true
@@ -39,9 +48,23 @@ export default function MyRegistrationsPage() {
 
         <AttendeeListTools
           query={query} onQueryChange={setQuery} filter={filter} onFilterChange={setFilter}
-          options={[['all', 'All registrations'], ['registered', 'Registered'], ['withdrawn', 'Withdrawn'], ['cancelled', 'Cancelled events']]}
+          options={[['all', 'All registrations'], ['registered', 'Registered'], ['withdrawn', 'Withdrawn']]}
           count={loading || error ? null : visibleGroups.length}
         />
+
+        <div className="form-actions" role="group" aria-label="Show registrations for">
+          {[['upcoming', 'Upcoming', groups.length - pastGroups.length], ['past', 'Past and cancelled', pastGroups.length]].map(([id, label, count]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={view === id}
+              className={view === id ? 'button button--small' : 'button button--small button--secondary'}
+              onClick={() => setView(id)}
+            >
+              {label} ({count})
+            </button>
+          ))}
+        </div>
 
         {loading && <p className="note">Loading your registrations…</p>}
         {error && <div className="stack stack--tight">
@@ -56,7 +79,11 @@ export default function MyRegistrationsPage() {
         )}
 
         {!loading && !error && registrations.length > 0 && visibleGroups.length === 0 && (
-          <p className="attendee-empty">No registrations match your search. Try another name or clear the filters.</p>
+          <p className="attendee-empty">
+            {query || filter !== 'all'
+              ? 'No registrations match your search. Try another name or clear the filters.'
+              : view === 'past' ? 'You have no past or cancelled events.' : 'You have no upcoming events.'}
+          </p>
         )}
         <div className="attendee-grid">
           {!loading && !error && visibleGroups.map(({ latest: registration }) => (

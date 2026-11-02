@@ -145,7 +145,7 @@ export default function EventChangeRequestPage() {
       <AppShell>
         <div className="page-state">
           <p>{error}</p>
-          <Link to="/my-events">Back to my event requests</Link>
+          <Link to="/my-events">← Back</Link>
         </div>
       </AppShell>
     )
@@ -155,7 +155,7 @@ export default function EventChangeRequestPage() {
     return (
       <AppShell>
         <div className="content">
-          <Link to={`/my-events/${eventId}`} className="backlink">← Event details</Link>
+          <Link to={`/my-events/${eventId}`} className="backlink">← Back</Link>
           <p className="note">
             {event.has_pending_change_request
               ? 'A change request for this event is already waiting for review.'
@@ -174,7 +174,7 @@ export default function EventChangeRequestPage() {
   return (
     <AppShell>
       <div className="content">
-        <Link to={`/my-events/${eventId}`} className="backlink">← Event details</Link>
+        <Link to={`/my-events/${eventId}`} className="backlink">← Back</Link>
 
         <div className="content__header">
           <h1>Request an event change</h1>

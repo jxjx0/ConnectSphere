@@ -1,4 +1,5 @@
 import React from 'react'
+import { lineProgress } from '../equipmentCatalogue'
 import { formatDateRange, formatDateTime } from '../eventDisplay'
 import styles from './VenueBookingCard.module.css'
 
@@ -22,6 +23,7 @@ function getStatusClass(status) {
 // Organiser asked for instead, and `actions` can offer to request it.
 export default function EquipmentRequestCard({ title, eventName, request, timing, needs, actions }) {
   const allocated = request?.equipment_bookings || []
+  const lines = lineProgress(request)
 
   return (
     <div className={`${styles.card} ${getStatusClass(request?.status)}`}>
@@ -53,11 +55,18 @@ export default function EquipmentRequestCard({ title, eventName, request, timing
           <span className={`note ${styles.label}`}>
             {request ? 'Requested Equipment:' : "Organiser's Equipment Needs:"}
           </span>
-          <span className={styles.value}>
-            {request
-              ? request.request_details
-              : needs?.trim() || 'None listed. A request is optional.'}
-          </span>
+          {lines.length > 0 ? lines.map((line) => (
+            <span className={styles.value} style={{ display: 'block' }} key={line.id}>
+              {line.item_name}: {line.allocated}/{line.quantity} allocated
+              {line.specifics && ` · ${line.specifics}`}
+            </span>
+          )) : (
+            <span className={styles.value}>
+              {request
+                ? request.request_details
+                : needs?.trim() || 'None listed. A request is optional.'}
+            </span>
+          )}
         </div>
         {request && (
           <div className={styles.fullWidth}>
@@ -75,6 +84,12 @@ export default function EquipmentRequestCard({ title, eventName, request, timing
         <p className="form-error" role="status">
           Its session was moved or removed by an approved change request.
           Cancel this request and request equipment again.
+        </p>
+      )}
+
+      {request?.status === 'Rejected' && request.rejection_reason && (
+        <p className={`note ${styles.rejectionError}`}>
+          <strong>Rejection reason:</strong> {request.rejection_reason}
         </p>
       )}
 
