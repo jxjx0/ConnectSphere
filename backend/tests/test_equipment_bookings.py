@@ -13,7 +13,7 @@ from models.equipment_booking import (
     EquipmentBookingRange,
 )
 from models.profile import Profile, Role
-from services import auth_service, equipment_booking_service
+from services import auth_service, equipment_booking_service, notification_service
 from services.auth_service import AuthError
 
 
@@ -314,8 +314,11 @@ def test_service_lists_shared_bookings_through_rpc(booking_database):
     assert result == [SAVED_BOOKING]
 
 
-def test_service_creates_booking_through_guarded_rpc(booking_database):
+def test_service_creates_booking_through_guarded_rpc(booking_database, monkeypatch):
     client, _ = booking_database
+    monkeypatch.setattr(
+        equipment_booking_service, "_notify_coordinator_of_allocation", Mock()
+    )
     query = Mock()
     query.execute.return_value = SimpleNamespace(
         data={"outcome": "booked", "booking": SAVED_BOOKING}
@@ -336,6 +339,82 @@ def test_service_creates_booking_through_guarded_rpc(booking_database):
         },
     )
     assert result == SAVED_BOOKING
+
+
+def _allocation_lookups(admin, tables):
+    def table(name):
+        query = Mock()
+        query.select.return_value = query
+        query.eq.return_value = query
+        query.single.return_value = query
+        result = tables[name]
+        if isinstance(result, Exception):
+            query.execute.side_effect = result
+        else:
+            query.execute.return_value = SimpleNamespace(data=result)
+        return query
+    admin.table.side_effect = table
+
+
+def _booked(client):
+    query = Mock()
+    query.execute.return_value = SimpleNamespace(
+        data={"outcome": "booked", "booking": SAVED_BOOKING}
+    )
+    client.rpc.return_value = query
+
+
+def test_service_notifies_coordinator_when_equipment_is_allocated(
+    booking_database, monkeypatch
+):
+    client, _ = booking_database
+    _booked(client)
+    admin = Mock()
+    monkeypatch.setattr(config, "get_admin_client", lambda: admin)
+    _allocation_lookups(admin, {
+        "equipment_requests": {
+            "coordinator_id": "coordinator-1",
+            "event_id": "event-1",
+            "session_id": "session-1",
+        },
+        "equipment": {"name": "Projector"},
+        "events": {"name": "Data Science Bootcamp"},
+        "event_sessions": {"name": "Afternoon lab"},
+    })
+    notify = Mock()
+    monkeypatch.setattr(notification_service, "notify", notify)
+
+    result = equipment_booking_service.create_equipment_booking(
+        "tech-token", EquipmentBookingCreate(**VALID_BOOKING)
+    )
+
+    assert result == SAVED_BOOKING
+    notify.assert_called_once_with(
+        user_id="coordinator-1",
+        notification_type="equipment_allocated",
+        title="Equipment allocated",
+        body="Projector has been allocated to 'Data Science Bootcamp' (Afternoon lab).",
+        event_id="event-1",
+    )
+
+
+def test_allocation_is_kept_when_its_notification_details_cannot_load(
+    booking_database, monkeypatch
+):
+    client, _ = booking_database
+    _booked(client)
+    admin = Mock()
+    monkeypatch.setattr(config, "get_admin_client", lambda: admin)
+    _allocation_lookups(admin, {"equipment_requests": RuntimeError("database down")})
+    notify = Mock()
+    monkeypatch.setattr(notification_service, "notify", notify)
+
+    result = equipment_booking_service.create_equipment_booking(
+        "tech-token", EquipmentBookingCreate(**VALID_BOOKING)
+    )
+
+    assert result == SAVED_BOOKING
+    notify.assert_not_called()
 
 
 def test_service_notifies_coordinator_when_equipment_is_unavailable(

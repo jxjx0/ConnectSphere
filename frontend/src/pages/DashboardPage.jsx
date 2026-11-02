@@ -88,23 +88,6 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {user.role === 'tech_support' && ( 
-        <section className="stack stack--tight"> 
-          <h2 className="section-title">Equipment Management</h2>
-          <div className="form-actions"> 
-            <Link to="/equipment-requests" className="button">
-              Review equipment requests
-            </Link>
-            <Link to="/equipment" className="button"> 
-              View Equipment Catalogue 
-            </Link> 
-            <Link to="/equipment/new" className="button button--secondary"> 
-              Create Equipment Profile 
-            </Link> 
-          </div> 
-        </section> 
-      )} 
-
       {user.role === 'safety_officer' && ( 
         <section className="stack stack--tight"> 
           <h2 className="section-title">Safety Check</h2>

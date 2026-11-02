@@ -1,40 +1,54 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import AppShell from '../components/AppShell'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+
+import { createEquipment, getEquipment } from '../api/equipment'
+import TechSupportShell from '../components/TechSupportShell'
 import EquipmentForm from '../components/EquipmentForm'
-import { createEquipment } from '../api/equipment'
 
 export default function EquipmentProfilePage() {
   const navigate = useNavigate()
-  const [error, setError] = useState(null)
+  const [catalogue, setCatalogue] = useState([])
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
-  const handleSubmit = async (equipmentData) => {
-    setError(null)
+  // Only feeds the form's suggestions, so the form still works without it.
+  useEffect(() => {
+    getEquipment().then(setCatalogue).catch(() => setCatalogue([]))
+  }, [])
+
+  async function handleSubmit(equipmentData) {
+    setError('')
+    setSubmitting(true)
     try {
       await createEquipment(equipmentData)
       navigate('/equipment')
-    } catch (err) {
-      const message =
-        err.response?.data?.error ||
-        err.response?.data?.errors?.join(', ') ||
-        err.message
-      setError(message || 'Failed to create equipment profile.')
+    } catch (caught) {
+      setError(
+        caught.response?.data?.error
+        || caught.response?.data?.errors?.join(' ')
+        || 'Could not save this equipment. Try again.',
+      )
+      setSubmitting(false)
     }
   }
 
   return (
-    <AppShell>
+    <TechSupportShell>
       <div className="content__header">
+        <Link to="/equipment" className="backlink">← Back to Equipment Catalogue</Link>
         <h1>Create Equipment Profile</h1>
-        <p className="lead">
-          Add new technical hardware and specs to the equipment catalogue.
-        </p>
+        <p className="lead">Add new technical hardware to the equipment catalogue.</p>
       </div>
 
-      <section className="stack">
-        {error && <p className="error">{error}</p>}
-        <EquipmentForm onSubmit={handleSubmit} />
+      <section className="stack stack--tight">
+        <h2 className="section-title">Equipment details</h2>
+        <EquipmentForm
+          catalogue={catalogue}
+          error={error}
+          submitting={submitting}
+          onSubmit={handleSubmit}
+        />
       </section>
-    </AppShell>
+    </TechSupportShell>
   )
 }

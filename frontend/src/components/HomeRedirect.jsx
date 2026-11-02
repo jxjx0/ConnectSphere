@@ -1,6 +1,6 @@
-// The page shown at /dashboard. Attendees only browse and register for
-// events, so the events list is their home page; everyone else gets the
-// dashboard.
+// The page shown at /dashboard. Attendees and Technical Support each work
+// from their own tabs, so they start on the first one; everyone else gets
+// the dashboard.
 
 import { Navigate } from 'react-router-dom'
 
@@ -11,6 +11,9 @@ export default function HomeRedirect() {
   const { user } = useAuth()
   if (user.role === 'attendee') {
     return <Navigate to="/attendee/events" replace />
+  }
+  if (user.role === 'tech_support') {
+    return <Navigate to="/equipment-requests" replace />
   }
   return <DashboardPage />
 }

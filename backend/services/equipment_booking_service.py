@@ -1,5 +1,7 @@
 """Equipment time bookings through Supabase."""
 
+import logging
+
 from postgrest import APIError as PostgrestAPIError
 
 import config
@@ -10,6 +12,8 @@ from models.equipment_booking import (
 )
 from services import notification_service
 from services.auth_service import AuthError
+
+logger = logging.getLogger(__name__)
 
 
 def _database_error(error: PostgrestAPIError) -> AuthError:
@@ -93,6 +97,56 @@ def list_all_equipment_bookings(
     return result.data
 
 
+def _notify_coordinator_of_allocation(booking: dict) -> None:
+    """Tell the request's Coordinator; a failure here must not undo the booking."""
+    try:
+        client = config.get_admin_client()
+        equipment_request = (
+            client.table("equipment_requests")
+            .select("coordinator_id,event_id,session_id")
+            .eq("id", booking["request_id"])
+            .single()
+            .execute()
+        ).data
+        equipment_name = (
+            client.table("equipment")
+            .select("name")
+            .eq("id", booking["equipment_id"])
+            .single()
+            .execute()
+        ).data["name"]
+        event_name = (
+            client.table("events")
+            .select("name")
+            .eq("id", equipment_request["event_id"])
+            .single()
+            .execute()
+        ).data["name"]
+        session = ""
+        if equipment_request.get("session_id"):
+            session_name = (
+                client.table("event_sessions")
+                .select("name")
+                .eq("id", equipment_request["session_id"])
+                .single()
+                .execute()
+            ).data["name"]
+            session = f" ({session_name})"
+    except Exception:
+        logger.exception(
+            "Could not look up allocation details for booking %s", booking.get("id")
+        )
+        return
+
+    notification_service.notify(
+        user_id=equipment_request["coordinator_id"],
+        notification_type="equipment_allocated",
+        title="Equipment allocated",
+        body=f"{equipment_name} has been allocated to '{event_name}'{session}.",
+        event_id=equipment_request["event_id"],
+    )
+
+
 def create_equipment_booking(
     access_token: str,
     booking: EquipmentBookingCreate,
@@ -164,6 +218,7 @@ def create_equipment_booking(
         outcome.get("booking"), dict
     ):
         raise AuthError("Equipment booking was not saved.", status_code=502)
+    _notify_coordinator_of_allocation(outcome["booking"])
     return outcome["booking"]
 
 
