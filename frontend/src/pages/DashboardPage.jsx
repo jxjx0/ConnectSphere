@@ -27,6 +27,82 @@ export default function DashboardPage() {
       .finally(() => setAssignedLoading(false))
   }, [isCoordinator, token])
 
+  if (user.role === 'organiser') {
+    return (
+      <div className="organiser-ui">
+        <AppShell>
+          <div className="organiser-dashboard">
+            <header className="organiser-dashboard__header">
+              <p className="organiser-dashboard__eyebrow">Organiser workspace</p>
+              <h1>Welcome back, {user.full_name}</h1>
+              <p className="organiser-dashboard__lead">
+                Plan your next event and keep track of your requests in one place.
+              </p>
+            </header>
+
+            <section
+              className="organiser-dashboard__section"
+              aria-labelledby="organiser-actions-title"
+            >
+              <div className="organiser-dashboard__section-heading">
+                <h2 id="organiser-actions-title">Your event requests</h2>
+                <p>What would you like to do today?</p>
+              </div>
+
+              <div className="organiser-dashboard__cards">
+                <article className="organiser-dashboard__card">
+                  <div className="organiser-dashboard__card-content">
+                    <p className="organiser-dashboard__card-label">Get started</p>
+                    <h3>Request an event</h3>
+                    <p>
+                      Tell us about your event and submit a request for the team to review.
+                    </p>
+                  </div>
+                  <Link to="/my-events/new" className="button">
+                    Create an event request
+                  </Link>
+                </article>
+
+                <article className="organiser-dashboard__card">
+                  <div className="organiser-dashboard__card-content">
+                    <p className="organiser-dashboard__card-label">Your activity</p>
+                    <h3>My event requests</h3>
+                    <p>
+                      Check progress, respond to questions, or continue working on a draft.
+                    </p>
+                  </div>
+                  <Link to="/my-events" className="button button--secondary">
+                    View my requests
+                  </Link>
+                </article>
+              </div>
+            </section>
+
+            <section
+              className="organiser-dashboard__account"
+              aria-labelledby="organiser-account-title"
+            >
+              <div className="organiser-dashboard__section-heading">
+                <h2 id="organiser-account-title">Account</h2>
+                <p>Your profile currently signed in to ConnectSphere.</p>
+              </div>
+              <dl className="organiser-dashboard__account-details">
+                <div>
+                  <dt>Name</dt>
+                  <dd>{user.full_name}</dd>
+                </div>
+                <div>
+                  <dt>Role</dt>
+                  <dd>{readableRole(user.role)}</dd>
+                </div>
+              </dl>
+            </section>
+          </div>
+        </AppShell>
+      </div>
+    )
+  }
+
   return (
     <AppShell>
       <div className="content__header">
@@ -35,20 +111,6 @@ export default function DashboardPage() {
           Access your tasks and manage the arrangements relevant to your role.
         </p>
       </div>
-
-      {user.role === 'organiser' && (
-        <section className="stack stack--tight">
-          <h2 className="section-title">Event Requests</h2>
-          <div className="form-actions">
-            <Link to="/my-events/new" className="button">
-              Request an Event
-            </Link>
-            <Link to="/my-events" className="button button--secondary">
-              My Event Requests
-            </Link>
-          </div>
-        </section>
-      )}
 
       {isCoordinator && (
         <section className="stack stack--tight">

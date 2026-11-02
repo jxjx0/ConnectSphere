@@ -1455,6 +1455,230 @@ a:hover {
   color: var(--accent);
 }
 
+.organiser-ui {
+  min-height: 100svh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Inter', var(--font-body);
+  font-size: 0.875rem;
+}
+
+.organiser-ui .topbar {
+  background: var(--surface);
+  padding: var(--space-5) var(--space-6);
+}
+
+.organiser-ui .topbar__inner {
+  max-width: 72.5rem;
+}
+
+.organiser-ui .wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: inherit;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  text-transform: none;
+}
+
+.organiser-ui .wordmark::before {
+  content: '';
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  border: 5px solid var(--accent);
+  border-radius: 50%;
+}
+
+.organiser-ui .topbar__user {
+  font-size: 0.875rem;
+}
+
+.organiser-ui .app-main {
+  max-width: 76.5rem;
+  padding: var(--space-6) var(--space-6) var(--space-8);
+  gap: var(--space-6);
+}
+
+.organiser-dashboard {
+  display: grid;
+  gap: var(--space-6);
+  width: 100%;
+  min-width: 0;
+}
+
+.organiser-dashboard__header {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.organiser-dashboard__header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
+}
+
+.organiser-dashboard__eyebrow,
+.organiser-dashboard__card-label {
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.organiser-dashboard__lead {
+  max-width: 64rem;
+  color: var(--ink-muted);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.organiser-dashboard__section,
+.organiser-dashboard__account {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.organiser-dashboard__section-heading {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.organiser-dashboard__section-heading h2 {
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.organiser-dashboard__section-heading p {
+  color: var(--ink-muted);
+  font-size: 0.875rem;
+}
+
+.organiser-dashboard__cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: var(--space-5);
+}
+
+.organiser-dashboard__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.organiser-dashboard__card-content {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+}
+
+.organiser-dashboard__card h3 {
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.organiser-dashboard__card-content > p:last-child {
+  max-width: 32rem;
+  color: var(--ink-muted);
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+
+.organiser-dashboard__card .button {
+  align-self: flex-start;
+  min-height: 2.75rem;
+  padding: var(--space-3) var(--space-5);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.organiser-dashboard__card .button--secondary {
+  background: var(--surface);
+}
+
+.organiser-dashboard__card .button--secondary:hover {
+  background: var(--sunken);
+}
+
+.organiser-dashboard__account {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--rule);
+}
+
+.organiser-dashboard__account-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--space-6);
+  margin: 0;
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.organiser-dashboard__account-details > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-4) 0;
+}
+
+.organiser-dashboard__account-details dt {
+  color: var(--ink-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.organiser-dashboard__account-details dd {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 40rem) {
+  .organiser-ui .topbar {
+    padding: var(--space-4) var(--space-5);
+  }
+
+  .organiser-ui .app-main {
+    padding: var(--space-5) var(--space-5) var(--space-7);
+    gap: var(--space-5);
+  }
+
+  .organiser-dashboard {
+    gap: var(--space-5);
+  }
+
+  .organiser-dashboard__header h1 {
+    font-size: 1.75rem;
+  }
+
+  .organiser-dashboard__cards,
+  .organiser-dashboard__account-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .organiser-dashboard__card .button {
+    align-self: stretch;
+  }
+}
+
 .form-card {
   background: white;
   padding: 2rem;
