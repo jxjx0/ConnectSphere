@@ -231,7 +231,7 @@ export default function EquipmentBookingsPage() {
     return (
       <TechSupportShell>
         <div className="content__header">
-          <Link to="/equipment" className="backlink">← Back to Equipment Catalogue</Link>
+          <Link to="/equipment" className="backlink">← Back</Link>
           <p className="form-error" role="alert">{error}</p>
         </div>
       </TechSupportShell>
@@ -246,7 +246,7 @@ export default function EquipmentBookingsPage() {
     <TechSupportShell>
       <div className={styles.page}>
         <div className="content__header">
-          <Link to="/equipment" className="backlink">← Back to Equipment Catalogue</Link>
+          <Link to="/equipment" className="backlink">← Back</Link>
           <h1>{item.name} bookings</h1>
           <p className="lead">{item.type} · <span className={statusTagClass(item.maintenance_status)}>{item.maintenance_status}</span></p>
           <p className={styles.equipmentId}>ID: {item.id}</p>
@@ -379,9 +379,6 @@ export default function EquipmentBookingsPage() {
                   ? 'Notify Coordinator — unavailable'
                   : 'Allocate equipment'}
             </button>
-            <Link to="/equipment-requests" className="button button--secondary">
-              Back to request review
-            </Link>
           </div>
         </form>
       </div>
