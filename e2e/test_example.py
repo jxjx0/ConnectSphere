@@ -20,6 +20,7 @@ class TestSample(unittest.TestCase):
     def setUp(self):
         self.context = self.browser.new_context()
         self.page = self.context.new_page()
+        self.page.goto(BASE_URL)
 
     def tearDown(self):
         self.page.close()
