@@ -13,7 +13,7 @@ from models.equipment_booking import (
     EquipmentBookingRange,
 )
 from models.profile import Profile, Role
-from services import auth_service, equipment_booking_service
+from services import auth_service, equipment_booking_service, notification_service
 from services.auth_service import AuthError
 
 
@@ -314,8 +314,11 @@ def test_service_lists_shared_bookings_through_rpc(booking_database):
     assert result == [SAVED_BOOKING]
 
 
-def test_service_creates_booking_through_guarded_rpc(booking_database):
+def test_service_creates_booking_through_guarded_rpc(booking_database, monkeypatch):
     client, _ = booking_database
+    monkeypatch.setattr(
+        equipment_booking_service, "_notify_coordinator_of_allocation", Mock()
+    )
     query = Mock()
     query.execute.return_value = SimpleNamespace(
         data={"outcome": "booked", "booking": SAVED_BOOKING}
@@ -336,6 +339,82 @@ def test_service_creates_booking_through_guarded_rpc(booking_database):
         },
     )
     assert result == SAVED_BOOKING
+
+
+def _allocation_lookups(admin, tables):
+    def table(name):
+        query = Mock()
+        query.select.return_value = query
+        query.eq.return_value = query
+        query.single.return_value = query
+        result = tables[name]
+        if isinstance(result, Exception):
+            query.execute.side_effect = result
+        else:
+            query.execute.return_value = SimpleNamespace(data=result)
+        return query
+    admin.table.side_effect = table
+
+
+def _booked(client):
+    query = Mock()
+    query.execute.return_value = SimpleNamespace(
+        data={"outcome": "booked", "booking": SAVED_BOOKING}
+    )
+    client.rpc.return_value = query
+
+
+def test_service_notifies_coordinator_when_equipment_is_allocated(
+    booking_database, monkeypatch
+):
+    client, _ = booking_database
+    _booked(client)
+    admin = Mock()
+    monkeypatch.setattr(config, "get_admin_client", lambda: admin)
+    _allocation_lookups(admin, {
+        "equipment_requests": {
+            "coordinator_id": "coordinator-1",
+            "event_id": "event-1",
+            "session_id": "session-1",
+        },
+        "equipment": {"name": "Projector"},
+        "events": {"name": "Data Science Bootcamp"},
+        "event_sessions": {"name": "Afternoon lab"},
+    })
+    notify = Mock()
+    monkeypatch.setattr(notification_service, "notify", notify)
+
+    result = equipment_booking_service.create_equipment_booking(
+        "tech-token", EquipmentBookingCreate(**VALID_BOOKING)
+    )
+
+    assert result == SAVED_BOOKING
+    notify.assert_called_once_with(
+        user_id="coordinator-1",
+        notification_type="equipment_allocated",
+        title="Equipment allocated",
+        body="Projector has been allocated to 'Data Science Bootcamp' (Afternoon lab).",
+        event_id="event-1",
+    )
+
+
+def test_allocation_is_kept_when_its_notification_details_cannot_load(
+    booking_database, monkeypatch
+):
+    client, _ = booking_database
+    _booked(client)
+    admin = Mock()
+    monkeypatch.setattr(config, "get_admin_client", lambda: admin)
+    _allocation_lookups(admin, {"equipment_requests": RuntimeError("database down")})
+    notify = Mock()
+    monkeypatch.setattr(notification_service, "notify", notify)
+
+    result = equipment_booking_service.create_equipment_booking(
+        "tech-token", EquipmentBookingCreate(**VALID_BOOKING)
+    )
+
+    assert result == SAVED_BOOKING
+    notify.assert_not_called()
 
 
 def test_service_notifies_coordinator_when_equipment_is_unavailable(
@@ -486,3 +565,119 @@ def test_service_reports_missing_booking_on_delete(booking_database):
         equipment_booking_service.delete_equipment_booking("tech-token", BOOKING_ID)
 
     assert caught.value.status_code == 404
+
+
+def test_allocating_past_a_lines_quantity_explains_why(booking_database):
+    client, _ = booking_database
+    client.rpc.return_value.execute.side_effect = PostgrestAPIError({
+        "message": "All 2 of Projector have already been allocated.",
+        "code": "EQ001", "details": None, "hint": None,
+    })
+
+    with pytest.raises(AuthError) as caught:
+        equipment_booking_service.create_equipment_booking(
+            "tech-token", EquipmentBookingCreate(**VALID_BOOKING)
+        )
+
+    assert caught.value.status_code == 409
+    assert caught.value.message == "All 2 of Projector have already been allocated."
+
+
+def test_filling_an_other_line_names_that_line(booking_database, monkeypatch):
+    client, _ = booking_database
+    monkeypatch.setattr(
+        equipment_booking_service, "_notify_coordinator_of_allocation", Mock()
+    )
+    client.rpc.return_value.execute.return_value = SimpleNamespace(
+        data={"outcome": "booked", "booking": SAVED_BOOKING}
+    )
+    line_id = "99999999-9999-9999-9999-999999999999"
+
+    equipment_booking_service.create_equipment_booking(
+        "tech-token", EquipmentBookingCreate(**VALID_BOOKING, line_id=line_id)
+    )
+
+    assert client.rpc.call_args.args[1]["p_line_id"] == line_id
+
+
+def _rpc_error(code):
+    return PostgrestAPIError({"message": "failed", "code": code, "details": None, "hint": None})
+
+
+def _item_range():
+    return EquipmentBookingRange(**{
+        "equipment_id": EQUIPMENT_ID,
+        "start": "2026-10-01T00:00:00+08:00",
+        "end": "2026-11-01T00:00:00+08:00",
+    })
+
+
+def _calendar_range():
+    return EquipmentBookingCalendarRange(**{
+        "start": "2026-10-01T00:00:00+08:00",
+        "end": "2026-11-01T00:00:00+08:00",
+    })
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: equipment_booking_service.list_equipment_bookings("t", _item_range()),
+        lambda: equipment_booking_service.list_all_equipment_bookings("t", _calendar_range()),
+        lambda: equipment_booking_service.create_equipment_booking(
+            "t", EquipmentBookingCreate(**VALID_BOOKING)
+        ),
+        lambda: equipment_booking_service.delete_equipment_booking("t", BOOKING_ID),
+    ],
+    ids=["list-item", "list-all", "create", "delete"],
+)
+def test_booking_database_failures_are_reported_for_every_call(booking_database, call):
+    client, _ = booking_database
+    client.rpc.return_value.execute.side_effect = _rpc_error("P0001")
+
+    with pytest.raises(AuthError) as caught:
+        call()
+
+    assert caught.value.status_code == 409
+    assert "already been processed" in caught.value.message
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: equipment_booking_service.list_equipment_bookings("t", _item_range()),
+        lambda: equipment_booking_service.list_all_equipment_bookings("t", _calendar_range()),
+    ],
+    ids=["list-item", "list-all"],
+)
+def test_an_unreadable_booking_list_is_reported(booking_database, call):
+    client, _ = booking_database
+    client.rpc.return_value.execute.return_value = SimpleNamespace(data={"not": "a list"})
+
+    with pytest.raises(AuthError) as caught:
+        call()
+
+    assert caught.value.status_code == 502
+
+
+@pytest.mark.parametrize(
+    "data, message",
+    [
+        (None, "was not saved"),
+        ({"outcome": "something else"}, "was not saved"),
+        ({"outcome": "booked", "booking": "not a dict"}, "was not saved"),
+        ({"outcome": "unavailable", "reason": "unknown"}, "could not be determined"),
+    ],
+    ids=["no-result", "unknown-outcome", "bad-booking", "unknown-reason"],
+)
+def test_an_unexpected_booking_result_is_reported(booking_database, data, message):
+    client, _ = booking_database
+    client.rpc.return_value.execute.return_value = SimpleNamespace(data=data)
+
+    with pytest.raises(AuthError) as caught:
+        equipment_booking_service.create_equipment_booking(
+            "t", EquipmentBookingCreate(**VALID_BOOKING)
+        )
+
+    assert caught.value.status_code == 502
+    assert message in caught.value.message

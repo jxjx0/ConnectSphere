@@ -18,12 +18,16 @@ _REQUEST_SELECT = (
     "session:event_sessions(id,name,start_time,end_time,equipment_requirements), "
     "items:equipment_request_items("
     "id,equipment_id,quantity,equipment:equipment(id,name,type)), "
-    "equipment_bookings(id,equipment_id,start_at,end_at,"
+    "lines:equipment_request_lines(id,item_name,quantity,specifics), "
+    "equipment_bookings(id,equipment_id,line_id,start_at,end_at,"
     "equipment:equipment(id,name))"
 )
 
 
 def _database_error(error: PostgrestAPIError) -> AuthError:
+    if error.code == "EQ001":
+        # Written for the user, e.g. "Allocate all the requested equipment..."
+        return AuthError(error.message, status_code=409)
     if error.code == "42501":
         return AuthError(
             "You do not have permission to perform this equipment request action.",
@@ -52,18 +56,17 @@ def submit_equipment_request(
     coordinator_id: str,
     equipment_request: EquipmentRequestSubmit,
 ) -> dict:
-    """Atomically save the request description and any supplied item details."""
+    """Atomically save what the session needs, one line per kind of equipment."""
     client = config.get_user_client(access_token)
     try:
         result = client.rpc(
-            "submit_equipment_request",
+            "submit_equipment_request_lines",
             {
                 "p_event_id": str(equipment_request.event_id),
                 "p_session_id": str(equipment_request.session_id),
-                "p_request_details": equipment_request.request_details,
-                "p_items": [
-                    item.model_dump(mode="json")
-                    for item in equipment_request.items
+                "p_lines": [
+                    line.model_dump(mode="json")
+                    for line in equipment_request.lines
                 ],
             },
         ).execute()
@@ -86,14 +89,10 @@ def submit_equipment_request(
         "event_id": str(equipment_request.event_id),
         "session_id": str(equipment_request.session_id),
         "coordinator_id": coordinator_id,
-        "request_details": equipment_request.request_details,
         "status": "Pending Technical Approval",
-        "items": [
-            {
-                "equipment_id": str(item.equipment_id),
-                "quantity": item.quantity,
-            }
-            for item in equipment_request.items
+        "lines": [
+            line.model_dump(mode="json")
+            for line in equipment_request.lines
         ],
     }
 
@@ -132,18 +131,15 @@ def review_equipment_request(
     request_id: str,
     review: EquipmentRequestReview,
 ) -> dict:
-    """Record an approve or reject decision; approval needs at least one booking."""
+    """Record a decision. Approval needs equipment; a rejection tells the Coordinator why."""
     client = config.get_user_client(access_token)
     if review.decision == "Approved":
         _require_allocated_equipment(client, request_id)
+    params = {"p_request_id": request_id, "p_decision": review.decision}
+    if review.rejection_reason:
+        params["p_rejection_reason"] = review.rejection_reason
     try:
-        result = client.rpc(
-            "review_equipment_request",
-            {
-                "p_request_id": request_id,
-                "p_decision": review.decision,
-            },
-        ).execute()
+        result = client.rpc("review_equipment_request", params).execute()
     except PostgrestAPIError as error:
         if error.code == "P0002":
             raise AuthError(
@@ -165,6 +161,22 @@ def review_equipment_request(
     reviewed_request = result.data
     if not isinstance(reviewed_request, dict) or not reviewed_request.get("status"):
         raise AuthError("Unable to review the equipment request.", status_code=502)
+    if review.decision == "Rejected" and reviewed_request.get("coordinator_id"):
+        session = (
+            f" ({reviewed_request['session_name']})"
+            if reviewed_request.get("session_name")
+            else ""
+        )
+        notification_service.notify(
+            user_id=reviewed_request["coordinator_id"],
+            notification_type="equipment_request_rejected",
+            title="Equipment request rejected",
+            body=(
+                f"The equipment request for '{reviewed_request.get('event_name') or 'your event'}'"
+                f"{session} was rejected. Reason: {review.rejection_reason}"
+            ),
+            event_id=reviewed_request.get("event_id"),
+        )
     return reviewed_request
 
 
@@ -223,11 +235,61 @@ def cancel_equipment_request(
     return cancelled
 
 
+def notify_line_unavailable(access_token: str, request_id: str, line_id: str) -> None:
+    """Tell the Coordinator that a requested item cannot be supplied.
+
+    For something with no item in the catalogue, which the booking function
+    cannot report because there is nothing to try booking.
+    """
+    client = config.get_user_client(access_token)
+    try:
+        lines = (
+            client.table("equipment_request_lines")
+            .select("item_name, request:equipment_requests(status,coordinator_id,event_id)")
+            .eq("id", line_id)
+            .eq("request_id", request_id)
+            .execute()
+        ).data
+    except PostgrestAPIError as error:
+        raise _database_error(error) from error
+    if not lines or not lines[0].get("request"):
+        raise AuthError("That equipment request was not found.", status_code=404)
+
+    line = lines[0]
+    equipment_request = line["request"]
+    if equipment_request["status"] != "Pending Technical Approval":
+        raise AuthError("This equipment request has already been reviewed.", status_code=409)
+
+    try:
+        events = (
+            client.table("events")
+            .select("name")
+            .eq("id", equipment_request["event_id"])
+            .execute()
+        ).data
+    except PostgrestAPIError:
+        events = []
+    event_name = events[0]["name"] if events else "your event"
+
+    notification = notification_service.notify(
+        user_id=equipment_request["coordinator_id"],
+        notification_type="equipment_requirement_unavailable",
+        title="Equipment is unavailable",
+        body=(
+            f"Technical Support cannot supply {line['item_name']} for {event_name}. "
+            "Please contact Technical Support about alternatives."
+        ),
+        event_id=equipment_request["event_id"],
+    )
+    if notification is None:
+        raise AuthError("The Coordinator could not be notified.", status_code=502)
+
+
 def _require_allocated_equipment(client, request_id: str) -> None:
     """Refuse approval until Technical Support has allocated at least one item.
 
-    The review database function does not check bookings, so an approved
-    request could otherwise hold no equipment.
+    The review database function checks a request's lines, but one from before
+    lines has none, so it could otherwise be approved holding no equipment.
     """
     try:
         bookings = (

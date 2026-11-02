@@ -35,12 +35,8 @@ ATTENDEE = Profile(
 VALID_REQUEST = {
     "event_id": "33333333-3333-3333-3333-333333333333",
     "session_id": "77777777-7777-7777-7777-777777777777",
-    "request_details": "Two projectors and a wireless microphone",
-    "items": [
-        {
-            "equipment_id": "44444444-4444-4444-4444-444444444444",
-            "quantity": 2,
-        }
+    "lines": [
+        {"item_name": "Projector", "quantity": 2, "specifics": "With HDMI"},
     ],
 }
 
@@ -49,20 +45,14 @@ SAVED_REQUEST = {
     "event_id": VALID_REQUEST["event_id"],
     "coordinator_id": COORDINATOR.id,
     "status": "Pending Technical Approval",
-    "request_details": VALID_REQUEST["request_details"],
+    "request_details": "2 x Projector (With HDMI)",
     "event": {
         "id": VALID_REQUEST["event_id"],
         "name": "Community Conference",
         "start_time": "2027-04-03T09:00:00+00:00",
         "end_time": "2027-04-03T17:00:00+00:00",
     },
-    "items": [
-        {
-            "equipment_id": VALID_REQUEST["items"][0]["equipment_id"],
-            "quantity": 2,
-            "equipment": {"name": "Projector", "type": "Visual"},
-        }
-    ],
+    "lines": VALID_REQUEST["lines"],
 }
 
 REQUEST_SELECT = (
@@ -70,7 +60,8 @@ REQUEST_SELECT = (
     "session:event_sessions(id,name,start_time,end_time,equipment_requirements), "
     "items:equipment_request_items("
     "id,equipment_id,quantity,equipment:equipment(id,name,type)), "
-    "equipment_bookings(id,equipment_id,start_at,end_at,equipment:equipment(id,name))"
+    "lines:equipment_request_lines(id,item_name,quantity,specifics), "
+    "equipment_bookings(id,equipment_id,line_id,start_at,end_at,equipment:equipment(id,name))"
 )
 
 
@@ -119,10 +110,10 @@ def test_coordinator_can_submit_equipment_request(client, monkeypatch):
     assert response.get_json()["request"] == SAVED_REQUEST
     submit.assert_called_once()
     assert submit.call_args.args[1] == COORDINATOR.id
-    assert submit.call_args.args[2].request_details == VALID_REQUEST["request_details"]
+    assert submit.call_args.args[2].lines[0].item_name == "Projector"
 
 
-def test_submission_allows_free_text_request_without_catalog_items(client, monkeypatch):
+def test_submission_allows_equipment_not_in_the_catalogue_and_no_specifics(client, monkeypatch):
     authenticate_as(monkeypatch, COORDINATOR)
     submit = Mock(return_value=SAVED_REQUEST)
     monkeypatch.setattr(
@@ -131,19 +122,21 @@ def test_submission_allows_free_text_request_without_catalog_items(client, monke
 
     response = client.post(
         "/equipment-requests",
-        json={**VALID_REQUEST, "items": []},
+        json={**VALID_REQUEST, "lines": [{"item_name": " Fog machine ", "quantity": 1, "specifics": "  "}]},
         headers={"Authorization": "Bearer coordinator-token"},
     )
 
     assert response.status_code == 201
-    submit.assert_called_once()
-    assert submit.call_args.args[2].items == []
+    line = submit.call_args.args[2].lines[0]
+    assert (line.item_name, line.quantity, line.specifics) == ("Fog machine", 1, None)
 
 
-@pytest.mark.parametrize("request_details", ["", "   ", None])
-def test_submission_requires_nonblank_request_details(
-    client, monkeypatch, request_details
-):
+@pytest.mark.parametrize(
+    "lines",
+    [[], None, [{"item_name": "   ", "quantity": 1}]],
+    ids=["no-lines", "null-lines", "blank-name"],
+)
+def test_submission_requires_equipment_to_be_named(client, monkeypatch, lines):
     authenticate_as(monkeypatch, COORDINATOR)
     submit = Mock(side_effect=AssertionError("invalid request must not be saved"))
     monkeypatch.setattr(
@@ -152,7 +145,7 @@ def test_submission_requires_nonblank_request_details(
 
     response = client.post(
         "/equipment-requests",
-        json={**VALID_REQUEST, "request_details": request_details},
+        json={**VALID_REQUEST, "lines": lines},
         headers={"Authorization": "Bearer coordinator-token"},
     )
 
@@ -178,7 +171,8 @@ def test_submission_requires_a_session(client, monkeypatch):
     submit.assert_not_called()
 
 
-def test_submission_rejects_non_positive_quantities(client, monkeypatch):
+@pytest.mark.parametrize("quantity", [0, -1, 101])
+def test_submission_rejects_quantities_out_of_range(client, monkeypatch, quantity):
     authenticate_as(monkeypatch, COORDINATOR)
     submit = Mock(side_effect=AssertionError("invalid request must not be saved"))
     monkeypatch.setattr(
@@ -187,7 +181,7 @@ def test_submission_rejects_non_positive_quantities(client, monkeypatch):
 
     payload = {
         **VALID_REQUEST,
-        "items": [{**VALID_REQUEST["items"][0], "quantity": 0}],
+        "lines": [{**VALID_REQUEST["lines"][0], "quantity": quantity}],
     }
     response = client.post(
         "/equipment-requests",
@@ -208,7 +202,10 @@ def test_submission_rejects_duplicate_equipment_items(client, monkeypatch):
 
     response = client.post(
         "/equipment-requests",
-        json={**VALID_REQUEST, "items": VALID_REQUEST["items"] * 2},
+        json={**VALID_REQUEST, "lines": [
+            {"item_name": "Projector", "quantity": 1},
+            {"item_name": "projector ", "quantity": 1},
+        ]},
         headers={"Authorization": "Bearer coordinator-token"},
     )
 
@@ -426,12 +423,11 @@ def test_service_returns_submit_result_without_a_post_save_read(
 
     client_factory.assert_called_once_with("coordinator-token")
     client.rpc.assert_called_once_with(
-        "submit_equipment_request",
+        "submit_equipment_request_lines",
         {
             "p_event_id": VALID_REQUEST["event_id"],
             "p_session_id": VALID_REQUEST["session_id"],
-            "p_request_details": VALID_REQUEST["request_details"],
-            "p_items": VALID_REQUEST["items"],
+            "p_lines": VALID_REQUEST["lines"],
         },
     )
     client.table.assert_not_called()
@@ -440,9 +436,8 @@ def test_service_returns_submit_result_without_a_post_save_read(
         "event_id": VALID_REQUEST["event_id"],
         "session_id": VALID_REQUEST["session_id"],
         "coordinator_id": COORDINATOR.id,
-        "request_details": VALID_REQUEST["request_details"],
         "status": "Pending Technical Approval",
-        "items": VALID_REQUEST["items"],
+        "lines": VALID_REQUEST["lines"],
     }
 
 
@@ -573,7 +568,8 @@ def test_service_returns_saved_review_status(
         data={"id": SAVED_REQUEST["id"], "status": decision}
     )
     client.rpc.return_value = rpc_query
-    review = EquipmentRequestReview(decision=decision)
+    reason = "Nothing suitable available" if decision == "Rejected" else None
+    review = EquipmentRequestReview(decision=decision, rejection_reason=reason)
 
     result = equipment_request_service.review_equipment_request(
         "staff-token", SAVED_REQUEST["id"], review
@@ -581,7 +577,11 @@ def test_service_returns_saved_review_status(
 
     client.rpc.assert_called_once_with(
         "review_equipment_request",
-        {"p_request_id": SAVED_REQUEST["id"], "p_decision": decision},
+        {
+            "p_request_id": SAVED_REQUEST["id"],
+            "p_decision": decision,
+            **({"p_rejection_reason": reason} if reason else {}),
+        },
     )
     assert result == {"id": SAVED_REQUEST["id"], "status": decision}
 
@@ -703,7 +703,7 @@ def test_service_rejects_without_checking_allocations(
     equipment_request_service.review_equipment_request(
         "staff-token",
         SAVED_REQUEST["id"],
-        EquipmentRequestReview(decision="Rejected"),
+        EquipmentRequestReview(decision="Rejected", rejection_reason="Nothing suitable"),
     )
 
     client.table.assert_not_called()
@@ -726,3 +726,332 @@ def test_service_maps_database_errors_while_listing_requests(
     assert caught.value.status_code == 502
     assert caught.value.message == "Unable to access equipment requests."
     assert caught.value.__cause__ is database_error
+
+
+def test_approving_before_everything_is_allocated_explains_why(monkeypatch):
+    client = Mock()
+    client.table.return_value = query_returning([{"id": "booking-1"}])
+    client.rpc.return_value.execute.side_effect = PostgrestAPIError({
+        "message": "Allocate all the requested equipment before approving this request.",
+        "code": "EQ001", "details": None, "hint": None,
+    })
+    monkeypatch.setattr(config, "get_user_client", lambda token: client)
+
+    with pytest.raises(AuthError) as caught:
+        equipment_request_service.review_equipment_request(
+            "tech-token", "request-1", EquipmentRequestReview(decision="Approved")
+        )
+
+    assert caught.value.status_code == 409
+    assert "Allocate all the requested equipment" in caught.value.message
+
+
+LINE_ID = "88888888-8888-8888-8888-888888888888"
+NOTIFY_URL = f"/equipment-requests/{SAVED_REQUEST['id']}/lines/{LINE_ID}/notify-unavailable"
+
+
+def test_tech_support_can_report_a_line_as_unavailable(client, monkeypatch):
+    authenticate_as(monkeypatch, TECH_SUPPORT)
+    notify = Mock()
+    monkeypatch.setattr(equipment_request_service, "notify_line_unavailable", notify)
+
+    response = client.post(NOTIFY_URL, headers={"Authorization": "Bearer tech-token"})
+
+    assert response.status_code == 204
+    notify.assert_called_once_with("tech-token", SAVED_REQUEST["id"], LINE_ID)
+
+
+def test_only_tech_support_can_report_a_line_as_unavailable(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+    notify = Mock(side_effect=AssertionError("must not reach the service"))
+    monkeypatch.setattr(equipment_request_service, "notify_line_unavailable", notify)
+
+    response = client.post(NOTIFY_URL, headers={"Authorization": "Bearer coordinator-token"})
+
+    assert response.status_code == 403
+
+
+def _line_database(monkeypatch, line_rows):
+    database = Mock()
+    tables = {
+        "equipment_request_lines": query_returning(line_rows),
+        "events": query_returning([{"name": "Gala"}]),
+    }
+    database.table.side_effect = tables.__getitem__
+    monkeypatch.setattr(config, "get_user_client", lambda token: database)
+
+
+def test_reporting_a_line_tells_its_coordinator(monkeypatch):
+    _line_database(monkeypatch, [{
+        "item_name": "Fog machine",
+        "request": {
+            "status": "Pending Technical Approval",
+            "coordinator_id": COORDINATOR.id,
+            "event_id": "event-1",
+        },
+    }])
+    notify = Mock(return_value=object())
+    monkeypatch.setattr(equipment_request_service.notification_service, "notify", notify)
+
+    equipment_request_service.notify_line_unavailable("tech-token", "request-1", "line-1")
+
+    assert notify.call_args.kwargs["user_id"] == COORDINATOR.id
+    assert "cannot supply Fog machine for Gala" in notify.call_args.kwargs["body"]
+
+
+@pytest.mark.parametrize(
+    "rows, status_code",
+    [
+        ([], 404),
+        ([{"item_name": "Fog machine", "request": {
+            "status": "Approved", "coordinator_id": "c", "event_id": "e",
+        }}], 409),
+    ],
+    ids=["unknown-line", "already-reviewed"],
+)
+def test_reporting_a_line_is_refused_when_it_no_longer_applies(monkeypatch, rows, status_code):
+    _line_database(monkeypatch, rows)
+    notify = Mock(side_effect=AssertionError("must not notify"))
+    monkeypatch.setattr(equipment_request_service.notification_service, "notify", notify)
+
+    with pytest.raises(AuthError) as caught:
+        equipment_request_service.notify_line_unavailable("tech-token", "request-1", "line-1")
+
+    assert caught.value.status_code == status_code
+
+
+def test_reporting_a_line_says_when_the_coordinator_could_not_be_told(monkeypatch):
+    _line_database(monkeypatch, [{
+        "item_name": "Fog machine",
+        "request": {
+            "status": "Pending Technical Approval",
+            "coordinator_id": COORDINATOR.id,
+            "event_id": "event-1",
+        },
+    }])
+    monkeypatch.setattr(
+        equipment_request_service.notification_service, "notify", Mock(return_value=None)
+    )
+
+    with pytest.raises(AuthError) as caught:
+        equipment_request_service.notify_line_unavailable("tech-token", "request-1", "line-1")
+
+    assert caught.value.status_code == 502
+
+
+def _database_with_failing_rpc(monkeypatch, code="P0001"):
+    database = Mock()
+    database.rpc.return_value.execute.side_effect = PostgrestAPIError({
+        "message": "failed", "code": code, "details": None, "hint": None,
+    })
+    monkeypatch.setattr(config, "get_user_client", lambda token: database)
+    return database
+
+
+def test_a_failed_queue_load_is_reported(monkeypatch):
+    _database_with_failing_rpc(monkeypatch)
+
+    with pytest.raises(AuthError) as caught:
+        equipment_request_service.list_tech_support_equipment_requests("tech-token")
+
+    assert caught.value.status_code == 409
+
+
+def test_an_unreadable_queue_is_reported(monkeypatch):
+    database = Mock()
+    database.rpc.return_value.execute.return_value = SimpleNamespace(data={"not": "a list"})
+    monkeypatch.setattr(config, "get_user_client", lambda token: database)
+
+    with pytest.raises(AuthError) as caught:
+        equipment_request_service.list_tech_support_equipment_requests("tech-token")
+
+    assert caught.value.status_code == 502
+
+
+def _failing_query():
+    query = Mock()
+    for method in ("select", "eq", "limit", "order"):
+        getattr(query, method).return_value = query
+    query.execute.side_effect = PostgrestAPIError({
+        "message": "failed", "code": "XX000", "details": None, "hint": None,
+    })
+    return query
+
+
+def test_reporting_a_line_reports_a_failed_lookup(monkeypatch):
+    database = Mock()
+    database.table.return_value = _failing_query()
+    monkeypatch.setattr(config, "get_user_client", lambda token: database)
+
+    with pytest.raises(AuthError) as caught:
+        equipment_request_service.notify_line_unavailable("tech-token", "request-1", "line-1")
+
+    assert caught.value.status_code == 502
+
+
+def test_reporting_a_line_still_sends_if_the_event_name_cannot_load(monkeypatch):
+    database = Mock()
+    tables = {
+        "equipment_request_lines": query_returning([{
+            "item_name": "Fog machine",
+            "request": {
+                "status": "Pending Technical Approval",
+                "coordinator_id": COORDINATOR.id,
+                "event_id": "event-1",
+            },
+        }]),
+        "events": _failing_query(),
+    }
+    database.table.side_effect = tables.__getitem__
+    monkeypatch.setattr(config, "get_user_client", lambda token: database)
+    notify = Mock(return_value=object())
+    monkeypatch.setattr(equipment_request_service.notification_service, "notify", notify)
+
+    equipment_request_service.notify_line_unavailable("tech-token", "request-1", "line-1")
+
+    assert "for your event" in notify.call_args.kwargs["body"]
+
+
+def test_approval_reports_a_failed_allocation_check(monkeypatch):
+    database = Mock()
+    database.table.return_value = _failing_query()
+    monkeypatch.setattr(config, "get_user_client", lambda token: database)
+
+    with pytest.raises(AuthError) as caught:
+        equipment_request_service.review_equipment_request(
+            "tech-token", "request-1", EquipmentRequestReview(decision="Approved")
+        )
+
+    assert caught.value.status_code == 502
+
+
+def test_a_coordinator_lists_all_their_requests_without_an_event(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+    list_requests = Mock(return_value=[SAVED_REQUEST])
+    monkeypatch.setattr(equipment_request_service, "list_equipment_requests", list_requests)
+
+    response = client.get("/equipment-requests", headers={"Authorization": "Bearer token"})
+
+    assert response.status_code == 200
+    list_requests.assert_called_once_with("token")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        f"/equipment-requests/{SAVED_REQUEST['id']}/review",
+        f"/equipment-requests/{SAVED_REQUEST['id']}/cancel",
+    ],
+    ids=["review", "cancel"],
+)
+def test_review_and_cancel_need_a_json_object(client, monkeypatch, path):
+    authenticate_as(monkeypatch, TECH_SUPPORT)
+
+    response = client.patch(path, json=["not", "an", "object"], headers={"Authorization": "Bearer token"})
+
+    assert response.status_code == 400
+
+
+def test_reporting_a_line_needs_valid_ids(client, monkeypatch):
+    authenticate_as(monkeypatch, TECH_SUPPORT)
+    notify = Mock(side_effect=AssertionError("must not reach the service"))
+    monkeypatch.setattr(equipment_request_service, "notify_line_unavailable", notify)
+
+    response = client.post(
+        "/equipment-requests/not-an-id/lines/also-not/notify-unavailable",
+        headers={"Authorization": "Bearer token"},
+    )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"decision": "Rejected"},
+        {"decision": "Rejected", "rejection_reason": "   "},
+        {"decision": "Rejected", "rejection_reason": "x" * 501},
+    ],
+    ids=["missing", "blank", "too-long"],
+)
+def test_rejecting_needs_a_reason(fields):
+    with pytest.raises(ValueError):
+        EquipmentRequestReview(**fields)
+
+
+def test_a_rejection_reason_is_tidied_and_ignored_when_approving():
+    rejected = EquipmentRequestReview(decision="Rejected", rejection_reason="  No stock ")
+    approved = EquipmentRequestReview(decision="Approved", rejection_reason="No stock")
+
+    assert rejected.rejection_reason == "No stock"
+    assert approved.rejection_reason is None
+
+
+def test_rejecting_without_a_reason_never_reaches_the_service(client, monkeypatch):
+    authenticate_as(monkeypatch, TECH_SUPPORT)
+    review = Mock(side_effect=AssertionError("must not reach the service"))
+    monkeypatch.setattr(equipment_request_service, "review_equipment_request", review)
+
+    response = client.patch(
+        f"/equipment-requests/{SAVED_REQUEST['id']}/review",
+        json={"decision": "Rejected", "rejection_reason": "  "},
+        headers={"Authorization": "Bearer token"},
+    )
+
+    assert response.status_code == 400
+    assert "Give a reason" in response.get_json()["errors"][0]
+
+
+def _rejected_result(**changes):
+    return {
+        "id": "request-1",
+        "status": "Rejected",
+        "rejection_reason": "No stock",
+        "coordinator_id": COORDINATOR.id,
+        "event_id": "event-1",
+        "event_name": "Gala",
+        "session_name": "Dinner",
+        **changes,
+    }
+
+
+@pytest.mark.parametrize(
+    "changes, expected",
+    [
+        ({}, "for 'Gala' (Dinner) was rejected. Reason: No stock"),
+        ({"session_name": None}, "for 'Gala' was rejected. Reason: No stock"),
+        ({"event_name": None}, "for 'your event' (Dinner) was rejected. Reason: No stock"),
+    ],
+    ids=["session", "no-session", "no-event-name"],
+)
+def test_rejecting_tells_the_coordinator_why(monkeypatch, changes, expected):
+    database = Mock()
+    database.rpc.return_value.execute.return_value = SimpleNamespace(data=_rejected_result(**changes))
+    monkeypatch.setattr(config, "get_user_client", lambda token: database)
+    notify = Mock()
+    monkeypatch.setattr(equipment_request_service.notification_service, "notify", notify)
+
+    equipment_request_service.review_equipment_request(
+        "tech-token", "request-1", EquipmentRequestReview(decision="Rejected", rejection_reason="No stock")
+    )
+
+    assert notify.call_args.kwargs["user_id"] == COORDINATOR.id
+    assert notify.call_args.kwargs["notification_type"] == "equipment_request_rejected"
+    assert expected in notify.call_args.kwargs["body"]
+
+
+def test_approving_does_not_send_the_rejection_notice(monkeypatch):
+    database = Mock()
+    database.table.return_value = query_returning([{"id": "booking-1"}])
+    database.rpc.return_value.execute.return_value = SimpleNamespace(
+        data={"id": "request-1", "status": "Approved", "coordinator_id": COORDINATOR.id}
+    )
+    monkeypatch.setattr(config, "get_user_client", lambda token: database)
+    notify = Mock(side_effect=AssertionError("must not notify"))
+    monkeypatch.setattr(equipment_request_service.notification_service, "notify", notify)
+
+    result = equipment_request_service.review_equipment_request(
+        "tech-token", "request-1", EquipmentRequestReview(decision="Approved")
+    )
+
+    assert result["status"] == "Approved"

@@ -1,5 +1,7 @@
 """Equipment time bookings through Supabase."""
 
+import logging
+
 from postgrest import APIError as PostgrestAPIError
 
 import config
@@ -11,8 +13,13 @@ from models.equipment_booking import (
 from services import notification_service
 from services.auth_service import AuthError
 
+logger = logging.getLogger(__name__)
+
 
 def _database_error(error: PostgrestAPIError) -> AuthError:
+    if error.code == "EQ001":
+        # Written for the user, e.g. "All 2 of Projector have already been allocated."
+        return AuthError(error.message, status_code=409)
     if error.code in {"PGRST202", "PGRST205"}:
         return AuthError(
             "The equipment booking database setup is missing or out of date. "
@@ -93,22 +100,72 @@ def list_all_equipment_bookings(
     return result.data
 
 
+def _notify_coordinator_of_allocation(booking: dict) -> None:
+    """Tell the request's Coordinator; a failure here must not undo the booking."""
+    try:
+        client = config.get_admin_client()
+        equipment_request = (
+            client.table("equipment_requests")
+            .select("coordinator_id,event_id,session_id")
+            .eq("id", booking["request_id"])
+            .single()
+            .execute()
+        ).data
+        equipment_name = (
+            client.table("equipment")
+            .select("name")
+            .eq("id", booking["equipment_id"])
+            .single()
+            .execute()
+        ).data["name"]
+        event_name = (
+            client.table("events")
+            .select("name")
+            .eq("id", equipment_request["event_id"])
+            .single()
+            .execute()
+        ).data["name"]
+        session = ""
+        if equipment_request.get("session_id"):
+            session_name = (
+                client.table("event_sessions")
+                .select("name")
+                .eq("id", equipment_request["session_id"])
+                .single()
+                .execute()
+            ).data["name"]
+            session = f" ({session_name})"
+    except Exception:
+        logger.exception(
+            "Could not look up allocation details for booking %s", booking.get("id")
+        )
+        return
+
+    notification_service.notify(
+        user_id=equipment_request["coordinator_id"],
+        notification_type="equipment_allocated",
+        title="Equipment allocated",
+        body=f"{equipment_name} has been allocated to '{event_name}'{session}.",
+        event_id=equipment_request["event_id"],
+    )
+
+
 def create_equipment_booking(
     access_token: str,
     booking: EquipmentBookingCreate,
 ) -> dict:
     """Book a requested item for its event and report any schedule conflict."""
     client = config.get_user_client(access_token)
+    params = {
+        "p_equipment_id": str(booking.equipment_id),
+        "p_request_id": str(booking.request_id),
+        "p_start_at": booking.start_at.isoformat(),
+        "p_end_at": booking.end_at.isoformat(),
+    }
+    if booking.line_id is not None:
+        params["p_line_id"] = str(booking.line_id)
     try:
-        result = client.rpc(
-            "create_equipment_booking",
-            {
-                "p_equipment_id": str(booking.equipment_id),
-                "p_request_id": str(booking.request_id),
-                "p_start_at": booking.start_at.isoformat(),
-                "p_end_at": booking.end_at.isoformat(),
-            },
-        ).execute()
+        result = client.rpc("create_equipment_booking", params).execute()
     except PostgrestAPIError as error:
         raise _database_error(error) from error
 
@@ -164,6 +221,7 @@ def create_equipment_booking(
         outcome.get("booking"), dict
     ):
         raise AuthError("Equipment booking was not saved.", status_code=502)
+    _notify_coordinator_of_allocation(outcome["booking"])
     return outcome["booking"]
 
 

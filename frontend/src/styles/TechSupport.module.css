@@ -1,0 +1,342 @@
+/* Layout for Technical Support's equipment pages. The workflow follows the
+   Venue Staff's request review; the look comes from TechSupportLayout.css. */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* --- Catalogue ------------------------------------------------------- */
+
+.filters {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+@media (min-width: 40rem) {
+  .filters {
+    grid-template-columns: 2fr 1fr 1fr;
+  }
+}
+
+.resultBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.equipmentId {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+}
+
+.dialog {
+  width: min(32rem, calc(100vw - 2 * var(--space-5)));
+  padding: var(--space-6);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.dialog::backdrop {
+  background: rgba(23, 28, 34, 0.5);
+}
+
+.dialogTitle {
+  margin-bottom: var(--space-4);
+  font-size: 1.25rem;
+}
+
+/* --- Request review -------------------------------------------------- */
+
+.viewTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.splitLayout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+@media (min-width: 60rem) {
+  .splitLayout {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.listSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.requestList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.selectable {
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.selectable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.selected {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--rule);
+  border-top: 4px solid #ddd6fe;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.cardApproved {
+  border-top-color: var(--success);
+}
+
+.cardRejected {
+  border-top-color: var(--danger);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.cardTitle {
+  color: var(--ink);
+  font-size: 0.9375rem;
+}
+
+.details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.details dt {
+  color: var(--ink-muted);
+}
+
+.details dd {
+  margin: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.fullWidth {
+  grid-column: 1 / -1;
+}
+
+.allocatedLine {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.allocatedItem {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.allocatedRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.progressRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+/* --- Allocation panel ------------------------------------------------ */
+
+.lineTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.lineTab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--rule-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: 600 14px var(--font-body);
+  cursor: pointer;
+}
+
+.lineTab:hover {
+  background: var(--sunken);
+}
+
+.lineTabActive {
+  border-color: var(--accent);
+  background: var(--accent-faint);
+}
+
+.lineSummary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+@media (min-width: 60rem) {
+  .panel {
+    position: sticky;
+    top: var(--space-5);
+    max-height: calc(100vh - 2 * var(--space-5));
+    overflow-y: auto;
+  }
+}
+
+.panelHeader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--rule);
+}
+
+.panelTitle {
+  color: var(--ink);
+  font-size: 1.0625rem;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding-left: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  list-style: none;
+}
+
+.option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--rule);
+}
+
+.option:last-child {
+  border-bottom: 0;
+}
+
+.optionChosen {
+  background: var(--accent-faint);
+}
+
+.optionText {
+  display: flex;
+  flex: 1 1 11rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.optionText:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.optionName {
+  font-weight: 600;
+}
+
+.optionMeta {
+  color: var(--ink-muted);
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.suggested {
+  border-color: #ddd6fe;
+  background: var(--secondary-faint);
+  color: var(--secondary);
+}

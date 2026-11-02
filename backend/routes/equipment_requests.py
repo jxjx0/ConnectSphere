@@ -109,6 +109,25 @@ def review_equipment_request(request_id):
     return jsonify({"request": updated_request}), 200
 
 
+@equipment_requests_bp.post(
+    "/equipment-requests/<request_id>/lines/<line_id>/notify-unavailable"
+)
+@require_auth
+def notify_equipment_line_unavailable(request_id, line_id):
+    if _get_role() != Role.TECH_SUPPORT:
+        raise AuthError(
+            "Only Technical Support can report unavailable equipment.",
+            status_code=403,
+        )
+    try:
+        request_id, line_id = str(UUID(request_id)), str(UUID(line_id))
+    except ValueError:
+        return jsonify({"errors": ["The request and line must be valid IDs."]}), 400
+
+    equipment_request_service.notify_line_unavailable(g.access_token, request_id, line_id)
+    return "", 204
+
+
 @equipment_requests_bp.patch("/equipment-requests/<request_id>/cancel")
 @require_auth
 def cancel_equipment_request(request_id):
