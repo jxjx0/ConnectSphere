@@ -168,7 +168,7 @@ export default function VenueSearchPage() {
     <AppShell>
       <div className="content__header venue-search__header">
         <Link to={eventId !== null ? `/event-reviews/${encodeURIComponent(eventId)}` : '/dashboard'} className="venue-search__back">
-          {eventId !== null ? '← Back to Event' : '← Back to Dashboard'}
+          ← Back
         </Link>
         <h1>Search Venues</h1>
         <p className="lead">Find a suitable venue for your event.</p>

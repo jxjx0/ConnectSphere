@@ -33,7 +33,10 @@ export default function VenueAvailabilityPage() {
   if (fromSearch) returnSearch.set('resume', '1')
 
   const backTo = fromSearch ? `/venues/search?${returnSearch}` : fromCatalogue ? '/venues' : '/dashboard'
-  const backLabel = fromSearch ? 'Back to Search Results' : fromCatalogue ? 'Back to Venue Catalogue' : 'Back to Dashboard'
+  // Venue Staff share this page and keep their own wording.
+  const backLabel = user.role === 'coordinator'
+    ? 'Back'
+    : fromCatalogue ? 'Back to Venue Catalogue' : 'Back to Dashboard'
 
   // Resolve eventId from search params or search context
   const eventId = searchParams.get('eventId') || (fromSearch ? returnSearch.get('eventId') : null)

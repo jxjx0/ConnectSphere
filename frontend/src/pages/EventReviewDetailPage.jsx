@@ -367,7 +367,7 @@ export default function EventReviewDetailPage() {
       <AppShell>
         <div className="page-state">
           <p>{error}</p>
-          <Link to="/dashboard">Back to dashboard</Link>
+          <Link to="/dashboard">← Back</Link>
         </div>
       </AppShell>
     )
@@ -422,7 +422,7 @@ export default function EventReviewDetailPage() {
     <AppShell>
       <div className="content">
         <Link to="/dashboard" className="backlink">
-          ← Back to events
+          ← Back
         </Link>
 
         <header className="record-head">

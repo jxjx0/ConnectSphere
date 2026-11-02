@@ -164,7 +164,7 @@ function CoordinatorEquipmentRequests() {
       <div className="content">
         {requestedEventId && (
           <Link to={`/event-reviews/${encodeURIComponent(requestedEventId)}`} className="backlink">
-            ← Back to event
+            ← Back
           </Link>
         )}
         <div className="content__header">
