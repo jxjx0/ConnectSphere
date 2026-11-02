@@ -70,6 +70,14 @@ function toPayload(form) {
   }
 }
 
+function OrganiserShell({ children }) {
+  return (
+    <div className="organiser-ui">
+      <AppShell>{children}</AppShell>
+    </div>
+  )
+}
+
 export default function EventRequestPage() {
   const { token } = useAuth()
   const navigate = useNavigate()
@@ -185,9 +193,9 @@ export default function EventRequestPage() {
 
   if (loading) {
     return (
-      <AppShell>
+      <OrganiserShell>
         <p className="page-state">Loading your draft…</p>
-      </AppShell>
+      </OrganiserShell>
     )
   }
 
@@ -195,21 +203,25 @@ export default function EventRequestPage() {
   // as "not found" -- see get_my_draft in event_service.py.
   if (loadError) {
     return (
-      <AppShell>
+      <OrganiserShell>
         <div className="page-state">
           <p>{loadError}</p>
           <Link to="/my-events?tab=drafts">Back to my drafts</Link>
         </div>
-      </AppShell>
+      </OrganiserShell>
     )
   }
 
   if (submitted) {
     return (
-      <AppShell>
-        <div className="content">
+      <OrganiserShell>
+        <div className="content organiser-request">
           <div className="content__header">
+            <p className="organiser-request__eyebrow">Request complete</p>
             <h1>Event request submitted</h1>
+            <p className="lead">
+              Your event is now in the review process.
+            </p>
           </div>
 
           <p className="form-success" role="status">
@@ -238,23 +250,24 @@ export default function EventRequestPage() {
             <Link to="/dashboard">Back to dashboard</Link>
           </div>
         </div>
-      </AppShell>
+      </OrganiserShell>
     )
   }
 
   if (reviewing) {
     const sessions = sortSessionsByStart(form.sessions)
     return (
-      <AppShell>
-        <div className="content">
+      <OrganiserShell>
+        <div className="content organiser-request organiser-request--review">
           <div className="content__header">
+            <p className="organiser-request__eyebrow">Final step</p>
             <h1>Review your request</h1>
             <p className="lead">
               Check the details below. Nothing has been sent yet.
             </p>
           </div>
 
-          <section className="stack stack--tight">
+          <section className="organiser-request__section stack stack--tight">
             <h2 className="section-title">Event details</h2>
             <dl className="detail-list">
               <div className="detail-list__row">
@@ -280,7 +293,7 @@ export default function EventRequestPage() {
             </dl>
           </section>
 
-          <section className="stack stack--tight">
+          <section className="organiser-request__section stack stack--tight">
             <h2 className="section-title">Sessions ({sessions.length})</h2>
             {sessions.map((session) => (
               <div className="session-card" key={session.formKey}>
@@ -339,14 +352,17 @@ export default function EventRequestPage() {
             </button>
           </div>
         </div>
-      </AppShell>
+      </OrganiserShell>
     )
   }
 
   return (
-    <AppShell>
-      <div className="content">
+    <OrganiserShell>
+      <div className="content organiser-request organiser-request--form">
         <div className="content__header">
+          <p className="organiser-request__eyebrow">
+            {draftId ? 'Saved draft' : 'Plan an event'}
+          </p>
           <h1>{draftId ? 'Continue your draft' : 'Request an event'}</h1>
           <p className="lead">
             Tell us about your event. You do not need to choose a venue or
@@ -355,8 +371,12 @@ export default function EventRequestPage() {
           </p>
         </div>
 
-        <form className="form" onSubmit={handleReview}>
-          <section className="stack stack--tight">
+        <form
+          className="form organiser-request__form"
+          onSubmit={handleReview}
+          aria-label={draftId ? 'Continue your event draft' : 'Request an event'}
+        >
+          <section className="organiser-request__section stack stack--tight">
             <h2 className="section-title">Event details</h2>
 
             <div className="field">
@@ -445,7 +465,7 @@ export default function EventRequestPage() {
             </div>
           </section>
 
-          <section className="stack stack--tight">
+          <section className="organiser-request__section stack stack--tight">
             <h2 className="section-title">Sessions</h2>
             <p className="field__hint">
               Add a session for each block of time or each space you need.
@@ -507,6 +527,6 @@ export default function EventRequestPage() {
           </div>
         </form>
       </div>
-    </AppShell>
+    </OrganiserShell>
   )
 }
