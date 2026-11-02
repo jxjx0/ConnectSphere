@@ -5,8 +5,15 @@ import { Link, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
 import CoordinatorTabs from './CoordinatorTabs'
+import LeadTabs from './LeadTabs'
 import NotificationDropdown from './NotificationDropdown'
 import './WorkspaceLayout.css'
+
+// Roles with their own tabs and workspace, on every page they share with others.
+const WORKSPACE_TABS = {
+  coordinator: CoordinatorTabs,
+  event_coordinator_lead: LeadTabs,
+}
 
 export default function AppShell({ children }) {
   const { user, logout } = useAuth()
@@ -17,7 +24,7 @@ export default function AppShell({ children }) {
     navigate('/')
   }
 
-  const isCoordinator = user.role === 'coordinator'
+  const WorkspaceTabs = WORKSPACE_TABS[user.role]
   const shell = (
     <>
       <header className="topbar">
@@ -41,12 +48,11 @@ export default function AppShell({ children }) {
       </header>
 
       <main className="app-main">
-        {isCoordinator && <CoordinatorTabs />}
+        {WorkspaceTabs && <WorkspaceTabs />}
         {children}
       </main>
     </>
   )
 
-  // Coordinators have their own workspace on every page they share with others.
-  return isCoordinator ? <div className="workspace-ui">{shell}</div> : shell
+  return WorkspaceTabs ? <div className="workspace-ui">{shell}</div> : shell
 }
