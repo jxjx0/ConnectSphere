@@ -116,7 +116,7 @@ function formatTime(date) {
 
 // The stages an Organiser may ask to change their event from. Must match
 // the check in the submit_session_change_request database function.
-export const CHANGEABLE_STATUSES = ['under_review', 'planning', 'confirmed']
+export const CHANGEABLE_STATUSES = ['under_review', 'planning', 'awaiting_safety_check', 'confirmed']
 
 // The stages an Organiser may ask to cancel their event from. Must match
 // the check in the submit_event_cancellation_request database function.

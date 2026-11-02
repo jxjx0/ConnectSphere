@@ -395,7 +395,7 @@ def test_service_sends_normalized_change_and_reason_to_atomic_rpc(monkeypatch):
         (
             "Event cannot be changed in its current status",
             409,
-            "Only events under review, in planning or confirmed can be changed.",
+            "Only events under review, in planning, awaiting a safety check or confirmed can be changed.",
         ),
         (
             "A pending change request already exists",
