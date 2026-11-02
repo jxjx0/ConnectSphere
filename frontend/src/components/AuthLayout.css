@@ -31,11 +31,6 @@
   padding: 24px 5%;
   border-bottom: 1px solid var(--rule);
 }
-.auth-brand { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; font-weight: 750; font-size: 20px; letter-spacing: -1px; color: var(--ink); }
-.auth-brand:hover { color: var(--ink); }
-.auth-brand__dot { margin-left: -8px; color: var(--accent); }
-.auth-brand__mark { position: relative; display: grid; place-items: center; width: 32px; height: 32px; background: var(--brand-orange); color: #111827; border-radius: 50%; font-size: 32px; line-height: 1; font-weight: 600; }
-.auth-brand__mark span { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--brand-purple); right: -2px; bottom: 1px; }
 .auth-header nav { display: flex; align-items: center; gap: 24px; }
 .auth-nav-link { color: var(--ink); font-size: 14px; text-decoration: none; font-weight: 600; }
 .auth-back { align-self: flex-start; display: inline-flex; align-items: center; justify-content: flex-start; gap: 8px; min-height: 44px; padding: 0; font-size: 14px; color: var(--ink-muted); text-decoration: none; }
@@ -94,8 +89,6 @@
 }
 @media (max-width: 479px) {
   .auth-header { padding: 16px; gap: 12px; }
-  .auth-brand { font-size: 16px; }
-  .auth-brand__mark { width: 28px; height: 28px; font-size: 28px; }
   .auth-header nav { gap: 12px; }
   .auth-nav-link { font-size: 12px; }
   .auth-layout h1 { font-size: 28px; }

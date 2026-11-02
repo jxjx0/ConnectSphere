@@ -1,14 +1,12 @@
-import { Link, NavLink } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
+import BrandLogo from './BrandLogo'
 import './AuthLayout.css'
 
 export default function SplitLayout({ children, foot }) {
   return (
     <div className="split auth-layout">
       <header className="auth-header">
-        <Link to="/" className="auth-brand" aria-label="ConnectSphere home">
-          <span className="auth-brand__mark" aria-hidden="true">c<span /></span>
-          ConnectSphere<span className="auth-brand__dot">.</span>
-        </Link>
+        <BrandLogo to="/" />
         <nav aria-label="Account navigation">
           <NavLink to="/login" className="auth-nav-link">Log in</NavLink>
         </nav>

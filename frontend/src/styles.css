@@ -183,19 +183,6 @@ a:hover {
   gap: var(--space-4);
 }
 
-.wordmark {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--ink);
-  text-decoration: none;
-}
-
-.wordmark:hover {
-  color: var(--ink);
-}
-
 .rail__blurb {
   color: var(--ink-muted);
   font-size: 0.875rem;

@@ -39,8 +39,6 @@
 .workspace-ui .topbar { background: var(--surface); padding: 20px 32px; }
 .workspace-ui .topbar__inner { max-width: 1160px; }
 .workspace-ui .topbar__user { font-size: 14px; }
-.workspace-ui .wordmark { display: inline-flex; align-items: center; gap: 12px; font-family: inherit; font-size: 20px; font-weight: 750; letter-spacing: -.7px; text-transform: none; }
-.workspace-ui .wordmark::before { content: ''; width: 20px; height: 20px; border: 5px solid var(--brand-primary); border-radius: 50%; flex-shrink: 0; }
 .workspace-ui .app-main { max-width: 1224px; padding: 32px 32px 64px; margin: 0 auto; gap: 32px; }
 .workspace-ui .inbox__panel { box-shadow: none; border-color: var(--rule-strong); }
 .workspace-ui :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -143,7 +141,6 @@
 @media (max-width: 767px) {
   .workspace-ui .topbar { padding: 16px; }
   .workspace-ui .topbar__user { gap: 12px; }
-  .workspace-ui .wordmark { gap: 8px; font-size: 16px; }
   .workspace-ui .app-main { padding: 24px 16px 48px; }
   .workspace-ui h1 { font-size: 28px; }
   .workspace-ui .lead { font-size: 14px; }
