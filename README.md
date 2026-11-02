@@ -361,6 +361,8 @@ This is a GitHub repository setting, separate from the workflow file.
 
 Utilize playwright to simulate a real user interaction with the application.
 To use playwright: simply type in your terminal
+turn on backend
+turn on frontend
 python -m playwright codegen --target python http://localhost:5173/ (or your the current running link)
 
 Once done, copy the code from the playwright window (in run function, after page.goto(link)), you can put it in e2e folder, and make it a test.
