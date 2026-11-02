@@ -568,7 +568,8 @@ def test_service_returns_saved_review_status(
         data={"id": SAVED_REQUEST["id"], "status": decision}
     )
     client.rpc.return_value = rpc_query
-    review = EquipmentRequestReview(decision=decision)
+    reason = "Nothing suitable available" if decision == "Rejected" else None
+    review = EquipmentRequestReview(decision=decision, rejection_reason=reason)
 
     result = equipment_request_service.review_equipment_request(
         "staff-token", SAVED_REQUEST["id"], review
@@ -576,7 +577,11 @@ def test_service_returns_saved_review_status(
 
     client.rpc.assert_called_once_with(
         "review_equipment_request",
-        {"p_request_id": SAVED_REQUEST["id"], "p_decision": decision},
+        {
+            "p_request_id": SAVED_REQUEST["id"],
+            "p_decision": decision,
+            **({"p_rejection_reason": reason} if reason else {}),
+        },
     )
     assert result == {"id": SAVED_REQUEST["id"], "status": decision}
 
@@ -698,7 +703,7 @@ def test_service_rejects_without_checking_allocations(
     equipment_request_service.review_equipment_request(
         "staff-token",
         SAVED_REQUEST["id"],
-        EquipmentRequestReview(decision="Rejected"),
+        EquipmentRequestReview(decision="Rejected", rejection_reason="Nothing suitable"),
     )
 
     client.table.assert_not_called()
@@ -958,3 +963,95 @@ def test_reporting_a_line_needs_valid_ids(client, monkeypatch):
     )
 
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"decision": "Rejected"},
+        {"decision": "Rejected", "rejection_reason": "   "},
+        {"decision": "Rejected", "rejection_reason": "x" * 501},
+    ],
+    ids=["missing", "blank", "too-long"],
+)
+def test_rejecting_needs_a_reason(fields):
+    with pytest.raises(ValueError):
+        EquipmentRequestReview(**fields)
+
+
+def test_a_rejection_reason_is_tidied_and_ignored_when_approving():
+    rejected = EquipmentRequestReview(decision="Rejected", rejection_reason="  No stock ")
+    approved = EquipmentRequestReview(decision="Approved", rejection_reason="No stock")
+
+    assert rejected.rejection_reason == "No stock"
+    assert approved.rejection_reason is None
+
+
+def test_rejecting_without_a_reason_never_reaches_the_service(client, monkeypatch):
+    authenticate_as(monkeypatch, TECH_SUPPORT)
+    review = Mock(side_effect=AssertionError("must not reach the service"))
+    monkeypatch.setattr(equipment_request_service, "review_equipment_request", review)
+
+    response = client.patch(
+        f"/equipment-requests/{SAVED_REQUEST['id']}/review",
+        json={"decision": "Rejected", "rejection_reason": "  "},
+        headers={"Authorization": "Bearer token"},
+    )
+
+    assert response.status_code == 400
+    assert "Give a reason" in response.get_json()["errors"][0]
+
+
+def _rejected_result(**changes):
+    return {
+        "id": "request-1",
+        "status": "Rejected",
+        "rejection_reason": "No stock",
+        "coordinator_id": COORDINATOR.id,
+        "event_id": "event-1",
+        "event_name": "Gala",
+        "session_name": "Dinner",
+        **changes,
+    }
+
+
+@pytest.mark.parametrize(
+    "changes, expected",
+    [
+        ({}, "for 'Gala' (Dinner) was rejected. Reason: No stock"),
+        ({"session_name": None}, "for 'Gala' was rejected. Reason: No stock"),
+        ({"event_name": None}, "for 'your event' (Dinner) was rejected. Reason: No stock"),
+    ],
+    ids=["session", "no-session", "no-event-name"],
+)
+def test_rejecting_tells_the_coordinator_why(monkeypatch, changes, expected):
+    database = Mock()
+    database.rpc.return_value.execute.return_value = SimpleNamespace(data=_rejected_result(**changes))
+    monkeypatch.setattr(config, "get_user_client", lambda token: database)
+    notify = Mock()
+    monkeypatch.setattr(equipment_request_service.notification_service, "notify", notify)
+
+    equipment_request_service.review_equipment_request(
+        "tech-token", "request-1", EquipmentRequestReview(decision="Rejected", rejection_reason="No stock")
+    )
+
+    assert notify.call_args.kwargs["user_id"] == COORDINATOR.id
+    assert notify.call_args.kwargs["notification_type"] == "equipment_request_rejected"
+    assert expected in notify.call_args.kwargs["body"]
+
+
+def test_approving_does_not_send_the_rejection_notice(monkeypatch):
+    database = Mock()
+    database.table.return_value = query_returning([{"id": "booking-1"}])
+    database.rpc.return_value.execute.return_value = SimpleNamespace(
+        data={"id": "request-1", "status": "Approved", "coordinator_id": COORDINATOR.id}
+    )
+    monkeypatch.setattr(config, "get_user_client", lambda token: database)
+    notify = Mock(side_effect=AssertionError("must not notify"))
+    monkeypatch.setattr(equipment_request_service.notification_service, "notify", notify)
+
+    result = equipment_request_service.review_equipment_request(
+        "tech-token", "request-1", EquipmentRequestReview(decision="Approved")
+    )
+
+    assert result["status"] == "Approved"

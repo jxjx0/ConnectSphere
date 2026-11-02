@@ -94,6 +94,12 @@ export function RequestDetails({ request, removingId, onRemove }) {
           </dd>
         ))}
       </div>
+      {request.status === 'Rejected' && request.rejection_reason && (
+        <div className={styles.fullWidth}>
+          <dt>Rejection reason</dt>
+          <dd>{request.rejection_reason}</dd>
+        </div>
+      )}
       <div className={styles.fullWidth}>
         <dt>Allocated</dt>
         {lines.map((line) => (
@@ -126,6 +132,7 @@ export default function EquipmentReviewPage() {
   const [selectedId, setSelectedId] = useState(null)
   const [processingId, setProcessingId] = useState(null)
   const [rejectingId, setRejectingId] = useState(null)
+  const [rejectionReasons, setRejectionReasons] = useState({})
   const [removingId, setRemovingId] = useState('')
   const [actionErrors, setActionErrors] = useState({})
 
@@ -153,10 +160,16 @@ export default function EquipmentReviewPage() {
       `Approve the equipment request for ${request.event?.name || 'this event'}?`,
     )) return
 
+    const reason = decision === 'Rejected' ? rejectionReasons[request.id]?.trim() : undefined
+    if (decision === 'Rejected' && !reason) {
+      setActionError(request.id, 'Please provide a reason for rejection.')
+      return
+    }
+
     setProcessingId(request.id)
     setActionError(request.id, '')
     try {
-      await reviewEquipmentRequest(request.id, decision, token)
+      await reviewEquipmentRequest(request.id, decision, token, reason)
       setRejectingId(null)
       await refreshRequests()
     } catch (caught) {
@@ -266,24 +279,44 @@ export default function EquipmentReviewPage() {
                         )}
                         <div className="form-actions" onClick={(click) => click.stopPropagation()}>
                           {rejectingId === request.id ? (
-                            <>
-                              <button
-                                type="button"
-                                className="button"
-                                disabled={isProcessing}
-                                onClick={() => handleReview(request, 'Rejected')}
-                              >
-                                {isProcessing ? 'Saving…' : 'Confirm rejection'}
-                              </button>
-                              <button
-                                type="button"
-                                className="button button--secondary"
-                                disabled={isProcessing}
-                                onClick={() => setRejectingId(null)}
-                              >
-                                Cancel
-                              </button>
-                            </>
+                            <form
+                              className="stack stack--tight"
+                              style={{ width: '100%' }}
+                              onSubmit={(submit) => {
+                                submit.preventDefault()
+                                handleReview(request, 'Rejected')
+                              }}
+                            >
+                              <div className="field">
+                                <label htmlFor={`rejection-${request.id}`}>Reason for rejection</label>
+                                <textarea
+                                  id={`rejection-${request.id}`}
+                                  rows={2}
+                                  maxLength={500}
+                                  required
+                                  autoFocus
+                                  placeholder="The Coordinator will see this."
+                                  value={rejectionReasons[request.id] || ''}
+                                  onChange={(change) => setRejectionReasons((current) => ({
+                                    ...current,
+                                    [request.id]: change.target.value,
+                                  }))}
+                                />
+                              </div>
+                              <div className="form-actions">
+                                <button type="submit" className="button" disabled={isProcessing}>
+                                  {isProcessing ? 'Saving…' : 'Confirm rejection'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="button button--secondary"
+                                  disabled={isProcessing}
+                                  onClick={() => setRejectingId(null)}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </form>
                           ) : (
                             <>
                               <button

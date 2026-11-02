@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_SQL = ROOT / "backend" / "tests" / "sql" / "equipment_request_lines_schema.sql"
 MIGRATION = ROOT / "database" / "equipment_request_lines.sql"
 OTHER_LINES_MIGRATION = ROOT / "database" / "equipment_request_other_lines.sql"
+REJECTION_MIGRATION = ROOT / "database" / "equipment_request_rejection_reason.sql"
 TEST_DATABASE = "equipment_request_lines_test"
 
 COORDINATOR_ID = "11111111-1111-1111-1111-111111111111"
@@ -62,6 +63,7 @@ def database():
     )
     connection.execute(MIGRATION.read_text(encoding="utf-8"))
     connection.execute(OTHER_LINES_MIGRATION.read_text(encoding="utf-8"))
+    connection.execute(REJECTION_MIGRATION.read_text(encoding="utf-8"))
     connection.execute(
         "select set_config('test.coordinator_id', %s, false), "
         "set_config('test.tech_id', %s, false)",
@@ -284,6 +286,62 @@ def test_approval_waits_until_every_line_is_full(db):
 
     _book(db, second, request_id)
     assert _approve(db, request_id)["status"] == "Approved"
+
+
+def _reject(db, request_id, reason):
+    _sign_in(db, TECH_ID)
+    return db.execute(
+        "select public.review_equipment_request(%s, 'Rejected', %s)", (request_id, reason)
+    ).fetchone()[0]
+
+
+def test_rejecting_saves_the_reason_and_returns_who_to_tell(db):
+    request_id = _submit(db, [{"item_name": "Projector", "quantity": 1}])
+
+    result = _reject(db, request_id, "  None available  ")
+
+    assert result["status"] == "Rejected"
+    assert result["rejection_reason"] == "None available"
+    assert result["coordinator_id"] == COORDINATOR_ID
+    assert result["event_name"] == "Bootcamp"
+    assert result["session_name"] == "Lab"
+    saved = db.execute(
+        "select status, rejection_reason from public.equipment_requests where id = %s",
+        (request_id,),
+    ).fetchone()
+    assert saved == ("Rejected", "None available")
+
+
+@pytest.mark.parametrize("reason", [None, "   ", "x" * 501], ids=["none", "blank", "too-long"])
+def test_rejecting_needs_a_reason(db, reason):
+    request_id = _submit(db, [{"item_name": "Projector", "quantity": 1}])
+
+    with pytest.raises(Exception, match="Give a reason"):
+        _reject(db, request_id, reason)
+
+    status = db.execute(
+        "select status from public.equipment_requests where id = %s", (request_id,)
+    ).fetchone()[0]
+    assert status == "Pending Technical Approval"
+
+
+def test_approving_saves_no_reason(db):
+    item = _item(db, "Projector")
+    request_id = _submit(db, [{"item_name": "Projector", "quantity": 1}])
+    _book(db, item, request_id)
+
+    result = _approve(db, request_id)
+
+    assert result["rejection_reason"] is None
+
+
+def test_the_review_queue_includes_the_rejection_reason(db):
+    request_id = _submit(db, [{"item_name": "Projector", "quantity": 1}])
+    _reject(db, request_id, "None available")
+
+    queue = db.execute("select public.list_equipment_request_review_queue()").fetchone()[0]
+
+    assert queue[0]["rejection_reason"] == "None available"
 
 
 def test_removing_an_allocation_opens_the_line_again(db):

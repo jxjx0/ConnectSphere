@@ -308,3 +308,20 @@ test('the Coordinator sees how much of each requested item is allocated', async 
   assert.match(html, /Projector: 1\/2 allocated/)
   assert.match(html, /HDMI/)
 })
+
+test('the Coordinator sees why an equipment request was rejected', async () => {
+  const Card = await equipmentCard()
+  const html = renderToStaticMarkup(React.createElement(Card, {
+    title: 'Main session',
+    timing: event.sessions[0],
+    request: {
+      status: 'Rejected',
+      rejection_reason: 'None available that day',
+      created_at: '2099-11-01T10:00:00Z',
+      request_details: '1 x Projector',
+    },
+  }))
+
+  assert.match(html, /Rejection reason:/)
+  assert.match(html, /None available that day/)
+})

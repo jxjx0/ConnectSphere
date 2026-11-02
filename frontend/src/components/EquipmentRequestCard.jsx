@@ -87,6 +87,12 @@ export default function EquipmentRequestCard({ title, eventName, request, timing
         </p>
       )}
 
+      {request?.status === 'Rejected' && request.rejection_reason && (
+        <p className={`note ${styles.rejectionError}`}>
+          <strong>Rejection reason:</strong> {request.rejection_reason}
+        </p>
+      )}
+
       {request?.status === 'Cancelled' && request.cancellation_reason && (
         <p className={`note ${styles.rejectionError}`}>
           <strong>Cancellation reason:</strong> {request.cancellation_reason}

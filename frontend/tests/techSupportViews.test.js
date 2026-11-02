@@ -351,3 +351,12 @@ test('venue status reads normally and session-only times stay plain', async () =
   assert.doesNotMatch(html, /SESSION_SCHEDULE/)
   assert.match(html, /Ada/)
 })
+
+test('a rejected request shows why, and others do not', async () => {
+  const rejected = await details({ status: 'Rejected', rejection_reason: 'None available', bookings: [] })
+  const stale = await details({ status: pending, rejection_reason: 'None available', bookings: [] })
+
+  assert.match(rejected, /Rejection reason/)
+  assert.match(rejected, /None available/)
+  assert.doesNotMatch(stale, /Rejection reason/)
+})

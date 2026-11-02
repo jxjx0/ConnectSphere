@@ -48,6 +48,15 @@ class EquipmentRequestSubmit(BaseModel):
 
 class EquipmentRequestReview(BaseModel):
     decision: Literal["Approved", "Rejected"]
+    rejection_reason: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_rejection_reason(self) -> "EquipmentRequestReview":
+        reason = (self.rejection_reason or "").strip()
+        if self.decision == "Rejected" and not reason:
+            raise ValueError("Give a reason for rejecting this equipment request.")
+        self.rejection_reason = reason if self.decision == "Rejected" else None
+        return self
 
 
 class EquipmentRequestCancel(BaseModel):

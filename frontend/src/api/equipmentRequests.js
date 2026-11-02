@@ -35,10 +35,10 @@ export function getEventEquipmentRequests(eventId, token) {
   return request(`/equipment-requests?event_id=${encodeURIComponent(eventId)}`, token)
 }
 
-export function reviewEquipmentRequest(requestId, decision, token) {
+export function reviewEquipmentRequest(requestId, decision, token, rejectionReason) {
   return request(`/equipment-requests/${requestId}/review`, token, {
     method: 'PATCH',
-    body: { decision },
+    body: { decision, rejection_reason: rejectionReason },
   })
 }
 

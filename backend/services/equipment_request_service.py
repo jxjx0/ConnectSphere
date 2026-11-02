@@ -131,18 +131,15 @@ def review_equipment_request(
     request_id: str,
     review: EquipmentRequestReview,
 ) -> dict:
-    """Record an approve or reject decision; approval needs at least one booking."""
+    """Record a decision. Approval needs equipment; a rejection tells the Coordinator why."""
     client = config.get_user_client(access_token)
     if review.decision == "Approved":
         _require_allocated_equipment(client, request_id)
+    params = {"p_request_id": request_id, "p_decision": review.decision}
+    if review.rejection_reason:
+        params["p_rejection_reason"] = review.rejection_reason
     try:
-        result = client.rpc(
-            "review_equipment_request",
-            {
-                "p_request_id": request_id,
-                "p_decision": review.decision,
-            },
-        ).execute()
+        result = client.rpc("review_equipment_request", params).execute()
     except PostgrestAPIError as error:
         if error.code == "P0002":
             raise AuthError(
@@ -164,6 +161,22 @@ def review_equipment_request(
     reviewed_request = result.data
     if not isinstance(reviewed_request, dict) or not reviewed_request.get("status"):
         raise AuthError("Unable to review the equipment request.", status_code=502)
+    if review.decision == "Rejected" and reviewed_request.get("coordinator_id"):
+        session = (
+            f" ({reviewed_request['session_name']})"
+            if reviewed_request.get("session_name")
+            else ""
+        )
+        notification_service.notify(
+            user_id=reviewed_request["coordinator_id"],
+            notification_type="equipment_request_rejected",
+            title="Equipment request rejected",
+            body=(
+                f"The equipment request for '{reviewed_request.get('event_name') or 'your event'}'"
+                f"{session} was rejected. Reason: {review.rejection_reason}"
+            ),
+            event_id=reviewed_request.get("event_id"),
+        )
     return reviewed_request
 
 
