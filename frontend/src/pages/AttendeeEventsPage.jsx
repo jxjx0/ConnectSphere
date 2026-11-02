@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom'
 import { getMyRegistrations, getPublishedEvents } from '../api/events'
 import AttendeeShell from '../components/AttendeeShell'
 import AttendeeListTools from '../components/AttendeeListTools'
-import RegistrationWithdrawal from '../components/RegistrationWithdrawal'
 import { useAuth } from '../context/AuthContext'
 import { filterAttendeeEvents, registrationAvailability, spotsLeftLabel } from '../attendeeRegistration'
 import { categoryLabel } from '../eventCategories'
@@ -18,10 +17,8 @@ export default function AttendeeEventsPage() {
   const [registrations, setRegistrations] = useState([])
   const [registrationError, setRegistrationError] = useState('')
   const requestScope = useRef(0)
-  const latestRefresh = useRef(0)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
-  const [notice, setNotice] = useState('')
   const [reload, setReload] = useState(0)
   const visibleEvents = filterAttendeeEvents(events, query, filter)
 
@@ -33,44 +30,21 @@ export default function AttendeeEventsPage() {
     setRegistrations([])
     setRegistrationError('')
     getPublishedEvents(token)
-      .then(async (data) => {
+      .then((data) => {
         if (scope !== requestScope.current) return
         setEvents(data.events)
         if (data.events.some((event) => event.is_registered)) {
-          try {
-            const owned = await getMyRegistrations(token)
-            if (scope === requestScope.current) {
-              setRegistrations(owned.registrations.filter((item) => item.status === 'registered'))
-            }
-          } catch (caught) {
-            if (scope === requestScope.current) setRegistrationError(caught.message)
-          }
+          getMyRegistrations(token)
+            .then((owned) => {
+              if (scope === requestScope.current) setRegistrations(owned.registrations.filter((item) => item.status === 'registered'))
+            })
+            .catch((caught) => { if (scope === requestScope.current) setRegistrationError(caught.message) })
         }
       })
       .catch((caught) => { if (scope === requestScope.current) setError(caught.message) })
       .finally(() => { if (scope === requestScope.current) setLoading(false) })
     return () => { requestScope.current += 1 }
   }, [token, reload])
-
-  function updateRegistration(updated) {
-    setNotice(updated.status === 'withdrawn' ? 'Registration withdrawn. You no longer hold a place at this event.' : '')
-    const scope = requestScope.current
-    const refresh = ++latestRefresh.current
-    setRegistrationError('')
-    setRegistrations((current) => current.map((item) => item.id === updated.id ? updated : item))
-    setEvents((current) => current.map((event) => event.id === updated.event_id
-      ? { ...event, is_registered: updated.status === 'registered', status: updated.event_status }
-      : event))
-    getPublishedEvents(token)
-      .then((data) => {
-        if (scope === requestScope.current && refresh === latestRefresh.current) setEvents(data.events)
-      })
-      .catch(() => {
-        if (scope === requestScope.current && refresh === latestRefresh.current) {
-          setRegistrationError('Your registration was updated. Refresh the page for the latest available places.')
-        }
-      })
-  }
 
   return (
     <AttendeeShell>
@@ -83,7 +57,6 @@ export default function AttendeeEventsPage() {
           </p>
         </div>
 
-        {notice && <p className="form-success" role="status">{notice}</p>}
         {!loading && !error && <AttendeeListTools
           query={query} onQueryChange={setQuery} filter={filter} onFilterChange={setFilter}
           options={[['all', 'All events'], ['available', 'Available to register'], ['registered', 'My registered events']]}
@@ -128,14 +101,6 @@ export default function AttendeeEventsPage() {
                       className="button button--small">
                       {event.is_registered ? 'View registration' : availability.open ? 'View event & register' : 'View event'}
                     </Link>
-                  {registration && event.is_registered && (
-                    <RegistrationWithdrawal
-                      key={registration.id}
-                      compact
-                      registration={registration}
-                      onUpdate={updateRegistration}
-                    />
-                  )}
                   </div>
                 </div>
               </article>

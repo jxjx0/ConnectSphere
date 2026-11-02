@@ -43,6 +43,7 @@ export default function AttendeeEventDetailPage() {
   const [registration, setRegistration] = useState(null)
   const [registrationError, setRegistrationError] = useState('')
   const [registrationHistory, setRegistrationHistory] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(true)
   const requestScope = useRef(0)
   const formElement = useRef(null)
   const submitPending = useRef(false)
@@ -54,32 +55,27 @@ export default function AttendeeEventDetailPage() {
     setLoadError('')
     setRegistration(null)
     setRegistrationHistory([])
+    setHistoryLoading(true)
     setRegistrationError('')
     setErrors([])
     setSubmitting(false)
     submitPending.current = false
     getPublishedEvent(eventId, token)
-      .then(async (data) => {
+      .then((data) => {
         if (scope !== requestScope.current) return
         setEvent(data.event)
         setForm((current) => ({ ...current, email: data.account_email ?? '' }))
-        try {
-          const owned = await getMyRegistrations(token)
-          if (scope !== requestScope.current) return
-          setRegistrationHistory(owned.registrations)
-          const current = owned.registrations.find(
-            (item) => item.event_id === eventId && item.status === 'registered',
-          )
-          setRegistration(current ?? null)
-          if (data.event.is_registered && !current) {
-            setRegistrationError('Refresh the page to load your latest registration.')
-          }
-        } catch (caught) {
-          if (scope === requestScope.current) setRegistrationError(caught.message)
-        }
       })
       .catch((caught) => { if (scope === requestScope.current) setLoadError(caught.message) })
       .finally(() => { if (scope === requestScope.current) setLoading(false) })
+    getMyRegistrations(token)
+      .then((data) => {
+        if (scope !== requestScope.current) return
+        setRegistrationHistory(data.registrations)
+        setRegistration(data.registrations.find((item) => item.event_id === eventId && item.status === 'registered') ?? null)
+      })
+      .catch((caught) => { if (scope === requestScope.current) setRegistrationError(caught.message) })
+      .finally(() => { if (scope === requestScope.current) setHistoryLoading(false) })
     return () => { requestScope.current += 1 }
   }, [eventId, token])
 
@@ -253,6 +249,10 @@ export default function AttendeeEventDetailPage() {
             </p>
           )}
           {registrationError && <p className="form-error" role="alert">{registrationError}</p>}
+          {event.is_registered && historyLoading && <p className="note" role="status">Loading your registration...</p>}
+          {event.is_registered && !historyLoading && !registration && !registrationError && (
+            <p className="note">Open My registrations to view your latest registration.</p>
+          )}
           {registration && (
             <RegistrationWithdrawal
               key={registration.id}
@@ -311,6 +311,7 @@ export default function AttendeeEventDetailPage() {
             </form>
           )}
         </section>
+        {historyLoading && <p className="note" role="status">Loading registration history...</p>}
         <RegistrationHistory registrations={registrationHistory} eventId={eventId} />
         </div>
       </div>

@@ -23,11 +23,13 @@ export default function AttendeeRegistrationPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [canRegisterAgain, setCanRegisterAgain] = useState(false)
+  const [justWithdrawn, setJustWithdrawn] = useState(false)
   const [history, setHistory] = useState({ items: [], loading: false, error: '' })
   const [historyReload, setHistoryReload] = useState(0)
 
   useEffect(() => {
     let active = true
+    setJustWithdrawn(false)
     setLoading(true)
     setError('')
     getMyRegistration(registrationId, token)
@@ -93,7 +95,7 @@ export default function AttendeeRegistrationPage() {
         </div>
 
         {registration.event_status === 'cancelled' && <EventCancelledNotice hasRegistration />}
-        {registration.status === 'withdrawn' && (
+        {justWithdrawn && registration.status === 'withdrawn' && (
           <p className="form-success" role="status">
             Your registration is withdrawn. You no longer hold a place at this event.
           </p>
@@ -170,7 +172,10 @@ export default function AttendeeRegistrationPage() {
             key={registration.id}
             compact
             registration={registration}
-            onUpdate={setRegistration}
+            onUpdate={(updated) => {
+              setJustWithdrawn(registration.status !== 'withdrawn' && updated.status === 'withdrawn')
+              setRegistration(updated)
+            }}
           />
           {canRegisterAgain && (
             <Link to={`/attendee/events/${registration.event_id}`} className="button">Register again</Link>

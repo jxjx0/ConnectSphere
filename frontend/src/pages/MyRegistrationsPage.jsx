@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom'
 import { getMyRegistrations } from '../api/events'
 import AttendeeShell from '../components/AttendeeShell'
 import AttendeeListTools from '../components/AttendeeListTools'
-import RegistrationWithdrawal from '../components/RegistrationWithdrawal'
 import { useAuth } from '../context/AuthContext'
 import { filterRegistrationGroups, groupRegistrationsByEvent } from '../attendeeRegistration'
 import { formatDateRange, formatDateTime } from '../eventDisplay'
@@ -17,7 +16,6 @@ export default function MyRegistrationsPage() {
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
-  const [withdrawnRegistrationId, setWithdrawnRegistrationId] = useState(null)
   const [reload, setReload] = useState(0)
   const visibleGroups = filterRegistrationGroups(groupRegistrationsByEvent(registrations), query, filter)
 
@@ -81,9 +79,6 @@ export default function MyRegistrationsPage() {
                 {registration.status === 'withdrawn' && (
                   <p>Withdrawn {formatDateTime(registration.withdrawn_at)}</p>
                 )}
-                {withdrawnRegistrationId === registration.id && registration.status === 'withdrawn' && (
-                  <p className="form-success" role="status">Registration withdrawn. You no longer hold a place at this event.</p>
-                )}
                 {registration.event_status === 'cancelled' && (
                   <p className="note">This event will no longer take place. Your registration is kept for your records.</p>
                 )}
@@ -99,15 +94,6 @@ export default function MyRegistrationsPage() {
                 >
                   View registration
                 </Link>
-                <RegistrationWithdrawal
-                  key={registration.id}
-                  registration={registration}
-                  compact
-                  onUpdate={(updated) => {
-                    setRegistrations((current) => current.map((item) => item.id === updated.id ? updated : item))
-                    setWithdrawnRegistrationId(updated.status === 'withdrawn' ? updated.id : null)
-                  }}
-                />
                 </div>
 
               </div>
