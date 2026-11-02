@@ -121,6 +121,7 @@
 .attendee-ui .inbox__panel { box-shadow: none; border-color: var(--rule-strong); }
 .attendee-ui :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .attendee-ui .attendee-list-tools { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 240px) auto; gap: 16px; align-items: end; padding: 20px; border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); }
+.attendee-ui .attendee-list-tools--search-only { grid-template-columns: minmax(0, 1fr) auto; }
 .attendee-ui .attendee-result-count { padding-bottom: 12px; white-space: nowrap; }
 .attendee-ui .attendee-text-button { justify-self: start; border: 0; padding: 8px 0; min-height: 44px; background: transparent; color: var(--accent); font: 600 14px var(--font-body); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .attendee-ui .attendee-empty { padding: 32px; border: 1px dashed var(--rule-strong); border-radius: 12px; text-align: center; color: var(--ink-muted); }

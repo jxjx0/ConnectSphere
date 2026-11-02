@@ -39,7 +39,7 @@ export default function MyRegistrationsPage() {
 
         <AttendeeListTools
           query={query} onQueryChange={setQuery} filter={filter} onFilterChange={setFilter}
-          options={[['all', 'All registrations'], ['registered', 'Registered'], ['withdrawn', 'Withdrawn']]}
+          options={[['all', 'All registrations'], ['registered', 'Registered'], ['withdrawn', 'Withdrawn'], ['cancelled', 'Cancelled events']]}
           count={loading || error ? null : visibleGroups.length}
         />
 

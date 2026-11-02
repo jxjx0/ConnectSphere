@@ -19,9 +19,8 @@ export default function AttendeeEventsPage() {
   const [registrationError, setRegistrationError] = useState('')
   const requestScope = useRef(0)
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState('all')
   const [reload, setReload] = useState(0)
-  const visibleEvents = filterAttendeeEvents(events, query, filter)
+  const visibleEvents = filterAttendeeEvents(events, query, 'all')
 
   useEffect(() => {
     requestScope.current += 1
@@ -58,8 +57,7 @@ export default function AttendeeEventsPage() {
         </div>
 
         <AttendeeListTools
-          query={query} onQueryChange={setQuery} filter={filter} onFilterChange={setFilter}
-          options={[['all', 'All events'], ['available', 'Available to register'], ['registered', 'My registered events']]}
+          query={query} onQueryChange={setQuery}
           count={loading || error ? null : visibleEvents.length}
         />
 
@@ -74,7 +72,7 @@ export default function AttendeeEventsPage() {
         )}
 
         {!loading && !error && events.length > 0 && visibleEvents.length === 0 && (
-          <p className="attendee-empty">No events match your search. Try another name or clear the filters.</p>
+          <p className="attendee-empty">No events match your search. Try another name or clear your search.</p>
         )}
         <div className="attendee-grid">
           {!loading && !error && visibleEvents.map((event) => {

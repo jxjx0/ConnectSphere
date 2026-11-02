@@ -69,7 +69,7 @@ export function filterAttendeeEvents(events, query, filter, now = new Date()) {
 export function filterRegistrationGroups(groups, query, filter) {
   const search = query.trim().toLowerCase()
   return groups.filter(({ latest }) => latest.event_name.toLowerCase().includes(search)
-    && (filter === 'all' || latest.status === filter))
+    && (filter === 'all' || (filter === 'cancelled' ? latest.event_status === 'cancelled' : latest.status === filter)))
 }
 
 export function groupRegistrationsByEvent(registrations) {
