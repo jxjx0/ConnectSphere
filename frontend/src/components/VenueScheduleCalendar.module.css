@@ -104,9 +104,9 @@
 
 .timeBlock {
   position: absolute;
-  border: 1px solid var(--danger);
+  border: 1px solid var(--venue-calendar-block-color, var(--danger));
   border-radius: 0;
-  background: color-mix(in srgb, var(--danger) 9%, var(--bg));
+  background: var(--venue-calendar-block-fill, var(--danger-faint));
   color: var(--ink);
   min-height: 2px;
   overflow: hidden;
@@ -127,7 +127,6 @@
 
 .timeBlockCompact {
   padding: 0;
-  background: color-mix(in srgb, var(--danger) 22%, var(--bg));
 }
 
 .timeBlock:hover,
@@ -137,7 +136,7 @@
 }
 
 .timeBlock:focus-visible {
-  outline: 2px solid var(--danger);
+  outline: 2px solid var(--ink);
   outline-offset: -3px;
 }
 
@@ -172,8 +171,8 @@
 }
 
 .timeBlock { z-index: 1; }
-.booking { border-color: var(--ink-muted); background: var(--sunken); }
-.hold { border-color: var(--accent); border-style: dashed; background: var(--accent-faint); }
+.booking { border-color: var(--venue-calendar-booking-color, var(--ink-muted)); background: var(--venue-calendar-booking-fill, var(--sunken)); }
+.hold { border-color: var(--venue-calendar-hold-color, var(--accent)); border-style: dashed; background: var(--venue-calendar-hold-fill, var(--accent-faint)); }
 
 .requestSummary { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3); border-left: 3px solid var(--secondary); background: var(--secondary-faint); font-size: .875rem; }
 .requestHighlight { position: absolute; z-index: 1; min-height: 3px; padding: var(--space-1); border: 2px solid var(--secondary); border-radius: 4px; background: var(--secondary-faint); color: var(--secondary); overflow: hidden; font-size: .75rem; overflow-wrap: anywhere; }

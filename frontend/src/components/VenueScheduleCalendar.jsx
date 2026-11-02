@@ -4,6 +4,7 @@ import { formatDateRange } from '../eventDisplay'
 import {
   calendarBlockPositions,
   calendarItemLabel,
+  calendarItemShortLabel,
   calendarWeek,
   localDateValue,
   shiftCalendarDate,
@@ -219,9 +220,9 @@ export default function VenueScheduleCalendar({ venueId, operatingHours, initial
           <div className="venue-calendar__key" aria-label="Calendar legend">
             {highlight && <span className={`note ${styles.requestLegend}`}>This request</span>}
             {overlaps.length > 0 && <span className={`note ${styles.overlapLegend}`}>Overlapping record</span>}
-            <span className="note venue-calendar__legend">Recorded block</span>
-            <span className="note venue-calendar__legend venue-calendar__legend--booking">Confirmed booking</span>
-            <span className="note venue-calendar__legend venue-calendar__legend--hold">Tentative hold</span>
+            <span className="note venue-calendar__legend">Blocked</span>
+            <span className="note venue-calendar__legend venue-calendar__legend--booking">Confirmed</span>
+            <span className="note venue-calendar__legend venue-calendar__legend--hold">Hold</span>
             {nonOpRegions && <span className="note venue-calendar__legend venue-calendar__legend--closed">Closed</span>}
             <span className="note">Local time</span>
           </div>
@@ -299,7 +300,7 @@ export default function VenueScheduleCalendar({ venueId, operatingHours, initial
                       aria-controls="request-calendar-block-details"
                       onClick={() => setSelectedBlock(item.id)}
                     >
-                      {height >= 100 / 24 && <strong>{item.reason}</strong>}
+                      {height >= 100 / 24 && <strong>{calendarItemShortLabel(item)}</strong>}
                     </button>
                   ))}
                 </div>

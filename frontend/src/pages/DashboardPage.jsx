@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { getAssignedEventRequests } from '../api/events'
+import { getPendingVenueBookings } from '../api/venues'
 import AppShell from '../components/AppShell'
 import AssignedRequestTabs from '../components/AssignedRequestTabs'
 import { useAuth } from '../context/AuthContext'
@@ -15,6 +16,8 @@ function readableRole(role) {
 export default function DashboardPage() {
   const { user, token } = useAuth()
   const isCoordinator = user.role === 'coordinator'
+  const isVenueStaff = user.role === 'venue_staff'
+  const [pendingRequests, setPendingRequests] = useState({ count: null, error: false })
   const [assignedEvents, setAssignedEvents] = useState([])
   const [assignedError, setAssignedError] = useState('')
   const [assignedLoading, setAssignedLoading] = useState(isCoordinator)
@@ -26,6 +29,21 @@ export default function DashboardPage() {
       .catch((caught) => setAssignedError(caught.message))
       .finally(() => setAssignedLoading(false))
   }, [isCoordinator, token])
+
+  useEffect(() => {
+    if (!isVenueStaff) return
+    let active = true
+    setPendingRequests({ count: null, error: false })
+    getPendingVenueBookings(token)
+      .then((data) => {
+        if (!Array.isArray(data.bookings)) throw new Error('Invalid booking response')
+        if (active) setPendingRequests({ count: data.bookings.length, error: false })
+      })
+      .catch(() => {
+        if (active) setPendingRequests({ count: null, error: true })
+      })
+    return () => { active = false }
+  }, [isVenueStaff, token])
 
   return (
     <AppShell>
@@ -73,19 +91,24 @@ export default function DashboardPage() {
 
       {user.role === 'venue_staff' && (
         <section className="attendee-grid venue-overview__grid" aria-label="Venue management tasks">
-          <Link to="/venues/reviewRequests" className="venue-overview__card">
-            <h2>Booking requests</h2>
-            <p>Review booking details and compare requests with the venue schedule.</p>
+          <Link to="/venues/reviewRequests" className={`venue-overview__card${pendingRequests.count > 0 ? ' venue-overview__card--pending' : ''}`}>
+            <div className="venue-overview__card-heading">
+              <h2>Venue booking requests</h2>
+              <span role="status">
+                {pendingRequests.error ? <span className="note">Count unavailable</span>
+                  : pendingRequests.count === null ? <span className="note">Checking requests...</span>
+                  : pendingRequests.count > 0 ? <span className="tag venue-overview__pending-count">{pendingRequests.count} pending</span>
+                  : <span className="tag tag--registered">All caught up</span>}
+              </span>
+            </div>
             <span className="venue-overview__card-action">Review requests <span aria-hidden="true">&rarr;</span></span>
           </Link>
           <Link to="/venues/availability" className="venue-overview__card">
-            <h2>Venue availability</h2>
-            <p>Check booked time, operational blocks and tentative holds.</p>
+            <h2>Venue calendar availability</h2>
             <span className="venue-overview__card-action">View calendar <span aria-hidden="true">&rarr;</span></span>
           </Link>
           <Link to="/venues" className="venue-overview__card">
             <h2>Venue catalogue</h2>
-            <p>Manage venue details, room layouts, capacity and facilities.</p>
             <span className="venue-overview__card-action">View Venue Catalogue <span aria-hidden="true">&rarr;</span></span>
           </Link>
         </section>

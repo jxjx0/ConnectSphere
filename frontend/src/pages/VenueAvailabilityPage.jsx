@@ -9,7 +9,7 @@ import BookingForm from '../components/BookingForm.jsx'
 import { useAuth } from '../context/AuthContext'
 import { formatDateRange } from '../eventDisplay'
 import { EMPTY_VENUE_FILTERS, validateVenueSearch } from '../venueSearch.js'
-import { blocksForDay, calendarBlockPositions, calendarItemLabel, calendarOperatingHours, calendarWeek, calendarVenueOptions, localDateValue, shiftCalendarDate, validateCalendarResponse } from '../venueAvailability'
+import { blocksForDay, calendarBlockPositions, calendarItemLabel, calendarItemShortLabel, calendarOperatingHours, calendarWeek, calendarVenueOptions, localDateValue, shiftCalendarDate, validateCalendarResponse } from '../venueAvailability'
 
 export default function VenueAvailabilityPage() {
   const { token, user } = useAuth()
@@ -251,9 +251,9 @@ export default function VenueAvailabilityPage() {
           : 'Some older records need classification. Check their details before booking.'
       }</p>}
       <div className="venue-calendar__key" aria-label="Calendar legend">
-        <span className="note venue-calendar__legend">Recorded block</span>
-        <span className="note venue-calendar__legend venue-calendar__legend--booking">Confirmed booking</span>
-        <span className="note venue-calendar__legend venue-calendar__legend--hold">Tentative hold</span>
+        <span className="note venue-calendar__legend">{user.role === 'venue_staff' ? 'Blocked' : 'Recorded block'}</span>
+        <span className="note venue-calendar__legend venue-calendar__legend--booking">{user.role === 'venue_staff' ? 'Confirmed' : 'Confirmed booking'}</span>
+        <span className="note venue-calendar__legend venue-calendar__legend--hold">{user.role === 'venue_staff' ? 'Hold' : 'Tentative hold'}</span>
         {operatingHours && <span className="note venue-calendar__legend venue-calendar__legend--closed">Closed</span>}
         <span className="note venue-calendar__timezone">Local time</span>
       </div>
@@ -285,7 +285,7 @@ export default function VenueAvailabilityPage() {
                 aria-label={`${calendarItemLabel(item)}: ${item.reason}. ${formatDateRange(item.start_at, item.end_at)}`}
                 aria-controls="calendar-block-details" aria-expanded={blockDetails?.id === item.id}
                 onClick={() => setSelectedBlock({ key, id: item.id })}>
-                {height >= 100 / 24 && <strong>{item.reason}</strong>}
+                {height >= 100 / 24 && <strong>{user.role === 'venue_staff' ? calendarItemShortLabel(item) : item.reason}</strong>}
               </button>
             ))}
           </div>)}
@@ -310,7 +310,7 @@ export default function VenueAvailabilityPage() {
         </div>}
         {blockDetails.expires_at && <p className="note">Expires: {new Date(blockDetails.expires_at).toLocaleString()}</p>}
       </section>}
-      <details className="venue-calendar__list">
+      {user.role !== 'venue_staff' && <details className="venue-calendar__list">
         <summary>View daily block details</summary>
         <div className="venue-calendar__week" aria-label="Weekly venue occupancy">
           {week.days.map((day) => {
@@ -331,14 +331,14 @@ export default function VenueAvailabilityPage() {
             </section>
           })}
         </div>
-      </details>
+      </details>}
     </>}
   </>)
 
   return (
     <AppShell>
       <div className="content__header venue-search__header">
-        <Link to={backTo} className="venue-search__back" aria-label={backLabel}>← {user.role === 'venue_staff' ? 'Back' : backLabel}</Link>
+        {user.role !== 'venue_staff' && <Link to={backTo} className="venue-search__back" aria-label={backLabel}>← {backLabel}</Link>}
         <h1>Venue Availability</h1>
         {user.role !== 'venue_staff' && <p className="lead">{fromSearch ? 'Review this venue’s schedule, then return to your matching venues.' : 'View recorded venue occupancy across dates and times.'}</p>}
 

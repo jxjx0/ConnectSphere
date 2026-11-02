@@ -252,10 +252,6 @@ export default function VenuePage({ createMode = false }) {
   return (
     <AppShell>
       <div className="content__header venue-search__header">
-        <Link to={createMode || editMode ? '/venues' : '/dashboard'} className="venue-search__back"
-          aria-label={createMode || editMode ? 'Back to Venue Catalogue' : 'Back to Dashboard'}>
-          ← Back
-        </Link>
         <div className="venue-workspace__page-title">
           <h1>{createMode ? 'Create Venue Profile' : editMode ? 'Edit Venue Profile' : 'Venue Catalogue'}</h1>
           {!createMode && !editMode && <Link to="/venues/create" className="button">+ Create Venue Profile</Link>}
@@ -609,44 +605,54 @@ export default function VenuePage({ createMode = false }) {
               </div>
             </nav>}
             {visibleVenues.length === 0 && <p className="venue-workspace__state">No venues match your search. Try another name or location.</p>}
-            <div className="attendee-grid venue-catalogue__grid">
-              {pagedVenues.map((venue) => (
-                <article className="session-card venue-catalogue__card" key={venue.id}>
-                  <header className="session-card__head">
-                    <div className="venue-workspace__section-header">
-                      <h2>{venue.name}</h2>
-                      <span className="tag">Up to {venue.capacity} people</span>
-                    </div>
-                    <p className="note">{venue.location || 'Location not provided'}</p>
-                  </header>
-                  <div className="session-card__body">
-                    <dl className="venue-catalogue__facts">
-                      <div><dt>Operating hours</dt><dd>{venue.operating_hours.open}–{venue.operating_hours.close}</dd></div>
-                      <div><dt>Preparation time</dt><dd>{venue.setup_time_minutes != null && venue.turnaround_time_minutes != null
-                        ? `${venue.setup_time_minutes}m setup · ${venue.turnaround_time_minutes}m turnaround` : 'Not specified'}</dd></div>
-                    </dl>
-                    <section className="venue-catalogue__layouts" aria-label="Supported layouts">
-                      <h3>Room layouts</h3>
-                      <div className="venue-catalogue__chips">{venue.layouts.map((layout) => (
-                        <span className="tag" key={`${venue.id}-${layout.name}`}>{layout.name} · {layout.capacity}</span>
-                      ))}</div>
-                    </section>
-                    <div className="venue-catalogue__features">
-                      <div><h3>Accessibility</h3><p className="note">{venue.accessibility?.length ? venue.accessibility.join(', ') : 'None entered'}</p></div>
-                      <div><h3>Facilities</h3><p className="note">{formatFacilities(venue.facilities)}</p></div>
-                    </div>
-                    <div className="venue-catalogue__actions">
-                      <Link to={`/venues/availability?${new URLSearchParams({ venueId: venue.id, from: 'catalogue' })}`}
-                        className="button button--small">View Availability</Link>
-                      <Link to={`/venues/${venue.id}/edit`} className="button button--secondary button--small" aria-label={`Edit ${venue.name}`}>Edit</Link>
-                      <button type="button" className="button button--secondary button--small"
-                        aria-label={`Block / Tentative Hold for ${venue.name}`}
-                        disabled={blockingVenue !== null} onClick={() => setBlockingVenue(venue)}>Block / Tentative Hold</button>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
+            {pagedVenues.length > 0 && <div className="table-wrapper" tabIndex={0} role="region" aria-label="Venue catalogue table">
+              <table className="venue-table venue-catalogue-table">
+                <caption className="visually-hidden">Venue profiles, facilities and management actions</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Venue</th>
+                    <th scope="col">Capacity &amp; layouts</th>
+                    <th scope="col">Hours &amp; preparation</th>
+                    <th scope="col">Accessibility</th>
+                    <th scope="col">Facilities</th>
+                    <th scope="col" className="venue-table__actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedVenues.map((venue) => (
+                    <tr key={venue.id}>
+                      <th scope="row">
+                        <strong>{venue.name}</strong>
+                        <p className="note venue-catalogue__location">{venue.location || 'Location not provided'}</p>
+                      </th>
+                      <td>
+                        <p className="venue-catalogue__capacity">Up to {venue.capacity} people</p>
+                        <ul className="table-values">{venue.layouts.map((layout) => (
+                          <li key={`${venue.id}-${layout.name}`}>{layout.name} · {layout.capacity}</li>
+                        ))}</ul>
+                      </td>
+                      <td>
+                        <p className="venue-catalogue__hours">{venue.operating_hours.open}–{venue.operating_hours.close}</p>
+                        <p className="note">{venue.setup_time_minutes != null && venue.turnaround_time_minutes != null
+                          ? `${venue.setup_time_minutes}m setup · ${venue.turnaround_time_minutes}m turnaround` : 'Preparation time not specified'}</p>
+                      </td>
+                      <td>{venue.accessibility?.length ? venue.accessibility.join(', ') : 'None entered'}</td>
+                      <td>{formatFacilities(venue.facilities)}</td>
+                      <td className="venue-table__actions">
+                        <div className="venue-table__action-buttons">
+                          <Link to={`/venues/availability?${new URLSearchParams({ venueId: venue.id, from: 'catalogue' })}`}
+                            className="button button--small" aria-label={`View availability for ${venue.name}`}>Availability</Link>
+                          <Link to={`/venues/${venue.id}/edit`} className="button button--secondary button--small" aria-label={`Edit ${venue.name}`}>Edit</Link>
+                          <button type="button" className="button button--secondary button--small"
+                            aria-label={`Block / Tentative Hold for ${venue.name}`}
+                            disabled={blockingVenue !== null} onClick={() => setBlockingVenue(venue)}>Block / Tentative Hold</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>}
             {pageCount > 1 && <nav className="venue-list-pagination" aria-label="Venue catalogue pages, bottom">
               <p className="note">Showing {pageStart + 1}–{Math.min(pageStart + VENUES_PER_PAGE, visibleVenues.length)} of {visibleVenues.length} venues</p>
               <div className="venue-list-pagination__controls">

@@ -45,9 +45,9 @@ export default function AppShell({ children }) {
       <main id={isVenueStaff ? 'venue-workspace-main' : undefined} className="app-main">
         {isVenueStaff && <nav className="form-actions attendee-tabs venue-workspace__nav" aria-label="Venue staff">
           <NavLink to="/dashboard" end className="button button--small button--secondary">Overview</NavLink>
-          <Link to="/venues" aria-current={inCatalogue ? 'page' : undefined} className="button button--small button--secondary">Venue catalogue</Link>
+          <NavLink to="/venues/reviewRequests" className="button button--small button--secondary">Venue booking request</NavLink>
           <NavLink to="/venues/availability" className="button button--small button--secondary">Availability</NavLink>
-          <NavLink to="/venues/reviewRequests" className="button button--small button--secondary">Booking requests</NavLink>
+          <Link to="/venues" aria-current={inCatalogue ? 'page' : undefined} className="button button--small button--secondary">Venue catalogue</Link>
         </nav>}
         {children}
       </main>

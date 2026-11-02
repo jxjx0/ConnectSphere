@@ -5,6 +5,7 @@ import VenueBookingCard from '../components/VenueBookingCard'
 import VenueScheduleCalendar from '../components/VenueScheduleCalendar'
 import { useAuth } from '../context/AuthContext'
 import { getPendingVenueBookings, reviewVenueBooking } from '../api/venues'
+import { formatDateRange } from '../eventDisplay'
 import styles from '../styles/ReviewVenueRequestsPage.module.css'
 
 const REQUESTS_PER_PAGE = 8
@@ -215,9 +216,6 @@ export default function ReviewVenueRequests() {
         <AppShell>
             <div className={styles.container}>
                 <div className="content__header venue-search__header">
-                    <Link to="/dashboard" className="venue-search__back" aria-label="Back to Dashboard">
-                        ← Back
-                    </Link>
                     <h1>Review Venue Requests</h1>
                 </div>
 
@@ -259,10 +257,10 @@ export default function ReviewVenueRequests() {
                                             className={`${styles.queueItem} ${selectedBooking?.booking_id === booking.booking_id ? styles.selectedCard : ''}`}
                                             aria-current={selectedBooking?.booking_id === booking.booking_id ? 'true' : undefined}
                                             onClick={() => setSelectedBookingId(booking.booking_id)}>
-                                            <strong>{booking.events?.name || 'Venue booking request'}</strong>
-                                            <span>{booking.venues?.name || `Venue ID: ${booking.venue_id}`}</span>
-                                            {booking.session?.name && <span className="note">{booking.session.name}</span>}
-                                            <span className="note">{new Date(booking.start_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} · {booking.room_layout}</span>
+                                            <strong>{booking.events?.name || booking.venues?.name || `Venue ID: ${booking.venue_id}`}</strong>
+                                            {booking.events?.name && <span>{booking.venues?.name || `Venue ID: ${booking.venue_id}`}</span>}
+                                            <span className="note">{formatDateRange(booking.start_at, booking.end_at)}</span>
+                                            <span className="note">{[booking.session?.name, booking.room_layout].filter(Boolean).join(' · ')}</span>
                                             <span className={styles.queueHint}>{selectedBooking?.booking_id === booking.booking_id ? 'Currently reviewing' : 'Review request →'}</span>
                                         </a>
                                     </li>
@@ -287,7 +285,7 @@ export default function ReviewVenueRequests() {
                             <section id="venue-request-detail" className={styles.requestPanel} aria-labelledby="selected-request-title">
                                 <header className={styles.requestHeading}>
                                     <span className="attendee-category">Booking review</span>
-                                    <h2 id="selected-request-title">{selectedBooking.events?.name || 'Venue booking request'}</h2>
+                                    <h2 id="selected-request-title">{selectedBooking.events?.name || 'Booking details'}</h2>
                                 </header>
                                 <VenueBookingCard booking={selectedBooking} validationError={validationError} />
                             </section>

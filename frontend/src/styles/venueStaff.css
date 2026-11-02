@@ -1,6 +1,12 @@
 /* Reuse AttendeeLayout.css for tokens, typography, controls and cards.
  * Only Venue Staff task layouts and presentation exceptions belong here. */
 .venue-workspace {
+  --venue-calendar-block-color: var(--danger);
+  --venue-calendar-block-fill: var(--danger-faint);
+  --venue-calendar-booking-color: var(--ink-muted);
+  --venue-calendar-booking-fill: var(--sunken);
+  --venue-calendar-hold-color: var(--accent);
+  --venue-calendar-hold-fill: var(--accent-faint);
   --venue-closed-shading: repeating-linear-gradient(135deg,
     color-mix(in srgb, var(--ink-muted) 8%, var(--surface)) 0 8px,
     color-mix(in srgb, var(--ink-muted) 14%, var(--surface)) 8px 16px);
@@ -87,28 +93,51 @@
 .venue-workspace .venue-calendar__day,
 .venue-workspace .venue-calendar__time-detail { border-radius: var(--radius); }
 .venue-workspace .venue-calendar__time-block:hover,
-.venue-workspace .venue-calendar__time-block[aria-expanded='true'] { box-shadow: none; outline: 2px solid var(--accent); outline-offset: -2px; }
+.venue-workspace .venue-calendar__time-block[aria-expanded='true'] { box-shadow: none; outline: 2px solid var(--venue-calendar-item-color, var(--venue-calendar-block-color)); outline-offset: -2px; }
+
+/* The grid and legend share type colours, including hover/selection states. */
+.venue-workspace .venue-calendar__time-block,
+.venue-workspace .venue-calendar__time-block:hover,
+.venue-workspace .venue-calendar__time-block[aria-expanded='true'],
+.venue-workspace .venue-calendar__legend::before {
+  border-color: var(--venue-calendar-item-color, var(--venue-calendar-block-color));
+  border-style: var(--venue-calendar-item-border, solid);
+  background: var(--venue-calendar-item-fill, var(--venue-calendar-block-fill));
+}
+.venue-workspace .venue-calendar__time-block:focus-visible { outline-color: var(--venue-calendar-item-color, var(--venue-calendar-block-color)); }
+.venue-workspace .venue-calendar__time-block--confirmed_booking,
+.venue-workspace .venue-calendar__legend--booking {
+  --venue-calendar-item-color: var(--venue-calendar-booking-color);
+  --venue-calendar-item-fill: var(--venue-calendar-booking-fill);
+}
+.venue-workspace .venue-calendar__time-block--tentative_hold,
+.venue-workspace .venue-calendar__legend--hold {
+  --venue-calendar-item-color: var(--venue-calendar-hold-color);
+  --venue-calendar-item-fill: var(--venue-calendar-hold-fill);
+  --venue-calendar-item-border: dashed;
+}
+.venue-workspace .venue-calendar__legend--closed {
+  --venue-calendar-item-color: var(--rule-strong);
+  --venue-calendar-item-fill: var(--venue-closed-shading);
+}
 
 /* A compact overview with one creation action and three clear task destinations. */
 .venue-workspace .venue-overview__header { flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4); }
 .venue-workspace .venue-overview__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .venue-overview__card { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; padding: var(--space-5); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); color: var(--ink); text-decoration: none; }
 .venue-overview__card:hover { border-color: var(--accent); color: var(--ink); }
-.venue-overview__card p { color: var(--ink-muted); line-height: 1.7; }
-.venue-overview__card-action { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: auto; padding-top: var(--space-4); border-top: 1px solid var(--rule); color: var(--accent); font-weight: 600; }
+.venue-overview__card-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2); }
+.venue-overview__card-heading h2 { flex: 1; min-width: 12rem; }
+.venue-workspace .venue-overview__card--pending { border-color: var(--accent); background: var(--accent-faint); }
+.venue-workspace .venue-overview__pending-count { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.venue-overview__card-action { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: auto; padding-top: var(--space-4); color: var(--accent); font-weight: 600; }
 .venue-overview__card-action > span { font-size: 1.25rem; }
 
-/* Venue cards keep the schedule and profile actions beside the venue facts. */
-.venue-workspace .venue-catalogue__card .session-card__head { border-top-color: var(--accent-ring); }
-.venue-catalogue__card .session-card__body { gap: var(--space-5); }
-.venue-catalogue__facts { display: grid; grid-template-columns: 1fr 1fr; margin: 0; padding: var(--space-4); gap: var(--space-4); background: var(--sunken); border-radius: 8px; }
-.venue-catalogue__facts dt { color: var(--ink-muted); font-size: .75rem; margin-bottom: var(--space-1); }
-.venue-catalogue__facts dd { margin: 0; font-weight: 600; }
-.venue-catalogue__layouts h3, .venue-catalogue__features h3 { font-size: .875rem; margin-bottom: var(--space-2); }
-.venue-catalogue__chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.venue-workspace .venue-catalogue__chips .tag { white-space: normal; overflow-wrap: anywhere; }
-.venue-catalogue__features { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); overflow-wrap: anywhere; }
-.venue-catalogue__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: auto; padding-top: var(--space-4); border-top: 1px solid var(--rule); }
+/* Reuse the catalogue's existing table and horizontal scrolling wrapper. */
+.venue-workspace .venue-catalogue-table { min-width: 70rem; }
+.venue-workspace .venue-catalogue-table .venue-table__actions { width: 14rem; }
+.venue-catalogue__location { margin-top: var(--space-2); font-weight: 400; }
+.venue-catalogue__capacity, .venue-catalogue__hours { margin-bottom: var(--space-2); color: var(--ink); font-weight: 600; }
 .venue-workspace .venue-booking-summary__facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); font-size: .875rem; }
 .venue-workspace .venue-booking-summary__facts > div { padding: var(--space-3); border-radius: 8px; background: var(--bg); }
 .venue-workspace .venue-booking-summary__header strong { font-size: 1rem; }
@@ -141,7 +170,6 @@
 .venue-availability__calendar .venue-calendar__navigation { align-items: flex-start; }
 .venue-availability__calendar .venue-calendar__scroll { max-height: 38rem; }
 .venue-workspace .venue-block-dialog form.stack { gap: var(--space-5); }
-.venue-workspace .venue-block-dialog .venue-block-dialog__types { padding-block: var(--space-4); border-block: 1px solid var(--rule); }
 
 @media (max-width: 60rem) {
   .venue-workspace .venue-overview__grid { grid-template-columns: minmax(0, 1fr); }
@@ -157,7 +185,6 @@
 @media (max-width: 767px) {
   .venue-workspace .venue-booking-summary__facts { grid-template-columns: minmax(0, 1fr); }
   .venue-workspace #venue-basics { grid-template-columns: minmax(0, 1fr); }
-  .venue-catalogue__features { grid-template-columns: minmax(0, 1fr); }
   .venue-overview__card, .venue-availability__calendar, .venue-availability__sidebar { padding: var(--space-4); }
   .venue-workspace .venue-availability__sidebar .venue-calendar__controls { grid-template-columns: minmax(0, 1fr); }
   .venue-workspace .topbar__inner { flex-wrap: wrap; }
