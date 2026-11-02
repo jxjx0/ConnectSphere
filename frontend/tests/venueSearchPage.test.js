@@ -13,6 +13,7 @@ import * as eventCategories from '../src/eventCategories.js'
 import * as equipmentEligibility from '../src/equipmentRequestEligibility.js'
 import * as eventStatus from '../src/eventStatus.js'
 import * as coordinatorTabs from '../src/coordinatorEventTabs.js'
+import * as coordinatorView from '../src/coordinatorEventView.js'
 
 
 const source = await readFile(new URL('../src/pages/VenueSearchPage.jsx', import.meta.url), 'utf8')
@@ -335,6 +336,7 @@ test('event details offer contextual Find Venue only in Planning', async () => {
       '../components/EventStatusPanel': { __esModule: true, default: () => null },
       '../components/RequestHistory': { __esModule: true, default: () => null },
       '../eventStatus': eventStatus,
+      '../coordinatorEventView': coordinatorView,
     }
     new Function('require', 'module', 'exports', compiled.code)((name) => imports[name], module, module.exports)
     const html = renderToStaticMarkup(React.createElement(module.exports.default))
@@ -343,7 +345,7 @@ test('event details offer contextual Find Venue only in Planning', async () => {
   }
 })
 
-test('Coordinator dashboard prioritizes assigned events and keeps standalone browse as a text link', async () => {
+test('Coordinator dashboard prioritizes assigned events and leaves browsing to the tabs', async () => {
   const link = ({ children, to, ...props }) => React.createElement('a', { ...props, href: to }, children)
   async function compilePage(path, imports) {
     const source = await readFile(new URL(path, import.meta.url), 'utf8')
@@ -361,6 +363,7 @@ test('Coordinator dashboard prioritizes assigned events and keeps standalone bro
     '../eventDisplay': eventDisplay,
     '../eventStatus': eventStatus,
     '../coordinatorEventTabs': coordinatorTabs,
+    '../coordinatorEventView': coordinatorView,
   })
   let stateIndex = 0
   const states = [[{ ...assignedEvent, status: 'planning' }], '', false]
@@ -376,9 +379,9 @@ test('Coordinator dashboard prioritizes assigned events and keeps standalone bro
   const html = renderToStaticMarkup(React.createElement(DashboardPage))
   assert.match(html, /Assigned Event Requests/)
   assert.match(html, /class="choice" href="\/event-reviews\/event-1"/)
-  assert.match(html, /class="backlink" href="\/venues\/search">Browse Venues<\/a>/)
+  // Venue requests start from an event, so the list does not link to search.
+  assert.ok(!html.includes('Browse Venues'))
   assert.ok(!html.includes('Search Venues'))
-  assert.ok(html.indexOf('Assigned Event Requests') < html.indexOf('Browse Venues'))
 })
 
 test('Clear filters resets every input and clears search errors/results', () => {

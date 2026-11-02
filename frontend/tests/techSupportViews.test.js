@@ -106,7 +106,7 @@ test('moving between months crosses the year', async () => {
 const shell = (pathname) => compile('../src/components/TechSupportShell.jsx', {
   'react-router-dom': { Link: link, useLocation: () => ({ pathname }) },
   './AppShell': { __esModule: true, default: ({ children }) => React.createElement('main', null, children) },
-  './TechSupportLayout.css': {},
+  './WorkspaceLayout.css': {},
 })
 
 for (const [pathname, current] of [
@@ -122,7 +122,7 @@ for (const [pathname, current] of [
 
     assert.match(html, new RegExp(`aria-current="page"[^>]*>${current}<`))
     assert.equal(html.match(/aria-current/g).length, 1)
-    assert.match(html, /tech-ui/)
+    assert.match(html, /workspace-ui/)
     assert.match(html, /Page/)
   })
 }

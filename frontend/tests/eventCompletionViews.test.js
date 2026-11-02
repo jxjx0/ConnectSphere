@@ -16,6 +16,7 @@ import * as changeSessions from '../src/changeRequestSessions.js'
 import * as cancellations from '../src/cancelArrangements.js'
 import * as eventStatus from '../src/eventStatus.js'
 import * as coordinatorTabs from '../src/coordinatorEventTabs.js'
+import * as coordinatorView from '../src/coordinatorEventView.js'
 
 const files = ['components/AssignedRequestTabs', 'pages/MyEventsPage',
   'pages/MyEventDetailPage', 'pages/EventReviewDetailPage',
@@ -66,6 +67,7 @@ function render(file, { tab = 'closed', states = {}, props = {} } = {}) {
     '../eventDisplay': eventDisplay, '../eventCategories': eventCategories,
     '../organiserEventTabs': organiserTabs, '../eventRegistration': registration,
     '../eventStatus': eventStatus, '../coordinatorEventTabs': coordinatorTabs,
+    '../coordinatorEventView': coordinatorView,
     '../components/EventStatusPanel': defaultModule(EventStatusPanel),
     '../components/RequestHistory': defaultModule(RequestHistory),
     '../equipmentRequestEligibility': equipmentEligibility,

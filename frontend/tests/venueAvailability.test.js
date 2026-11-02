@@ -551,8 +551,10 @@ test('calendar route and dashboard expose venue tasks only to the established ro
     new Function('require', 'module', 'exports', dashboardCode.code)((name) => imports[name], module, module.exports)
     const html = renderToStaticMarkup(React.createElement(module.exports.default))
     assert.equal(html.includes('href="/venues/availability"'), role === 'venue_staff')
-    assert.equal(html.includes('href="/venues/search"'), role === 'coordinator')
+    // Coordinators reach venue search from their tabs, not the dashboard.
+    assert.equal(html.includes('href="/venues/search"'), false)
     assert.equal(html.includes('View Venue Catalogue'), role === 'venue_staff')
+    assert.equal(html.includes('Your account'), role !== 'coordinator')
     assert.doesNotMatch(html, /arrive in the next/)
   }
   const guardSource = await readFile(new URL('../src/components/AuthGuard.jsx', import.meta.url), 'utf8')

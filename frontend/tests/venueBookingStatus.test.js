@@ -12,6 +12,7 @@ import * as cancelRules from '../src/cancelArrangements.js'
 import * as changeSessions from '../src/changeRequestSessions.js'
 import * as eventStatus from '../src/eventStatus.js'
 import * as coordinatorTabs from '../src/coordinatorEventTabs.js'
+import * as coordinatorView from '../src/coordinatorEventView.js'
 import * as equipmentCatalogue from '../src/equipmentCatalogue.js'
 
 // Shared modules every page may import; the status components are added
@@ -22,6 +23,7 @@ const shared = {
   '../eventDisplay': display,
   '../eventStatus': eventStatus,
   '../coordinatorEventTabs': coordinatorTabs,
+  '../coordinatorEventView': coordinatorView,
 }
 
 async function compile(path, imports = {}) {
@@ -228,7 +230,7 @@ async function renderCoordinatorPage(pageEvent, safetyDecision, bookings = []) {
     '../eventCategories': categories,
     '../context/AuthContext': { useAuth: () => ({ token: 'token' }) },
     '../components/AppShell': { default: ({ children }) => React.createElement('main', null, children), __esModule: true },
-    '../components/SessionList': { default: () => null, __esModule: true },
+    '../components/SessionList': { default: () => 'SESSION-LIST', __esModule: true },
     '../components/CancelArrangementForm': { default: () => null, __esModule: true },
     '../cancelArrangements': cancelRules,
     '../changeRequestSessions': changeSessions,
@@ -278,7 +280,7 @@ test('safety decision banner stays hidden once it no longer needs action', async
 
 test('rejected or cancelled bookings do not keep the safety check button disabled', async () => {
   const button = markup => markup.match(/<button[^>]*>Request Safety Check<\/button>/)[0]
-  const booking = status => ({ ...affected, booking_id: status, status })
+  const booking = status => ({ ...affected, booking_id: status, session_id: 'session-1', status })
   for (const [bookings, enabled] of [
     [[booking('REJECTED_BY_SAFETY'), booking('APPROVED')], true],
     [[booking('REJECTED'), booking('CANCELLED'), booking('APPROVED')], true],
@@ -324,4 +326,94 @@ test('the Coordinator sees why an equipment request was rejected', async () => {
 
   assert.match(html, /Rejection reason:/)
   assert.match(html, /None available that day/)
+})
+
+const venue = (status, changes = {}) => ({
+  ...affected, booking_id: status, session_id: 'session-1', status, rejection_reason: 'Room too large', ...changes,
+})
+
+test('a rejected venue shows while planning, with what to do next, and not afterwards', async () => {
+  const planning = await renderCoordinatorPage(event, null, [venue('REJECTED')])
+  assert.match(planning, /Rejection Reason/)
+  assert.match(planning, /request another venue for this session/)
+  assert.match(planning, /Venue Booking Requests \(1\)/)
+
+  for (const status of ['awaiting_safety_check', 'confirmed', 'completed']) {
+    const later = await renderCoordinatorPage({ ...event, status }, null, [venue('REJECTED'), venue('APPROVED')])
+    assert.doesNotMatch(later, /Rejection Reason/)
+    assert.match(later, /Venue Booking Requests \(1\)/)
+  }
+})
+
+test('the safety check is only mentioned once on the event page', async () => {
+  const markup = await renderCoordinatorPage({ ...event, status: 'awaiting_safety_check' }, null, [venue('APPROVED')])
+
+  assert.doesNotMatch(markup, /Safety Review Pending/)
+  assert.equal(markup.match(/Awaiting safety check/g).length, 1)
+})
+
+test('sessions come before the venues and equipment booked for them', async () => {
+  const markup = await renderCoordinatorPage(event, null, [venue('APPROVED')])
+
+  assert.ok(markup.indexOf('SESSION-LIST') < markup.indexOf('Venue Booking Requests'))
+  assert.ok(markup.indexOf('SESSION-LIST') < markup.indexOf('Equipment requests'))
+})
+
+test('the planning page lists what still stops the safety check', async () => {
+  const waiting = await renderCoordinatorPage(event, null, [venue('PENDING_VENUE_APPROVAL')])
+  assert.match(waiting, /To request the safety check/)
+  assert.match(waiting, /Main session: waiting for its venue to be approved/)
+
+  const ready = await renderCoordinatorPage(event, null, [venue('APPROVED')])
+  assert.match(ready, /Everything is ready for the safety check/)
+  assert.match(ready, /<button type="button" class="button">Request Safety Check/)
+})
+
+test('the event list has no safety tag, and colours what needs attention', async () => {
+  const Tabs = await compile('../src/components/AssignedRequestTabs.jsx', {
+    'react-router-dom': { Link: link, useSearchParams: () => [new URLSearchParams('tab=waiting'), () => {}] },
+  })
+  const markup = renderToStaticMarkup(React.createElement(Tabs, {
+    events: [{ ...event, status: 'awaiting_safety_check', venue_bookings: [{ status: 'APPROVED' }] }],
+  }))
+
+  assert.match(markup, />Awaiting safety check</)
+  assert.doesNotMatch(markup, /Safety check not done|Safety Check Done|Safety Concerns/)
+  assert.match(markup, /class="tag tag--good">Venue Approved/)
+})
+
+test('a change to sessions alone shows no empty details box', async () => {
+  const markup = await renderCoordinatorPage({
+    ...event,
+    has_pending_change_request: true,
+    change_request: {
+      status: 'pending',
+      reason_for_change: 'More time needed',
+      name: event.name,
+      category: event.category,
+      sessions: event.sessions,
+    },
+  }, null, [])
+  const review = markup.slice(markup.indexOf('Review proposed changes'), markup.indexOf('<h3>Sessions</h3>'))
+
+  assert.match(review, /More time needed/)
+  assert.doesNotMatch(review, /class="answers"/)
+})
+
+test('a change to event details still lists them', async () => {
+  const markup = await renderCoordinatorPage({
+    ...event,
+    has_pending_change_request: true,
+    change_request: {
+      status: 'pending',
+      reason_for_change: 'Rebranded',
+      name: 'New name',
+      category: event.category,
+      sessions: event.sessions,
+    },
+  }, null, [])
+  const review = markup.slice(markup.indexOf('Review proposed changes'), markup.indexOf('<h3>Sessions</h3>'))
+
+  assert.match(review, /class="answers"/)
+  assert.match(review, /New name/)
 })

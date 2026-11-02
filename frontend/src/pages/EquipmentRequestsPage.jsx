@@ -11,8 +11,10 @@ import { getAssignedEventRequests } from '../api/events'
 import AppShell from '../components/AppShell'
 import EquipmentLinesField from '../components/EquipmentLinesField'
 import EquipmentRequestCard from '../components/EquipmentRequestCard'
+import OngoingPastTabs from '../components/OngoingPastTabs'
 import { useAuth } from '../context/AuthContext'
 import { formatDateRange } from '../eventDisplay'
+import { isPastEquipmentRequest } from '../coordinatorEventView'
 import {
   emptyLine,
   linesToPayload,
@@ -37,8 +39,10 @@ function CoordinatorEquipmentRequests() {
   const requestedEventId = searchParams.get('eventId') || ''
   const requestedSessionId = searchParams.get('sessionId') || ''
   const [events, setEvents] = useState([])
+  const [allEvents, setAllEvents] = useState([])
   const [requests, setRequests] = useState([])
-  const [eventId, setEventId] = useState(requestedEventId)
+  const eventId = requestedEventId
+  const [view, setView] = useState('ongoing')
   const [sessionId, setSessionId] = useState('')
   const [lines, setLines] = useState([emptyLine()])
   const [equipmentTypes, setEquipmentTypes] = useState([])
@@ -60,6 +64,7 @@ function CoordinatorEquipmentRequests() {
       .then(([requestData, eventData, catalogue]) => {
         setRequests(requestData.requests)
         setEvents(equipmentRequestEligibleEvents(eventData.events))
+        setAllEvents(eventData.events)
         setEquipmentTypes(requestableTypes(catalogue))
       })
       .catch((caught) => setError(caught.message))
@@ -85,6 +90,14 @@ function CoordinatorEquipmentRequests() {
   )
   const selectedSession = openSessions.find((session) => session.id === sessionId)
   const requestedEvent = events.find((eventItem) => eventItem.id === requestedEventId)
+  const isPast = (request) => isPastEquipmentRequest(
+    request,
+    allEvents.find((eventItem) => eventItem.id === request.event_id),
+  )
+  const pastRequests = requests.filter(isPast)
+  const shownRequests = requestedEventId
+    ? requests
+    : requests.filter((request) => isPast(request) === (view === 'past'))
 
   // Pick a session for the chosen event: the one asked for in the link, or
   // the only one left. Its equipment needs suggest the starting rows.
@@ -107,10 +120,6 @@ function CoordinatorEquipmentRequests() {
     setError('')
     setSubmittedMessage('')
 
-    if (!eventId) {
-      setError('Select an assigned event.')
-      return
-    }
     if (!sessionId) {
       setError('Select the session this equipment is for.')
       return
@@ -132,7 +141,6 @@ function CoordinatorEquipmentRequests() {
       setRequests(refreshed.requests)
       setSessionId('')
       setLines([emptyLine()])
-      if (!requestedEventId) setEventId('')
       setSubmittedMessage(
         `Equipment request for ${selectedSession?.name || 'the session'} submitted for technical approval.`,
       )
@@ -154,17 +162,17 @@ function CoordinatorEquipmentRequests() {
   return (
     <AppShell>
       <div className="content">
-        {requestedEventId ? (
+        {requestedEventId && (
           <Link to={`/event-reviews/${encodeURIComponent(requestedEventId)}`} className="backlink">
             ← Back to event
           </Link>
-        ) : (
-          <Link to="/dashboard" className="backlink">← Dashboard</Link>
         )}
         <div className="content__header">
           <h1>Equipment requests</h1>
           <p className="lead">
-            Request equipment for each session of an event assigned to you, then track its technical approval status.
+            {requestedEventId
+              ? 'Request equipment for each session of this event, then track its technical approval.'
+              : 'Track the equipment requested for your events. To request some, open the event.'}
           </p>
           {requestedEventId && (
             <p className="note">
@@ -177,34 +185,11 @@ function CoordinatorEquipmentRequests() {
         {error && <p className="form-error" role="alert">{error}</p>}
         {submittedMessage && <p className="form-success" role="status">{submittedMessage}</p>}
 
-        {(!requestedEventId || selectedEvent) && openEvents.length > 0 && (
+        {selectedEvent && (
           <form className="form" onSubmit={handleSubmit}>
             <section className="stack stack--tight">
               <h2 className="section-title">Request equipment</h2>
-              {requestedEventId ? (
-                <p className="note">Event: {selectedEvent.name}</p>
-              ) : (
-                <div className="field">
-                  <label htmlFor="event">Assigned event</label>
-                  <select
-                    id="event"
-                    value={eventId}
-                    onChange={(change) => {
-                      setEventId(change.target.value)
-                      setSessionId('')
-                      setLines([emptyLine()])
-                    }}
-                    required
-                  >
-                    <option value="">Choose an event…</option>
-                    {openEvents.map((eventItem) => (
-                      <option key={eventItem.id} value={eventItem.id}>
-                        {eventItem.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              <p className="note">Event: {selectedEvent.name}</p>
               {selectedEvent && (
                 <div className="field">
                   <label htmlFor="session">Session</label>
@@ -269,26 +254,41 @@ function CoordinatorEquipmentRequests() {
           </p>
         )}
 
-        {openEvents.length === 0 && !requestedEventId && (
-          <p className="note">
-            There are no eligible assigned events with a session still
-            needing an equipment request. Each session can have one request.
-          </p>
-        )}
-
         <section className="stack stack--tight">
           <h2 className="section-title">Submitted requests</h2>
-          {requests.length === 0 ? (
-            <p className="note">You have not submitted any equipment requests.</p>
+          {!requestedEventId && (
+            <OngoingPastTabs
+              view={view}
+              onChange={setView}
+              ongoing={requests.length - pastRequests.length}
+              past={pastRequests.length}
+            />
+          )}
+          {shownRequests.length === 0 ? (
+            <p className="note">
+              {requestedEventId
+                ? 'You have not submitted any equipment requests for this event.'
+                : view === 'ongoing'
+                  ? 'You have no ongoing equipment requests.'
+                  : 'You have no past equipment requests.'}
+            </p>
           ) : (
             <div className="stack stack--tight">
-              {requests.map((request) => (
+              {shownRequests.map((request) => (
                 <EquipmentRequestCard
                   key={request.id}
                   title={request.session?.name || 'Whole event'}
                   eventName={request.event?.name || 'Assigned event'}
                   request={request}
                   timing={request.session || request.event}
+                  actions={!requestedEventId && request.event_id && (
+                    <Link
+                      to={`/event-reviews/${encodeURIComponent(request.event_id)}`}
+                      className="button button--secondary button--small"
+                    >
+                      Open event
+                    </Link>
+                  )}
                 />
               ))}
             </div>
