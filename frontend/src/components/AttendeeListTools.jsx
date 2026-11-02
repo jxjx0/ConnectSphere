@@ -12,7 +12,7 @@ export default function AttendeeListTools({ query, onQueryChange, filter, onFilt
           {options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
       </div>
-      <p className="note attendee-result-count" role="status">{count} {count === 1 ? 'event' : 'events'}</p>
+      {count != null && <p className="note attendee-result-count" role="status">{count} {count === 1 ? 'event' : 'events'}</p>}
       {(query || filter !== 'all') && (
         <button type="button" className="attendee-text-button" onClick={() => {
           onQueryChange('')

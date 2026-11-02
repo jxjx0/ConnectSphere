@@ -54,18 +54,14 @@ export default function AttendeeEventsPage() {
     <AttendeeShell>
       <div className="content">
         <div className="content__header">
-          <p className="attendee-eyebrow">DISCOVER & CONNECT</p>
           <h1>Events</h1>
-          <p className="lead">
-            Browse events and register to secure your spot.
-          </p>
         </div>
 
-        {!loading && !error && <AttendeeListTools
+        <AttendeeListTools
           query={query} onQueryChange={setQuery} filter={filter} onFilterChange={setFilter}
           options={[['all', 'All events'], ['available', 'Available to register'], ['registered', 'My registered events']]}
-          count={visibleEvents.length}
-        />}
+          count={loading || error ? null : visibleEvents.length}
+        />
 
         {loading && <p className="note">Loading events…</p>}
         {error && <div className="stack stack--tight">

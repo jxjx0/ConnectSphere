@@ -34,16 +34,14 @@ export default function MyRegistrationsPage() {
     <AttendeeShell>
       <div className="content">
         <div className="content__header">
-          <p className="attendee-eyebrow">YOUR EVENTS</p>
           <h1>My registrations</h1>
-          <p className="lead">Manage your places and open a registration to see its details and history.</p>
         </div>
 
-        {!loading && !error && <AttendeeListTools
+        <AttendeeListTools
           query={query} onQueryChange={setQuery} filter={filter} onFilterChange={setFilter}
           options={[['all', 'All registrations'], ['registered', 'Registered'], ['withdrawn', 'Withdrawn']]}
-          count={visibleGroups.length}
-        />}
+          count={loading || error ? null : visibleGroups.length}
+        />
 
         {loading && <p className="note">Loading your registrations…</p>}
         {error && <div className="stack stack--tight">
