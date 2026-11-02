@@ -72,6 +72,14 @@ function FieldError({ id, message }) {
   return <p className="field__error" id={id}>* {message}</p>
 }
 
+function OrganiserShell({ children }) {
+  return (
+    <div className="organiser-ui">
+      <AppShell>{children}</AppShell>
+    </div>
+  )
+}
+
 export default function EventChangeRequestPage() {
   const { token } = useAuth()
   const { eventId } = useParams()
@@ -137,32 +145,45 @@ export default function EventChangeRequestPage() {
   }
 
   if (loading) {
-    return <AppShell><p className="page-state">Loading this event request…</p></AppShell>
+    return (
+      <OrganiserShell>
+        <p className="page-state">Loading this event request…</p>
+      </OrganiserShell>
+    )
   }
 
   if (error && !event) {
     return (
-      <AppShell>
+      <OrganiserShell>
         <div className="page-state">
           <p>{error}</p>
           <Link to="/my-events">Back to my event requests</Link>
         </div>
-      </AppShell>
+      </OrganiserShell>
     )
   }
 
   if (!eligible || event.has_pending_change_request) {
     return (
-      <AppShell>
-        <div className="content">
-          <Link to={`/my-events/${eventId}`} className="backlink">← Event details</Link>
-          <p className="note">
-            {event.has_pending_change_request
-              ? 'A change request for this event is already waiting for review.'
-              : 'Change requests are available for events under review, in planning, awaiting a safety check or confirmed.'}
-          </p>
+      <OrganiserShell>
+        <div className="content organiser-change-request">
+          <Link
+            to={`/my-events/${eventId}`}
+            className="organiser-change-request__back"
+          >
+            ← Event details
+          </Link>
+          <section className="organiser-change-request__unavailable">
+            <p className="organiser-request__eyebrow">Event update</p>
+            <h1>Change request unavailable</h1>
+            <p className="note">
+              {event.has_pending_change_request
+                ? 'A change request for this event is already waiting for review.'
+                : 'Change requests are available for events under review, in planning, awaiting a safety check or confirmed.'}
+            </p>
+          </section>
         </div>
-      </AppShell>
+      </OrganiserShell>
     )
   }
 
@@ -172,22 +193,35 @@ export default function EventChangeRequestPage() {
   })
 
   return (
-    <AppShell>
-      <div className="content">
-        <Link to={`/my-events/${eventId}`} className="backlink">← Event details</Link>
+    <OrganiserShell>
+      <div className="content organiser-change-request">
+        <Link
+          to={`/my-events/${eventId}`}
+          className="organiser-change-request__back"
+        >
+          ← Event details
+        </Link>
 
         <div className="content__header">
+          <p className="organiser-request__eyebrow">Event update</p>
           <h1>Request an event change</h1>
           <p className="lead">
-            The current event details and sessions are prefilled. Change what
-            you need, then submit for your Coordinator to review.
+            Update the event details or sessions below. Your Coordinator will
+            review the requested changes before they take effect.
+          </p>
+          <p className="organiser-change-request__event-name">
+            Event: <strong>{event.name}</strong>
           </p>
         </div>
 
-        <form className="form" noValidate onSubmit={handleSubmit}>
-          <section className="stack stack--tight">
+        <form
+          className="form organiser-change-request__form"
+          noValidate
+          onSubmit={handleSubmit}
+        >
+          <section className="organiser-change-request__section organiser-change-request__details stack stack--tight">
             <h2 className="section-title">Event details</h2>
-            <div className="field">
+            <div className="field organiser-change-request__field--wide">
               <label htmlFor="name">Event name</label>
               <input id="name" maxLength={200} value={form.name} onChange={updateField('name')} {...fieldProps('name')} />
               <FieldError id="name-error" message={fieldErrors.name} />
@@ -212,17 +246,17 @@ export default function EventChangeRequestPage() {
               <input id="purpose" value={form.purpose} onChange={updateField('purpose')} {...fieldProps('purpose')} />
               <FieldError id="purpose-error" message={fieldErrors.purpose} />
             </div>
-            <div className="field">
+            <div className="field organiser-change-request__field--wide">
               <label htmlFor="description">Description</label>
               <textarea id="description" rows={4} value={form.description} onChange={updateField('description')} {...fieldProps('description')} />
               <FieldError id="description-error" message={fieldErrors.description} />
             </div>
-            <div className="field">
+            <div className="field organiser-change-request__field--wide">
               <label htmlFor="accessibility_requirements">Accessibility requirements</label>
               <textarea id="accessibility_requirements" rows={3} value={form.accessibility_requirements} onChange={updateField('accessibility_requirements')} />
               <p className="field__hint">Optional. Leave blank if none are required.</p>
             </div>
-            <div className="field">
+            <div className="field organiser-change-request__field--wide">
               <label htmlFor="reason_for_change">Reason for change</label>
               <textarea id="reason_for_change" rows={3} value={form.reason_for_change} onChange={updateField('reason_for_change')} {...fieldProps('reason_for_change')} />
               <FieldError id="reason_for_change-error" message={fieldErrors.reason_for_change} />
@@ -230,7 +264,7 @@ export default function EventChangeRequestPage() {
             </div>
           </section>
 
-          <section className="stack stack--tight">
+          <section className="organiser-change-request__section organiser-change-request__sessions stack stack--tight">
             <h2 className="section-title">Sessions</h2>
             <p className="field__hint">
               Edit, add or remove sessions. Changing a session&apos;s time may
@@ -256,7 +290,7 @@ export default function EventChangeRequestPage() {
           {attempted && Object.keys(fieldErrors).length > 0 && (
             <p className="form-error" role="alert">Fix the marked fields before submitting.</p>
           )}
-          <div className="form-actions">
+          <div className="form-actions organiser-change-request__actions">
             <button type="submit" className="button" disabled={!canSubmit}>
               {submitting ? 'Submitting…' : 'Submit change request'}
             </button>
@@ -264,6 +298,6 @@ export default function EventChangeRequestPage() {
           </div>
         </form>
       </div>
-    </AppShell>
+    </OrganiserShell>
   )
 }
