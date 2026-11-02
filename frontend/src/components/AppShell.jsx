@@ -7,12 +7,14 @@ import { useAuth } from '../context/AuthContext'
 import CoordinatorTabs from './CoordinatorTabs'
 import LeadTabs from './LeadTabs'
 import NotificationDropdown from './NotificationDropdown'
+import SafetyTabs from './SafetyTabs'
 import './WorkspaceLayout.css'
 
 // Roles with their own tabs and workspace, on every page they share with others.
 const WORKSPACE_TABS = {
   coordinator: CoordinatorTabs,
   event_coordinator_lead: LeadTabs,
+  safety_officer: SafetyTabs,
 }
 
 export default function AppShell({ children }) {

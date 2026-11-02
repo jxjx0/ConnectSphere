@@ -219,6 +219,10 @@ export function getSafetyQueue(token) {
   return request('/events/safety/queue', { token })
 }
 
+export function getSafetyHistory(token) {
+  return request('/events/safety/history', { token })
+}
+
 export function getSafetyEventDetails(eventId, token) {
   return request(`/events/safety/review/${eventId}`, { token })
 }

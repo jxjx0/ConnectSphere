@@ -744,6 +744,20 @@ def get_safety_queue():
         return jsonify({"error": "Unable to load the safety queue."}), 500
 
 
+@events_bp.get("/safety/history")
+@require_auth
+def get_safety_history():
+    """Endpoint for Safety Officers to see past decisions and events no longer needing one."""
+    try:
+        _require_safety_officer()
+        return jsonify(safety_review_service.get_safety_review_history(g.access_token)), 200
+    except AuthError as exc:
+        return jsonify({"error": exc.message}), exc.status_code
+    except Exception as exc:
+        logger.error(f"Error in /events/safety/history: {traceback.format_exc()}")
+        return jsonify({"error": "Unable to load the safety history."}), 500
+
+
 @events_bp.get("/safety/review/<event_id>")
 @require_auth
 def get_safety_review_details(event_id):
