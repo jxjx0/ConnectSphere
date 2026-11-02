@@ -52,13 +52,9 @@
 .attendee-ui .session-card__head { padding: 24px 24px 16px; background: var(--surface); border: 0; border-top: 4px solid #ddd6fe; display: flex; flex-direction: column; gap: 12px; }
 .attendee-ui .session-card__meta { font-family: inherit; font-size: 12px; color: var(--ink-muted); line-height: 1.7; }
 .attendee-ui .session-card__body { flex: 1; padding: 0 24px 24px; gap: 16px; display: flex; flex-direction: column; align-items: stretch; }
-.attendee-ui .session-card__body > .button { align-self: flex-start; }
 .attendee-ui .attendee-card-labels { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .attendee-ui .attendee-category { color: var(--secondary); font-size: 12px; font-weight: 600; }
 .attendee-ui .attendee-card-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: auto; padding-top: 8px; }
-.attendee-ui .attendee-card-actions > .stack { display: contents; }
-.attendee-ui .attendee-card-actions .form-actions { margin: 0; }
-.attendee-ui .attendee-card-actions > .form-error { flex-basis: 100%; }
 .attendee-ui .tag { border: 1px solid var(--rule); border-radius: 24px; padding: 4px 12px; font: 600 12px var(--font-body); background: var(--sunken); color: var(--ink-muted); text-transform: none; letter-spacing: 0; }
 .attendee-ui .tag--registered { background: var(--success-faint); border-color: #a7f3d0; color: var(--success); }
 .attendee-ui .tag--withdrawn { background: var(--sunken); color: var(--ink-muted); }

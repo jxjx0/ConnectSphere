@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 import { groupRegistrationsByEvent } from '../attendeeRegistration'
 import { formatDateTime } from '../eventDisplay'
 
@@ -28,6 +30,9 @@ export default function RegistrationHistory({ registrations, eventId, currentReg
               <p>Registered {formatDateTime(attempt.created_at)}</p>
               {attempt.status === 'withdrawn' && <p>Withdrawn {formatDateTime(attempt.withdrawn_at)}</p>}
             </div>
+            {attempt.id !== currentRegistrationId && (
+              <Link to={`/attendee/registrations/${attempt.id}`}>View registration</Link>
+            )}
           </li>
         ))}
       </ol>

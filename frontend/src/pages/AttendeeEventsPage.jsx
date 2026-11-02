@@ -15,6 +15,7 @@ export default function AttendeeEventsPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [registrations, setRegistrations] = useState([])
+  const [registrationsLoading, setRegistrationsLoading] = useState(false)
   const [registrationError, setRegistrationError] = useState('')
   const requestScope = useRef(0)
   const [query, setQuery] = useState('')
@@ -28,17 +29,20 @@ export default function AttendeeEventsPage() {
     setLoading(true)
     setError('')
     setRegistrations([])
+    setRegistrationsLoading(false)
     setRegistrationError('')
     getPublishedEvents(token)
       .then((data) => {
         if (scope !== requestScope.current) return
         setEvents(data.events)
         if (data.events.some((event) => event.is_registered)) {
+          setRegistrationsLoading(true)
           getMyRegistrations(token)
             .then((owned) => {
               if (scope === requestScope.current) setRegistrations(owned.registrations.filter((item) => item.status === 'registered'))
             })
             .catch((caught) => { if (scope === requestScope.current) setRegistrationError(caught.message) })
+            .finally(() => { if (scope === requestScope.current) setRegistrationsLoading(false) })
         }
       })
       .catch((caught) => { if (scope === requestScope.current) setError(caught.message) })
@@ -96,11 +100,17 @@ export default function AttendeeEventsPage() {
                   {!event.is_registered && <p>{spotsLeftLabel(event)}</p>}
                   {!availability.open && !event.is_registered && <p className="note">{availability.message}</p>}
                   <div className="attendee-card-actions">
-                    <Link to={event.is_registered && registration
-                      ? `/attendee/registrations/${registration.id}` : `/attendee/events/${event.id}`}
-                      className="button button--small">
-                      {event.is_registered ? 'View registration' : availability.open ? 'View event & register' : 'View event'}
-                    </Link>
+                    {event.is_registered && registrationsLoading ? (
+                      <button type="button" className="button button--small" disabled aria-busy="true">
+                        Loading registration...
+                      </button>
+                    ) : (
+                      <Link to={event.is_registered && registration
+                        ? `/attendee/registrations/${registration.id}` : `/attendee/events/${event.id}`}
+                        className="button button--small">
+                        {event.is_registered && registration ? 'View registration' : availability.open ? 'View event & register' : 'View event'}
+                      </Link>
+                    )}
                   </div>
                 </div>
               </article>
