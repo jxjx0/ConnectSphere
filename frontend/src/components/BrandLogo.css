@@ -1,0 +1,12 @@
+/* Colours are set here, not from theme tokens, so the logo looks the same in
+   every role's theme. */
+.brand-logo { display: inline-flex; align-items: center; gap: 8px; color: #111827; font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 20px; font-weight: 750; letter-spacing: -1px; text-decoration: none; text-transform: none; }
+.brand-logo:hover { color: #111827; }
+.brand-logo__dot { margin-left: -8px; color: #b83f19; }
+.brand-logo__mark { position: relative; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #f2673c; color: #111827; font-size: 32px; font-weight: 600; line-height: 1; }
+.brand-logo__mark span { position: absolute; right: -2px; bottom: 1px; width: 8px; height: 8px; border-radius: 50%; background: #8b5cf6; }
+
+@media (max-width: 479px) {
+  .brand-logo { font-size: 16px; }
+  .brand-logo__mark { width: 28px; height: 28px; font-size: 28px; }
+}

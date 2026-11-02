@@ -32,8 +32,6 @@
 }
 .attendee-ui .topbar { background: var(--surface); padding: 20px 32px; }
 .attendee-ui .topbar__inner { max-width: 1160px; }
-.attendee-ui .wordmark { display: inline-flex; align-items: center; gap: 12px; font-family: inherit; font-size: 20px; font-weight: 750; letter-spacing: -.7px; text-transform: none; }
-.attendee-ui .wordmark::before { content: ''; width: 20px; height: 20px; border: 5px solid var(--brand-primary); border-radius: 50%; flex-shrink: 0; }
 .attendee-ui .topbar__user { font-size: 14px; }
 .attendee-ui .app-main { max-width: 1224px; padding: 32px 32px 64px; margin: 0 auto; gap: 32px; }
 .attendee-ui .content { width: 100%; max-width: none; min-width: 0; padding: 0; gap: 24px; }
@@ -135,7 +133,6 @@
 @media (max-width: 767px) {
   .attendee-ui .attendee-jump { display: inline-flex; }
   .attendee-ui .topbar { padding: 16px; }
-  .attendee-ui .wordmark { font-size: 16px; gap: 8px; }
   .attendee-ui .topbar__user { gap: 12px; }
   .attendee-ui .app-main { padding: 24px 16px 48px; }
   .attendee-ui .attendee-grid, .attendee-ui .detail-list, .attendee-ui .attendee-list-tools, .attendee-ui .attendee-event-layout { grid-template-columns: minmax(0, 1fr); }

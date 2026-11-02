@@ -4,6 +4,7 @@
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
+import BrandLogo from './BrandLogo'
 import CoordinatorTabs from './CoordinatorTabs'
 import LeadTabs from './LeadTabs'
 import NotificationDropdown from './NotificationDropdown'
@@ -38,9 +39,7 @@ export default function AppShell({ children }) {
     <>
       <header className="topbar">
         <div className="topbar__inner">
-          <Link to="/dashboard" className="wordmark">
-            ConnectSphere
-          </Link>
+          <BrandLogo to="/dashboard" />
 
           <div className="topbar__user">
             <NotificationDropdown />
