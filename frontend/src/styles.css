@@ -1509,6 +1509,7 @@ a:hover {
 }
 
 .organiser-ui {
+  --bg: #f8fafc;
   min-height: 100svh;
   background: var(--bg);
   color: var(--ink);
@@ -1518,7 +1519,7 @@ a:hover {
 
 .organiser-ui .topbar {
   background: var(--surface);
-  padding: var(--space-5) var(--space-8);
+  padding: var(--space-5) var(--space-6);
 }
 
 .organiser-ui .topbar__inner {
@@ -1551,8 +1552,8 @@ a:hover {
 
 .organiser-ui .app-main {
   max-width: 76.5rem;
-  padding: var(--space-7) var(--space-7) var(--space-8);
-  gap: var(--space-8);
+  padding: var(--space-6) var(--space-6) var(--space-8);
+  gap: var(--space-6);
 }
 
 .organiser-ui .content {
@@ -1560,7 +1561,7 @@ a:hover {
   max-width: none;
   min-width: 0;
   padding: 0;
-  gap: var(--space-6);
+  gap: var(--space-5);
 }
 
 .organiser-ui .content__header {
@@ -1672,7 +1673,7 @@ a:hover {
   min-width: 0;
   padding: var(--space-5);
   border-color: var(--rule);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--bg);
   gap: var(--space-4);
 }
@@ -1725,7 +1726,7 @@ a:hover {
   gap: 0 var(--space-5);
   padding: var(--space-2) var(--space-5);
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--surface);
 }
 
@@ -2096,7 +2097,7 @@ a:hover {
   margin: 0;
   padding: var(--space-4);
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--bg);
 }
 
@@ -2793,8 +2794,8 @@ a:hover {
   }
 
   .organiser-ui .app-main {
-    padding: var(--space-6) var(--space-4) var(--space-8);
-    gap: var(--space-6);
+    padding: var(--space-5) var(--space-4) var(--space-7);
+    gap: var(--space-5);
   }
 
   .organiser-ui .content__header h1 {
