@@ -65,17 +65,9 @@ export default function AuthForm({ mode }) {
     <SplitLayout foot={isLogin
       ? 'Staff accounts are created by the ConnectSphere team. Contact them to request access.'
       : 'One email can hold one account. Choose the role that fits you.'}>
-      <div className="content__header">
-        <Link to="/" className="auth-back"><span aria-hidden="true">&larr;</span> All account options</Link>
-        <p className="auth-eyebrow">{isLogin ? 'YOUR NEXT EVENT AWAITS' : isOrganiser ? 'FOR THE EXPERIENCE MAKERS' : 'FOR THE CURIOUS & CONNECTED'}</p>
-        <h1>{isLogin ? 'Welcome back.' : isOrganiser ? 'Make something happen.' : 'Be part of something.'}</h1>
-        <p className="lead">{isLogin ? 'Log in to pick up where you left off.' : isOrganiser ? 'Create an organiser account to bring your next event to life.' : 'Create an attendee account and find your next experience.'}</p>
-      </div>
-      {!isLogin && <nav className="auth-role-tabs" aria-label="Account type">
-        <Link to="/signup/organiser" aria-current={isOrganiser ? 'page' : undefined}>Event organiser</Link>
-        <Link to="/signup/attendee" aria-current={!isOrganiser ? 'page' : undefined}>Attendee</Link>
-      </nav>}
       <form ref={form} className="form auth-form" onSubmit={handleSubmit} noValidate aria-label={isLogin ? 'Log in' : 'Create account'} aria-busy={submitting}>
+        <Link to="/" className="auth-back" aria-label="Back to account options"><span aria-hidden="true">&larr;</span> Back</Link>
+        <h1 className={isLogin ? undefined : 'visually-hidden'}>{isLogin ? 'Welcome back.' : isOrganiser ? 'Create an organiser account' : 'Create an attendee account'}</h1>
         {fields.map((name) => {
           const { label, ...details } = FIELD_DETAILS[name]
           const isPassword = name === 'password'

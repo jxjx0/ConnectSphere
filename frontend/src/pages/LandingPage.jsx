@@ -8,15 +8,11 @@ export default function LandingPage() {
       foot="Coordinator, Venue Staff and Technical Support accounts are created by the ConnectSphere team. Contact them to request access."
     >
       <div className="content__header">
-        <p className="auth-eyebrow">WELCOME TO CONNECTSPHERE</p>
-        <h1>Your next connection<br />starts here.</h1>
-        <p className="lead">
-          Great events begin with you. Choose how you want to get involved.
-        </p>
+        <h1>Welcome to ConnectSphere.</h1>
       </div>
 
       <section className="stack stack--tight">
-        <h2 className="section-title">Find your place</h2>
+        <h2 className="section-title">Register as</h2>
 
         <ul className="choices">
           <li>
@@ -25,7 +21,7 @@ export default function LandingPage() {
                 <span className="choice__badge" aria-hidden="true">01 / CREATE</span>
                 <span className="choice__title">I'm an event organiser</span>
                 <span className="choice__description">
-                  Plan events, book venues, and track their progress.
+                  Plan events and track their progress.
                 </span>
               </span>
               <span className="choice__arrow" aria-hidden="true">
@@ -50,7 +46,6 @@ export default function LandingPage() {
         </ul>
       </section>
 
-      <p className="auth-account-note">One email, one account. Pick the role that fits you.</p>
       <p className="note">
         Already registered? <Link to="/login">Log in</Link>
       </p>
