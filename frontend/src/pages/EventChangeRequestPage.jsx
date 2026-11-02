@@ -159,7 +159,7 @@ export default function EventChangeRequestPage() {
           <p className="note">
             {event.has_pending_change_request
               ? 'A change request for this event is already waiting for review.'
-              : 'Change requests are available for events under review, in planning or confirmed.'}
+              : 'Change requests are available for events under review, in planning, awaiting a safety check or confirmed.'}
           </p>
         </div>
       </AppShell>

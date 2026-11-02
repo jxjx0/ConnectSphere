@@ -519,8 +519,8 @@ def submit_event_change_request(
             ) from error
         if "event cannot be changed" in message:
             raise AuthError(
-                "Only events under review, in planning or confirmed can be "
-                "changed.",
+                "Only events under review, in planning, awaiting a safety check "
+                "or confirmed can be changed.",
                 status_code=409,
             ) from error
         if "no event details were changed" in message:
@@ -962,8 +962,8 @@ def review_assigned_change_request(
     Approving applies the proposed sessions (T7-281): moved or removed
     sessions have their approved bookings and equipment requests flagged,
     the pending bookings listed in `approval` are cancelled, and a material
-    change sends a Confirmed event back to Planning. The third value says
-    whether that happened.
+    change sends a Confirmed event, or one awaiting its safety check, back to
+    Planning. The third value says whether that happened.
     """
     if decision not in {"approve", "reject"}:
         raise AuthError("Invalid change request decision.", status_code=400)
