@@ -145,6 +145,9 @@ jobs:
         run: npm install
 
       - name: Start servers and run e2e tests
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           # 1. Start Python backend on port 5000 in background
           python backend/app.py > backend.log 2>&1 &
