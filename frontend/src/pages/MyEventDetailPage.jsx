@@ -22,8 +22,8 @@ import {
   formatSessionSummary,
   optional,
 } from '../eventDisplay'
-import { statusLabel } from '../eventStatus'
 import { REGISTRATION_STATUSES, signUpSummary } from '../eventRegistration'
+import { needsRegistrationSetup } from '../organiserEventTabs'
 
 function Answer({ label, value, wide }) {
   return (
@@ -150,7 +150,7 @@ export default function MyEventDetailPage() {
       <AppShell>
         <div className="page-state">
           <p>{error}</p>
-          <Link to="/my-events">Back to my event requests</Link>
+          <Link to="/my-events">← Back</Link>
         </div>
       </AppShell>
     )
@@ -170,9 +170,7 @@ export default function MyEventDetailPage() {
   return (
     <AppShell>
       <div className="content">
-        <Link to="/my-events" className="backlink">
-          ← My event requests
-        </Link>
+        <Link to="/my-events" className="backlink">← Back</Link>
 
         <header className="record-head">
           <h1 className="record-head__title">{event.name}</h1>
@@ -190,6 +188,21 @@ export default function MyEventDetailPage() {
         </header>
 
         <EventStatusPanel event={event} role="organiser" />
+
+        {needsRegistrationSetup(event) && (
+          <section className="notice stack stack--tight" role="status">
+            <p><strong>Set up attendee registration</strong></p>
+            <p>
+              Your event is confirmed, so the next step is the event itself. Attendees
+              can only sign up once you set up registration and publish it.
+            </p>
+            <div>
+              <Link to={`/my-events/${event.id}/registration`} className="button">
+                Set up registration
+              </Link>
+            </div>
+          </section>
+        )}
 
         {/* Open requests come first: one of them may be waiting on you. */}
         {openClarification && (
@@ -248,16 +261,10 @@ export default function MyEventDetailPage() {
           <h2 className="section-title">Who is handling this</h2>
 
           <dl className="answers">
-            <div className="answers--paired">
-              <Answer
-                label="Event Coordinator"
-                value={event.coordinator_name}
-              />
-              <Answer
-                label="Current stage"
-                value={statusLabel(event.status)}
-              />
-            </div>
+            <Answer
+              label="Event Coordinator"
+              value={event.coordinator_name}
+            />
           </dl>
         </section>
 
@@ -305,9 +312,11 @@ export default function MyEventDetailPage() {
                 ? `Published ${formatDateTime(event.published_at)}.`
                 : 'Not published yet.'}
             </p>
-            <Link to={`/my-events/${event.id}/registration`} className="button">
-              {event.registration_opens_at ? 'Edit registration and preview' : 'Set up registration'}
-            </Link>
+            <div>
+              <Link to={`/my-events/${event.id}/registration`} className="button button--secondary">
+                {event.registration_opens_at ? 'Edit registration and preview' : 'Set up registration'}
+              </Link>
+            </div>
           </section>
         )}
 

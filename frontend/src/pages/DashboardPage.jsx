@@ -38,20 +38,6 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {user.role === 'organiser' && (
-        <section className="stack stack--tight">
-          <h2 className="section-title">Event Requests</h2>
-          <div className="form-actions">
-            <Link to="/my-events/new" className="button">
-              Request an Event
-            </Link>
-            <Link to="/my-events" className="button button--secondary">
-              My Event Requests
-            </Link>
-          </div>
-        </section>
-      )}
-
       {isCoordinator && (
         <section className="stack stack--tight">
           <h2 className="section-title">Assigned Event Requests</h2>

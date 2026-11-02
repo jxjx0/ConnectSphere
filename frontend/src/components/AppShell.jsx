@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext'
 import CoordinatorTabs from './CoordinatorTabs'
 import LeadTabs from './LeadTabs'
 import NotificationDropdown from './NotificationDropdown'
+import OrganiserTabs from './OrganiserTabs'
 import SafetyTabs from './SafetyTabs'
 import './WorkspaceLayout.css'
 
@@ -14,6 +15,7 @@ import './WorkspaceLayout.css'
 const WORKSPACE_TABS = {
   coordinator: CoordinatorTabs,
   event_coordinator_lead: LeadTabs,
+  organiser: OrganiserTabs,
   safety_officer: SafetyTabs,
 }
 

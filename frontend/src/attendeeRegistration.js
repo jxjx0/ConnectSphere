@@ -69,7 +69,13 @@ export function filterAttendeeEvents(events, query, filter, now = new Date()) {
 export function filterRegistrationGroups(groups, query, filter) {
   const search = query.trim().toLowerCase()
   return groups.filter(({ latest }) => latest.event_name.toLowerCase().includes(search)
-    && (filter === 'all' || (filter === 'cancelled' ? latest.event_status === 'cancelled' : latest.status === filter)))
+    && (filter === 'all' || latest.status === filter))
+}
+
+// Past registrations are for events that were cancelled or have finished.
+export function isPastRegistration({ latest }, now = new Date()) {
+  return ['cancelled', 'completed', 'rejected'].includes(latest.event_status)
+    || (Boolean(latest.event_end_time) && now >= new Date(latest.event_end_time))
 }
 
 export function groupRegistrationsByEvent(registrations) {
