@@ -54,7 +54,7 @@ export default function AttendeeEventsPage() {
     <AttendeeShell>
       <div className="content">
         <div className="content__header">
-          <h1>Events</h1>
+          <h1>Sign up for Events here!</h1>
         </div>
 
         <AttendeeListTools

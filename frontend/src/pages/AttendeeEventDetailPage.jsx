@@ -155,7 +155,7 @@ export default function AttendeeEventDetailPage() {
       <AttendeeShell>
         <div className="page-state">
           <p>{loadError}</p>
-          <Link to="/attendee/events">Back to events</Link>
+          <Link to="/attendee/events" aria-label="Back to events">&larr; Back</Link>
         </div>
       </AttendeeShell>
     )
@@ -167,7 +167,7 @@ export default function AttendeeEventDetailPage() {
   return (
     <AttendeeShell>
       <div className="content">
-        <Link to="/attendee/events" className="backlink">← Events</Link>
+        <Link to="/attendee/events" className="backlink" aria-label="Back to events">&larr; Back</Link>
 
         <div className="content__header">
           <h1>{event.name}</h1>
@@ -274,7 +274,7 @@ export default function AttendeeEventDetailPage() {
           )}
           {availability.open && (
             <form ref={formElement} className="form" noValidate onSubmit={handleSubmit} aria-busy={submitting}>
-              <p className="note">Confirm your details to register for the whole event.</p>
+              <p className="note">Confirm your details to register for the event.</p>
               {FIELDS.map((field) => {
                 const fieldError = errors.includes(fieldProblems[field.name]) ? fieldProblems[field.name] : null
                 return <div className="field" key={field.name}>
@@ -295,7 +295,7 @@ export default function AttendeeEventDetailPage() {
                   />
                   {field.name === 'email' && (
                     <p className="field__hint" id="registration-email-hint">
-                      Your account email. Your confirmation email is sent here.
+                      Your confirmation email is sent here.
                     </p>
                   )}
                   {fieldError && <p className="field__error" id={`${field.name}-error`}>{fieldError}</p>}

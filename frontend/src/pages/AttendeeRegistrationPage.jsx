@@ -75,7 +75,7 @@ export default function AttendeeRegistrationPage() {
       <AttendeeShell>
         <div className="page-state">
           <p>{error}</p>
-          <Link to="/attendee/registrations">Back to my registrations</Link>
+          <Link to="/attendee/registrations" aria-label="Back to my registrations">&larr; Back</Link>
         </div>
       </AttendeeShell>
     )
@@ -84,7 +84,7 @@ export default function AttendeeRegistrationPage() {
   return (
     <AttendeeShell>
       <div className="content">
-        <Link to="/attendee/registrations" className="backlink">← My registrations</Link>
+        <Link to="/attendee/registrations" className="backlink" aria-label="Back to my registrations">&larr; Back</Link>
 
         <div className="content__header">
           <h1>{justRegistered && registration.status !== 'withdrawn' && registration.event_status !== 'cancelled' ? 'Registration successful' : 'Your registration'}</h1>
@@ -117,7 +117,7 @@ export default function AttendeeRegistrationPage() {
           </p>
         )}
 
-        <dl className="detail-list">
+        <dl className="detail-list attendee-registration-details">
           <div className="detail-list__row">
             <dt>Registration status</dt>
             <dd>{registration.status === 'withdrawn' ? 'Withdrawn' : 'Registered'}</dd>
@@ -162,7 +162,7 @@ export default function AttendeeRegistrationPage() {
               ? 'Registration and withdrawal are unavailable for this cancelled event.'
               : registration.status === 'withdrawn'
               ? canRegisterAgain
-                ? 'You can register again while registration is open and places are available.'
+                ? 'You can register again while registration is open and slots are available.'
                 : 'Registration is currently unavailable. You can still view your history below.'
               : registration.can_withdraw
                 ? `You can withdraw before ${formatDateTime(registration.event_start_time)}.`

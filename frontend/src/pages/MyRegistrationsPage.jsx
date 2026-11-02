@@ -6,7 +6,7 @@ import AttendeeShell from '../components/AttendeeShell'
 import AttendeeListTools from '../components/AttendeeListTools'
 import { useAuth } from '../context/AuthContext'
 import { filterRegistrationGroups, groupRegistrationsByEvent } from '../attendeeRegistration'
-import { formatDateRange, formatDateTime } from '../eventDisplay'
+import { formatDateRange } from '../eventDisplay'
 import { attendeeEventNote } from '../eventStatus'
 
 export default function MyRegistrationsPage() {
@@ -34,7 +34,7 @@ export default function MyRegistrationsPage() {
     <AttendeeShell>
       <div className="content">
         <div className="content__header">
-          <h1>My registrations</h1>
+          <h1>Events you have Signed Up for</h1>
         </div>
 
         <AttendeeListTools
@@ -73,10 +73,6 @@ export default function MyRegistrationsPage() {
                   <strong>Registration status:</strong>{' '}
                   <span className={`tag tag--${registration.status === 'withdrawn' ? 'withdrawn' : registration.event_status === 'cancelled' ? 'recorded' : 'registered'}`}>{registration.status === 'withdrawn' ? 'Withdrawn' : 'Registered'}</span>
                 </p>
-                <p>Registered {formatDateTime(registration.created_at)}</p>
-                {registration.status === 'withdrawn' && (
-                  <p>Withdrawn {formatDateTime(registration.withdrawn_at)}</p>
-                )}
                 {registration.event_status === 'cancelled' && (
                   <p className="note">This event will no longer take place. Your registration is kept for your records.</p>
                 )}

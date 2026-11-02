@@ -69,6 +69,7 @@
 .attendee-ui .section-title { padding-bottom: 12px; font-family: inherit; font-size: 14px; font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--ink); }
 .attendee-ui .detail-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: none; margin: 0; gap: 0 24px; padding: 8px 24px; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; }
 .attendee-ui .detail-list__row { min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 16px 0; }
+.attendee-ui .attendee-registration-details > .detail-list__row { border-bottom: 0; }
 .attendee-ui .detail-list .detail-list__row dt { flex: none; font: 600 12px var(--font-body); text-transform: none; letter-spacing: 0; color: var(--ink-muted); }
 .attendee-ui .detail-list__row dd { font-size: 14px; margin: 0; overflow-wrap: anywhere; }
 .attendee-ui .attendee-panel > .detail-list, .attendee-ui .session-card .detail-list { border: 0; border-radius: 0; padding: 0; }
@@ -127,6 +128,7 @@
 .attendee-ui .attendee-register-panel { grid-column: 2; grid-row: 1 / span 2; position: sticky; top: 24px; min-width: 0; scroll-margin-top: 24px; }
 .attendee-ui .attendee-event-layout > section { min-width: 0; }
 .attendee-ui .attendee-event-layout .detail-list { grid-template-columns: minmax(0, 1fr); }
+.attendee-ui .attendee-event-layout .detail-list__row { border-bottom: 0; }
 .attendee-ui .attendee-jump { display: none; align-self: flex-start; }
 .attendee-ui .page-state { min-height: 240px; align-items: flex-start; text-align: left; padding: 32px; border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); }
 @media (max-width: 767px) {
