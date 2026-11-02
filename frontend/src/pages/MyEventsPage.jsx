@@ -17,6 +17,14 @@ import {
   organiserTabCount,
 } from '../organiserEventTabs'
 
+function OrganiserShell({ children }) {
+  return (
+    <div className="organiser-ui">
+      <AppShell>{children}</AppShell>
+    </div>
+  )
+}
+
 export default function MyEventsPage() {
   const { token } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -39,9 +47,9 @@ export default function MyEventsPage() {
 
   if (loading) {
     return (
-      <AppShell>
+      <OrganiserShell>
         <p className="page-state">Loading your event requests…</p>
-      </AppShell>
+      </OrganiserShell>
     )
   }
 
@@ -50,92 +58,123 @@ export default function MyEventsPage() {
   const tabEvents = organiserEventsForTab(tab.id, events, drafts)
 
   return (
-    <AppShell>
-      <div className="content">
-        <Link to="/dashboard" className="backlink">← Dashboard</Link>
+    <OrganiserShell>
+      <div className="content organiser-events">
+        <Link to="/dashboard" className="organiser-events__back">
+          ← Dashboard
+        </Link>
         <div className="content__header">
+          <p className="organiser-request__eyebrow">Organiser workspace</p>
           <h1>My event requests</h1>
           <p className="lead">
             See what needs your reply, follow your requests, or continue a saved draft.
           </p>
         </div>
 
-        <div className="form-actions" role="tablist" aria-label="Filter events by status">
+        <div
+          className="organiser-events__tabs"
+          role="group"
+          aria-label="Filter events by status"
+        >
           {ORGANISER_EVENT_TABS.map((item) => (
             <button
               key={item.id}
               type="button"
-              role="tab"
-              aria-selected={tab.id === item.id}
-              className={tab.id === item.id
-                ? 'button button--small'
-                : 'button button--small button--secondary'}
+              aria-pressed={tab.id === item.id}
+              className="organiser-events__tab"
               onClick={() => setSearchParams({ tab: item.id })}
             >
-              {item.label} ({organiserTabCount(item.id, events, drafts)})
+              <span>{item.label}</span>
+              <span className="organiser-events__count">
+                {organiserTabCount(item.id, events, drafts)}
+              </span>
             </button>
           ))}
         </div>
 
-        {error && <p className="form-error" role="alert">{error}</p>}
+        <div
+          className="organiser-events__panel"
+        >
+          {error && <p className="form-error" role="alert">{error}</p>}
 
-        {!error && tabEvents.length === 0 && (
-          <section className="stack stack--tight">
-            <p className="note">{tab.empty}</p>
-            {tab.id === 'drafts' && (
-              <p className="note">
-                Use “Save as draft” on an event request to finish it later.
-              </p>
-            )}
-            {(tab.id === 'drafts' || tab.id === 'in-progress') && (
-              <div className="form-actions">
+          {!error && tabEvents.length === 0 && (
+            <section className="organiser-events__empty">
+              <h2>{tab.label}</h2>
+              <p>{tab.empty}</p>
+              {tab.id === 'drafts' && (
+                <p>
+                  Use “Save as draft” on an event request to finish it later.
+                </p>
+              )}
+              {(tab.id === 'drafts' || tab.id === 'in-progress') && (
                 <Link to="/my-events/new" className="button">
-                  Request an Event
+                  Request an event
                 </Link>
-              </div>
-            )}
-          </section>
-        )}
+              )}
+            </section>
+          )}
 
-        {!error && tabEvents.length > 0 && (
-          <section className="stack stack--tight">
-            <h2 className="section-title">{tab.label}</h2>
-            <div className="choices">
-              {tabEvents.map((item) => {
-                const isDraft = tab.id === 'drafts'
-                return (
-                  <Link
-                    key={item.id}
-                    to={isDraft ? `/my-events/drafts/${item.id}` : `/my-events/${item.id}`}
-                    className="choice"
-                  >
-                    <span className="choice__text">
-                      <span className="choice__title">{item.name}</span>
-                      <span className="choice__description">
-                        {isDraft
-                          ? `Last edited ${formatDateTime(item.updated_at)}`
-                          : (
-                            <>
-                              {formatDateRange(item.start_time, item.end_time)}{' · '}{formatSessionSummary(item)}{' · '}
-                              <span className="tag">{statusLabel(item.status)}</span>
-                              {openRequestBadges(item, 'organiser').map((badge) => (
-                                <span key={badge.kind}>
-                                  {' '}
-                                  <span className={badge.yourTurn ? 'tag tag--your-turn' : 'tag'}>{badge.label}</span>
-                                </span>
-                              ))}
-                            </>
-                          )}
+          {!error && tabEvents.length > 0 && (
+            <section className="organiser-events__results">
+              <div className="organiser-events__results-heading">
+                <h2>{tab.label}</h2>
+                <p>
+                  {tabEvents.length} {tabEvents.length === 1 ? 'request' : 'requests'}
+                </p>
+              </div>
+              <div className="organiser-events__grid">
+                {tabEvents.map((item) => {
+                  const isDraft = tab.id === 'drafts'
+                  return (
+                    <Link
+                      key={item.id}
+                      to={isDraft ? `/my-events/drafts/${item.id}` : `/my-events/${item.id}`}
+                      className="organiser-events__card"
+                    >
+                      <span className="organiser-events__card-header">
+                        <span className="organiser-events__card-title">
+                          {item.name}
+                        </span>
+                        <span className="organiser-events__arrow" aria-hidden="true">
+                          →
+                        </span>
                       </span>
-                    </span>
-                    <span className="choice__arrow" aria-hidden="true">→</span>
-                  </Link>
-                )
-              })}
-            </div>
-          </section>
-        )}
+                      {isDraft ? (
+                        <span className="organiser-events__card-meta">
+                          <span className="organiser-events__status">Draft</span>
+                          <span>Last edited {formatDateTime(item.updated_at)}</span>
+                        </span>
+                      ) : (
+                        <>
+                          <span className="organiser-events__card-meta">
+                            <span>{formatDateRange(item.start_time, item.end_time)}</span>
+                            <span>{formatSessionSummary(item)}</span>
+                          </span>
+                          <span className="organiser-events__statuses">
+                            <span className="organiser-events__status">
+                              {statusLabel(item.status)}
+                            </span>
+                            {openRequestBadges(item, 'organiser').map((badge) => (
+                              <span
+                                key={badge.kind}
+                                className={badge.yourTurn
+                                  ? 'organiser-events__status organiser-events__status--attention'
+                                  : 'organiser-events__status'}
+                              >
+                                {badge.label}
+                              </span>
+                            ))}
+                          </span>
+                        </>
+                      )}
+                    </Link>
+                  )
+                })}
+              </div>
+            </section>
+          )}
+        </div>
       </div>
-    </AppShell>
+    </OrganiserShell>
   )
 }
