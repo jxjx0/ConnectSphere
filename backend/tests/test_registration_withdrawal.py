@@ -51,12 +51,14 @@ def use_rpc(monkeypatch, response):
 
 
 @pytest.mark.parametrize("changed", [True, False])
-def test_withdrawal_notifies_only_on_the_first_transition(monkeypatch, changed):
+def test_withdrawal_emails_only_on_the_first_transition_without_in_app_notice(monkeypatch, changed):
     db, user_client = use_rpc(monkeypatch, {
         "registration": registration(), "changed": changed,
     })
     notify = Mock()
     monkeypatch.setattr(notification_service, "notify", notify)
+    email = Mock(return_value=True)
+    monkeypatch.setattr(notification_service, "try_send_email", email)
 
     result = service.withdraw_registration("token", REGISTRATION_ID)
 
@@ -66,10 +68,14 @@ def test_withdrawal_notifies_only_on_the_first_transition(monkeypatch, changed):
     assert "address" not in result.model_dump()
     user_client.assert_called_once_with("token")
     assert db.calls[0].payload == {"p_registration_id": REGISTRATION_ID}
-    assert notify.call_count == int(changed)
+    notify.assert_not_called()
+    assert email.call_count == int(changed)
     if changed:
-        assert notify.call_args.args[:3] == (
-            ATTENDEE_ID, "registration_withdrawn", "Registration withdrawn",
+        email.assert_called_once_with(
+            "cara@example.com",
+            "Registration withdrawn: Workshop",
+            "Your registration for 'Workshop' has been withdrawn. "
+            "You no longer hold a place at this event.",
         )
 
 
@@ -87,6 +93,8 @@ def test_errors_are_translated_without_notifying(monkeypatch, message, code, sta
     use_rpc(monkeypatch, APIError({"message": message, "code": code}))
     notify = Mock()
     monkeypatch.setattr(notification_service, "notify", notify)
+    email = Mock()
+    monkeypatch.setattr(notification_service, "try_send_email", email)
 
     with pytest.raises(AuthError) as caught:
         service.withdraw_registration("token", REGISTRATION_ID)
@@ -94,6 +102,7 @@ def test_errors_are_translated_without_notifying(monkeypatch, message, code, sta
     assert caught.value.status_code == status
     assert "private database detail" not in str(caught.value)
     notify.assert_not_called()
+    email.assert_not_called()
 
 
 def test_route_returns_saved_registration(client, monkeypatch):
@@ -132,10 +141,13 @@ def test_route_returns_conflict(client, monkeypatch):
     assert response.json["error"] == "Event has started."
 
 
-def test_notification_failure_does_not_undo_withdrawal(monkeypatch, caplog):
+def test_email_failure_does_not_undo_withdrawal(monkeypatch, caplog):
     use_rpc(monkeypatch, {"registration": registration(), "changed": True})
-    monkeypatch.setattr(notification_service, "_save_notification", Mock(
+    save_notification = Mock()
+    monkeypatch.setattr(notification_service, "_save_notification", save_notification)
+    monkeypatch.setattr(notification_service, "send_email", Mock(
         side_effect=RuntimeError("unavailable"),
     ))
     assert service.withdraw_registration("token", REGISTRATION_ID).status == "withdrawn"
-    assert "Could not save notification" in caplog.text
+    assert "Could not send email" in caplog.text
+    save_notification.assert_not_called()
