@@ -26,7 +26,7 @@ function cardClass(status) {
   return ''
 }
 
-function RequestDetails({ request, removingId, onRemove }) {
+export function RequestDetails({ request, removingId, onRemove }) {
   const windows = request.bookings || []
   const allocated = request.equipment_bookings || []
   const pending = request.status === PENDING

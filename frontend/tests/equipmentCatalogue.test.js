@@ -188,3 +188,39 @@ test('removing a booking warns only when its request is already approved', () =>
     /Bootcamp is already approved.*short by this item/,
   )
 })
+
+test('missing data is handled, not assumed', () => {
+  assert.deepEqual(lineProgress(null), [])
+  assert.equal(allocationSummary(null).complete, false)
+  assert.equal(typeForName([{ name: 'Fog machine' }], 'Fog machine'), '')
+  assert.equal(matchesRequest('a tv', { name: 'TV', type: 'AV' }), false)
+})
+
+test('short type names are not guessed from the organiser text', () => {
+  assert.deepEqual(suggestLines('a tv', [{ name: 'TV', functional: 1 }]), [emptyLine()])
+})
+
+test('an over-allocated line never counts for more than it asked for', () => {
+  assert.deepEqual(allocationSummary({
+    lines: [{ id: 'line-1', quantity: 1 }, { id: 'line-2', quantity: 1 }],
+    equipment_bookings: [{ line_id: 'line-1' }, { line_id: 'line-1' }],
+  }), { tracked: true, allocated: 1, total: 2, remaining: 1, complete: false })
+})
+
+test('every status has a tag colour', () => {
+  assert.equal(statusTagClass('Approved'), 'tag tag--good')
+  assert.equal(statusTagClass('Under Repair'), 'tag tag--warning')
+  assert.equal(statusTagClass('Rejected'), 'tag tag--danger')
+  assert.equal(statusTagClass('Affected by Session Change'), 'tag tag--danger')
+})
+
+test('a blank quantity is refused and an other row needs a name', () => {
+  assert.match(validateLines([{ ...emptyLine(), choice: 'Projector', quantity: '' }]), /quantity/)
+  assert.match(validateLines([{ ...emptyLine(), choice: 'Projector', quantity: '101' }]), /quantity/)
+})
+
+test('options with the same name and suggestion keep a stable, named order', () => {
+  const zebra = { ...projector, id: 'zebra', name: 'Zebra' }
+  const options = allocationOptions([zebra, projector], { id: 'r', request_details: 'zebra and projector' }, [])
+  assert.deepEqual(options.map((option) => option.item.id), ['projector', 'zebra'])
+})

@@ -832,3 +832,129 @@ def test_reporting_a_line_says_when_the_coordinator_could_not_be_told(monkeypatc
         equipment_request_service.notify_line_unavailable("tech-token", "request-1", "line-1")
 
     assert caught.value.status_code == 502
+
+
+def _database_with_failing_rpc(monkeypatch, code="P0001"):
+    database = Mock()
+    database.rpc.return_value.execute.side_effect = PostgrestAPIError({
+        "message": "failed", "code": code, "details": None, "hint": None,
+    })
+    monkeypatch.setattr(config, "get_user_client", lambda token: database)
+    return database
+
+
+def test_a_failed_queue_load_is_reported(monkeypatch):
+    _database_with_failing_rpc(monkeypatch)
+
+    with pytest.raises(AuthError) as caught:
+        equipment_request_service.list_tech_support_equipment_requests("tech-token")
+
+    assert caught.value.status_code == 409
+
+
+def test_an_unreadable_queue_is_reported(monkeypatch):
+    database = Mock()
+    database.rpc.return_value.execute.return_value = SimpleNamespace(data={"not": "a list"})
+    monkeypatch.setattr(config, "get_user_client", lambda token: database)
+
+    with pytest.raises(AuthError) as caught:
+        equipment_request_service.list_tech_support_equipment_requests("tech-token")
+
+    assert caught.value.status_code == 502
+
+
+def _failing_query():
+    query = Mock()
+    for method in ("select", "eq", "limit", "order"):
+        getattr(query, method).return_value = query
+    query.execute.side_effect = PostgrestAPIError({
+        "message": "failed", "code": "XX000", "details": None, "hint": None,
+    })
+    return query
+
+
+def test_reporting_a_line_reports_a_failed_lookup(monkeypatch):
+    database = Mock()
+    database.table.return_value = _failing_query()
+    monkeypatch.setattr(config, "get_user_client", lambda token: database)
+
+    with pytest.raises(AuthError) as caught:
+        equipment_request_service.notify_line_unavailable("tech-token", "request-1", "line-1")
+
+    assert caught.value.status_code == 502
+
+
+def test_reporting_a_line_still_sends_if_the_event_name_cannot_load(monkeypatch):
+    database = Mock()
+    tables = {
+        "equipment_request_lines": query_returning([{
+            "item_name": "Fog machine",
+            "request": {
+                "status": "Pending Technical Approval",
+                "coordinator_id": COORDINATOR.id,
+                "event_id": "event-1",
+            },
+        }]),
+        "events": _failing_query(),
+    }
+    database.table.side_effect = tables.__getitem__
+    monkeypatch.setattr(config, "get_user_client", lambda token: database)
+    notify = Mock(return_value=object())
+    monkeypatch.setattr(equipment_request_service.notification_service, "notify", notify)
+
+    equipment_request_service.notify_line_unavailable("tech-token", "request-1", "line-1")
+
+    assert "for your event" in notify.call_args.kwargs["body"]
+
+
+def test_approval_reports_a_failed_allocation_check(monkeypatch):
+    database = Mock()
+    database.table.return_value = _failing_query()
+    monkeypatch.setattr(config, "get_user_client", lambda token: database)
+
+    with pytest.raises(AuthError) as caught:
+        equipment_request_service.review_equipment_request(
+            "tech-token", "request-1", EquipmentRequestReview(decision="Approved")
+        )
+
+    assert caught.value.status_code == 502
+
+
+def test_a_coordinator_lists_all_their_requests_without_an_event(client, monkeypatch):
+    authenticate_as(monkeypatch, COORDINATOR)
+    list_requests = Mock(return_value=[SAVED_REQUEST])
+    monkeypatch.setattr(equipment_request_service, "list_equipment_requests", list_requests)
+
+    response = client.get("/equipment-requests", headers={"Authorization": "Bearer token"})
+
+    assert response.status_code == 200
+    list_requests.assert_called_once_with("token")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        f"/equipment-requests/{SAVED_REQUEST['id']}/review",
+        f"/equipment-requests/{SAVED_REQUEST['id']}/cancel",
+    ],
+    ids=["review", "cancel"],
+)
+def test_review_and_cancel_need_a_json_object(client, monkeypatch, path):
+    authenticate_as(monkeypatch, TECH_SUPPORT)
+
+    response = client.patch(path, json=["not", "an", "object"], headers={"Authorization": "Bearer token"})
+
+    assert response.status_code == 400
+
+
+def test_reporting_a_line_needs_valid_ids(client, monkeypatch):
+    authenticate_as(monkeypatch, TECH_SUPPORT)
+    notify = Mock(side_effect=AssertionError("must not reach the service"))
+    monkeypatch.setattr(equipment_request_service, "notify_line_unavailable", notify)
+
+    response = client.post(
+        "/equipment-requests/not-an-id/lines/also-not/notify-unavailable",
+        headers={"Authorization": "Bearer token"},
+    )
+
+    assert response.status_code == 400

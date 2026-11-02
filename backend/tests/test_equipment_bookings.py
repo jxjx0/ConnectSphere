@@ -598,3 +598,86 @@ def test_filling_an_other_line_names_that_line(booking_database, monkeypatch):
     )
 
     assert client.rpc.call_args.args[1]["p_line_id"] == line_id
+
+
+def _rpc_error(code):
+    return PostgrestAPIError({"message": "failed", "code": code, "details": None, "hint": None})
+
+
+def _item_range():
+    return EquipmentBookingRange(**{
+        "equipment_id": EQUIPMENT_ID,
+        "start": "2026-10-01T00:00:00+08:00",
+        "end": "2026-11-01T00:00:00+08:00",
+    })
+
+
+def _calendar_range():
+    return EquipmentBookingCalendarRange(**{
+        "start": "2026-10-01T00:00:00+08:00",
+        "end": "2026-11-01T00:00:00+08:00",
+    })
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: equipment_booking_service.list_equipment_bookings("t", _item_range()),
+        lambda: equipment_booking_service.list_all_equipment_bookings("t", _calendar_range()),
+        lambda: equipment_booking_service.create_equipment_booking(
+            "t", EquipmentBookingCreate(**VALID_BOOKING)
+        ),
+        lambda: equipment_booking_service.delete_equipment_booking("t", BOOKING_ID),
+    ],
+    ids=["list-item", "list-all", "create", "delete"],
+)
+def test_booking_database_failures_are_reported_for_every_call(booking_database, call):
+    client, _ = booking_database
+    client.rpc.return_value.execute.side_effect = _rpc_error("P0001")
+
+    with pytest.raises(AuthError) as caught:
+        call()
+
+    assert caught.value.status_code == 409
+    assert "already been processed" in caught.value.message
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: equipment_booking_service.list_equipment_bookings("t", _item_range()),
+        lambda: equipment_booking_service.list_all_equipment_bookings("t", _calendar_range()),
+    ],
+    ids=["list-item", "list-all"],
+)
+def test_an_unreadable_booking_list_is_reported(booking_database, call):
+    client, _ = booking_database
+    client.rpc.return_value.execute.return_value = SimpleNamespace(data={"not": "a list"})
+
+    with pytest.raises(AuthError) as caught:
+        call()
+
+    assert caught.value.status_code == 502
+
+
+@pytest.mark.parametrize(
+    "data, message",
+    [
+        (None, "was not saved"),
+        ({"outcome": "something else"}, "was not saved"),
+        ({"outcome": "booked", "booking": "not a dict"}, "was not saved"),
+        ({"outcome": "unavailable", "reason": "unknown"}, "could not be determined"),
+    ],
+    ids=["no-result", "unknown-outcome", "bad-booking", "unknown-reason"],
+)
+def test_an_unexpected_booking_result_is_reported(booking_database, data, message):
+    client, _ = booking_database
+    client.rpc.return_value.execute.return_value = SimpleNamespace(data=data)
+
+    with pytest.raises(AuthError) as caught:
+        equipment_booking_service.create_equipment_booking(
+            "t", EquipmentBookingCreate(**VALID_BOOKING)
+        )
+
+    assert caught.value.status_code == 502
+    assert message in caught.value.message
