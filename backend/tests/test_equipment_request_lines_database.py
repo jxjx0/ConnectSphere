@@ -156,7 +156,8 @@ def test_old_equipment_gets_its_new_type_from_the_migration(database):
     # Added before the migration in the fixture. This test runs first in this
     # file, before the db fixture clears the table.
     kinds = dict(database.execute("select name, type from public.equipment").fetchall())
-    assert kinds == {"Old Projector": "Projector", "Speaker": "Speaker"}
+    # The type is tidied, but the migration leaves every name as it was.
+    assert kinds == {"Old Projector": "Projector", " Speaker ": "Speaker"}
 
 
 def test_an_item_without_a_type_counts_as_its_name(db):
