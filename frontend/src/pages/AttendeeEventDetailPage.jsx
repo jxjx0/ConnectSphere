@@ -2,19 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { getMyRegistrations, getPublishedEvent, registerForEvent } from '../api/events'
-import AppShell from '../components/AppShell'
+import AttendeeShell from '../components/AttendeeShell'
+import EventCancelledNotice from '../components/EventCancelledNotice'
 import RegistrationWithdrawal from '../components/RegistrationWithdrawal'
+import RegistrationHistory from '../components/RegistrationHistory'
 import { useAuth } from '../context/AuthContext'
 import {
   EMPTY_REGISTRATION,
+  attendeeRegistrationFieldErrors,
   registrationAvailability,
+  registrationStatusLabel,
   registrationToPayload,
   spotsLeftLabel,
   validateAttendeeRegistration,
 } from '../attendeeRegistration'
 import { categoryLabel } from '../eventCategories'
 import { formatDateRange, formatDateTime, optional } from '../eventDisplay'
-import { statusLabel } from '../eventStatus'
 
 const FIELDS = [
   { name: 'fullName', label: 'Full name', type: 'text', autoComplete: 'name', required: true },
@@ -39,7 +42,11 @@ export default function AttendeeEventDetailPage() {
   const [loading, setLoading] = useState(true)
   const [registration, setRegistration] = useState(null)
   const [registrationError, setRegistrationError] = useState('')
+  const [registrationHistory, setRegistrationHistory] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(true)
   const requestScope = useRef(0)
+  const formElement = useRef(null)
+  const submitPending = useRef(false)
 
   useEffect(() => {
     requestScope.current += 1
@@ -47,34 +54,35 @@ export default function AttendeeEventDetailPage() {
     setLoading(true)
     setLoadError('')
     setRegistration(null)
+    setRegistrationHistory([])
+    setHistoryLoading(true)
     setRegistrationError('')
+    setErrors([])
+    setSubmitting(false)
+    submitPending.current = false
     getPublishedEvent(eventId, token)
-      .then(async (data) => {
+      .then((data) => {
         if (scope !== requestScope.current) return
         setEvent(data.event)
         setForm((current) => ({ ...current, email: data.account_email ?? '' }))
-        if (data.event.is_registered && data.event.status === 'confirmed') {
-          try {
-            const owned = await getMyRegistrations(token)
-            if (scope !== requestScope.current) return
-            const current = owned.registrations.find(
-              (item) => item.event_id === eventId && item.status === 'registered',
-            )
-            setRegistration(current ?? null)
-            if (!current) setRegistrationError('Refresh the page to load your latest registration.')
-          } catch (caught) {
-            if (scope === requestScope.current) setRegistrationError(caught.message)
-          }
-        }
       })
       .catch((caught) => { if (scope === requestScope.current) setLoadError(caught.message) })
       .finally(() => { if (scope === requestScope.current) setLoading(false) })
+    getMyRegistrations(token)
+      .then((data) => {
+        if (scope !== requestScope.current) return
+        setRegistrationHistory(data.registrations)
+        setRegistration(data.registrations.find((item) => item.event_id === eventId && item.status === 'registered') ?? null)
+      })
+      .catch((caught) => { if (scope === requestScope.current) setRegistrationError(caught.message) })
+      .finally(() => { if (scope === requestScope.current) setHistoryLoading(false) })
     return () => { requestScope.current += 1 }
   }, [eventId, token])
 
   function updateRegistration(updated) {
     const scope = requestScope.current
     setRegistration(updated)
+    setRegistrationHistory((current) => current.map((item) => item.id === updated.id ? updated : item))
     setRegistrationError('')
     setEvent((current) => ({
       ...current,
@@ -100,49 +108,66 @@ export default function AttendeeEventDetailPage() {
 
   async function handleSubmit(submitEvent) {
     submitEvent.preventDefault()
+    if (submitPending.current) return
     const problems = validateAttendeeRegistration(form)
     if (problems.length) {
       setErrors(problems)
+      const firstField = Object.keys(attendeeRegistrationFieldErrors(form))[0]
+      formElement.current?.querySelector(`#${firstField}`)?.focus()
       return
     }
+    const scope = requestScope.current
+    submitPending.current = true
     setSubmitting(true)
     setErrors([])
     try {
       const data = await registerForEvent(eventId, registrationToPayload(form), token)
+      if (scope !== requestScope.current) return
       navigate(`/attendee/registrations/${data.registration.id}`, {
         state: { justRegistered: true, emailSent: data.email_sent },
       })
     } catch (caught) {
-      setErrors([caught.message])
-      setSubmitting(false)
+      if (scope === requestScope.current) setErrors([caught.message])
+      if (caught.status === 409 && scope === requestScope.current) {
+        try {
+          const latest = await getPublishedEvent(eventId, token)
+          if (scope === requestScope.current) setEvent(latest.event)
+        } catch { /* Keep the submission error and entered details available. */ }
+      }
+    } finally {
+      if (scope === requestScope.current) {
+        submitPending.current = false
+        setSubmitting(false)
+      }
     }
   }
 
   if (loading) {
     return (
-      <AppShell>
+      <AttendeeShell>
         <p className="page-state">Loading this event…</p>
-      </AppShell>
+      </AttendeeShell>
     )
   }
 
   if (loadError) {
     return (
-      <AppShell>
+      <AttendeeShell>
         <div className="page-state">
           <p>{loadError}</p>
-          <Link to="/attendee/events">Back to events</Link>
+          <Link to="/attendee/events" aria-label="Back to events">&larr; Back</Link>
         </div>
-      </AppShell>
+      </AttendeeShell>
     )
   }
 
   const availability = registrationAvailability(event)
+  const fieldProblems = attendeeRegistrationFieldErrors(form)
 
   return (
-    <AppShell>
+    <AttendeeShell>
       <div className="content">
-        <Link to="/attendee/events" className="backlink">← Events</Link>
+        <Link to="/attendee/events" className="backlink" aria-label="Back to events">&larr; Back</Link>
 
         <div className="content__header">
           <h1>{event.name}</h1>
@@ -152,11 +177,14 @@ export default function AttendeeEventDetailPage() {
             {formatDateRange(event.start_time, event.end_time)}
           </p>
           <p className="record-head__meta">
-            Event status: <strong>{statusLabel(event.status)}</strong>
+            <strong>{registrationStatusLabel(event)}</strong>
           </p>
         </div>
 
-        <section className="stack stack--tight" aria-label="Event details">
+        {event.status === 'cancelled' && <EventCancelledNotice hasRegistration={event.is_registered || registrationHistory.some((item) => item.event_id === eventId)} />}
+        {availability.open && <a href="#event-registration" className="button attendee-jump">Register for this event</a>}
+        <div className="attendee-event-layout">
+        <section className="stack stack--tight attendee-panel" aria-label="Event details">
           <dl className="detail-list">
             <div className="detail-list__row">
               <dt>About</dt>
@@ -171,7 +199,7 @@ export default function AttendeeEventDetailPage() {
               <dd>{optional(event.accessibility_requirements)}</dd>
             </div>
             <div className="detail-list__row">
-              <dt>Registration</dt>
+              <dt>Registration period</dt>
               <dd>
                 {formatDateTime(event.registration_opens_at)}
                 {' – '}
@@ -185,7 +213,7 @@ export default function AttendeeEventDetailPage() {
           </dl>
         </section>
 
-        <section className="stack stack--tight" aria-label="Sessions">
+        <section className="stack stack--tight attendee-panel" aria-label="Sessions">
           <h2 className="section-title">Sessions</h2>
           {event.sessions.map((session) => (
             <article className="session-card" key={session.id}>
@@ -211,8 +239,8 @@ export default function AttendeeEventDetailPage() {
           ))}
         </section>
 
-        <section className="stack stack--tight" aria-label="Register">
-          <h2 className="section-title">Register</h2>
+        <section className="stack stack--tight attendee-panel attendee-register-panel" id="event-registration" aria-label="Register">
+          <h2 className="section-title">{event.is_registered ? 'Your place' : 'Register'}</h2>
 
           {!availability.open && <p className="note">{availability.message}</p>}
           {registration?.status === 'withdrawn' && (
@@ -221,6 +249,10 @@ export default function AttendeeEventDetailPage() {
             </p>
           )}
           {registrationError && <p className="form-error" role="alert">{registrationError}</p>}
+          {event.is_registered && historyLoading && <p className="note" role="status">Loading your registration...</p>}
+          {event.is_registered && !historyLoading && !registration && !registrationError && (
+            <p className="note">Open My registrations to view your latest registration.</p>
+          )}
           {registration && (
             <RegistrationWithdrawal
               key={registration.id}
@@ -234,13 +266,26 @@ export default function AttendeeEventDetailPage() {
             </Link>
           )}
 
+          {errors.length > 0 && (
+            <div className="form-error" role="alert">
+              <p>Your registration was not submitted:</p>
+              <ul>{errors.map((message) => <li key={message}>{message}</li>)}</ul>
+            </div>
+          )}
           {availability.open && (
-            <form className="form" noValidate onSubmit={handleSubmit}>
-              {FIELDS.map((field) => (
-                <div className="field" key={field.name}>
+            <form ref={formElement} className="form" noValidate onSubmit={handleSubmit} aria-busy={submitting}>
+              <p className="note">Confirm your details to register for the event.</p>
+              {FIELDS.map((field) => {
+                const fieldError = errors.includes(fieldProblems[field.name]) ? fieldProblems[field.name] : null
+                return <div className="field" key={field.name}>
                   <label htmlFor={field.name}>{field.label}</label>
                   <input
                     id={field.name}
+                    name={field.name}
+                    maxLength={field.name === 'fullName' ? 120 : field.name === 'contactNumber' ? 30 : undefined}
+                    disabled={submitting}
+                    aria-invalid={Boolean(fieldError)}
+                    aria-describedby={fieldError ? `${field.name}-error` : field.name === 'email' ? 'registration-email-hint' : undefined}
                     type={field.type}
                     autoComplete={field.autoComplete}
                     value={form[field.name]}
@@ -249,21 +294,14 @@ export default function AttendeeEventDetailPage() {
                     required={field.required}
                   />
                   {field.name === 'email' && (
-                    <p className="field__hint">
-                      Your account email. Your confirmation email is sent here.
+                    <p className="field__hint" id="registration-email-hint">
+                      Your confirmation email is sent here.
                     </p>
                   )}
+                  {fieldError && <p className="field__error" id={`${field.name}-error`}>{fieldError}</p>}
                 </div>
-              ))}
+              })}
 
-              {errors.length > 0 && (
-                <div className="form-error" role="alert">
-                  <p>Your registration was not submitted. Please fix the following and try again:</p>
-                  <ul>
-                    {errors.map((message) => <li key={message}>{message}</li>)}
-                  </ul>
-                </div>
-              )}
 
               <div className="form-actions">
                 <button type="submit" className="button" disabled={submitting}>
@@ -273,7 +311,10 @@ export default function AttendeeEventDetailPage() {
             </form>
           )}
         </section>
+        {historyLoading && <p className="note" role="status">Loading registration history...</p>}
+        <RegistrationHistory registrations={registrationHistory} eventId={eventId} />
+        </div>
       </div>
-    </AppShell>
+    </AttendeeShell>
   )
 }

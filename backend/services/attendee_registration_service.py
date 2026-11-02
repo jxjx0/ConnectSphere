@@ -252,7 +252,7 @@ def register_for_event(
 def withdraw_registration(
     access_token: str, registration_id: str
 ) -> AttendeeRegistration:
-    """Withdraw through the atomic RPC and notify only on the first transition."""
+    """Withdraw through the atomic RPC and email only on the first transition."""
     client = config.get_user_client(access_token)
     try:
         result = client.rpc(
@@ -263,13 +263,11 @@ def withdraw_registration(
 
     registration = AttendeeRegistration(**result.data["registration"])
     if result.data["changed"]:
-        notification_service.notify(
-            registration.attendee_id,
-            "registration_withdrawn",
-            "Registration withdrawn",
+        notification_service.try_send_email(
+            registration.email,
+            f"Registration withdrawn: {registration.event_name}",
             f"Your registration for '{registration.event_name}' has been withdrawn. "
             "You no longer hold a place at this event.",
-            registration.event_id,
         )
     return registration
 

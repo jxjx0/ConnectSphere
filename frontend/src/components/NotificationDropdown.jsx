@@ -9,9 +9,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { getNotifications, markNotificationRead } from '../api/notifications'
+import { getMyRegistrations } from '../api/events'
 import { useAuth } from '../context/AuthContext'
 import { formatDateTime } from '../eventDisplay'
 import { inboxLabel, markReadInList } from '../notificationInbox'
+import { attendeeNotificationTarget } from '../attendeeNotifications'
 
 export default function NotificationDropdown() {
   const { token, user } = useAuth()
@@ -30,6 +32,13 @@ export default function NotificationDropdown() {
   // Counts load requests. Only the most recent one may update the state, so
   // an older, slower response that finishes late cannot overwrite a newer one.
   const latestRequest = useRef(0)
+  // Only attendee notifications need a cancellable registration lookup.
+  const latestAttendeeOpen = useRef(0)
+
+  const closeInbox = useCallback(() => {
+    latestAttendeeOpen.current += 1
+    setIsOpen(false)
+  }, [])
 
   // Loads the list and unread count from the backend, the source of truth.
   const refresh = useCallback(() => {
@@ -50,8 +59,12 @@ export default function NotificationDropdown() {
   }, [token])
 
   useEffect(() => {
+    latestAttendeeOpen.current += 1
     refresh()
     setIsOpen(false)
+    return () => {
+      latestAttendeeOpen.current += 1
+    }
   }, [refresh, location.pathname])
 
   // An old "could not mark read" message should not linger once the user
@@ -65,10 +78,10 @@ export default function NotificationDropdown() {
     if (!isOpen) return undefined
 
     function handleClick(event) {
-      if (!containerRef.current.contains(event.target)) setIsOpen(false)
+      if (!containerRef.current.contains(event.target)) closeInbox()
     }
     function handleKey(event) {
-      if (event.key === 'Escape') setIsOpen(false)
+      if (event.key === 'Escape') closeInbox()
     }
 
     document.addEventListener('mousedown', handleClick)
@@ -77,12 +90,11 @@ export default function NotificationDropdown() {
       document.removeEventListener('mousedown', handleClick)
       document.removeEventListener('keydown', handleKey)
     }
-  }, [isOpen])
+  }, [isOpen, closeInbox])
 
-  // The whole notification is already visible, so clicking it is what
-  // "opening" means: it marks the notification read.
+  // Opening a notification marks it read and navigates to its context.
   //
-  // It is shown as read straight away, so a second click does nothing.
+  // It is shown as read straight away; repeated clicks do not mark it again.
   // Once the backend has saved or rejected it, the list and count are
   // reloaded from the backend rather than adjusted by hand. A hand-made
   // "+1" could count the same notification twice if the list was refreshed
@@ -102,13 +114,25 @@ export default function NotificationDropdown() {
       navigate(`/event-reviews/${notification.event_id}`)
     } else if (notification.event_id && user?.role === 'organiser') {
       navigate(`/my-events/${notification.event_id}`)
-    } else if (
-      notification.event_id
-      && notification.type === 'event_cancelled'
-      && user?.role === 'attendee'
-    ) {
-      navigate(`/attendee/events/${notification.event_id}`)
+    } else if (user?.role === 'attendee') {
+      openAttendeeNotification(notification)
     }
+  }
+
+  async function openAttendeeNotification(notification) {
+    const openId = ++latestAttendeeOpen.current
+    let registrations = []
+    if (notification.type === 'registration_withdrawn' && notification.event_id) {
+      try {
+        const data = await getMyRegistrations(token)
+        registrations = data.registrations
+      } catch {
+        // Event details still provide context if the history lookup fails.
+      }
+    }
+    if (openId !== latestAttendeeOpen.current) return
+    closeInbox()
+    navigate(attendeeNotificationTarget(notification, registrations))
   }
 
   return (
@@ -119,7 +143,10 @@ export default function NotificationDropdown() {
         aria-label={inboxLabel(unreadCount)}
         aria-expanded={isOpen}
         aria-controls="inbox-panel"
-        onClick={() => setIsOpen((open) => !open)}
+        onClick={() => {
+          latestAttendeeOpen.current += 1
+          setIsOpen((open) => !open)
+        }}
       >
         <BellIcon />
         {unreadCount > 0 && (
@@ -140,7 +167,7 @@ export default function NotificationDropdown() {
               type="button"
               className="inbox__close"
               aria-label="Close notifications"
-              onClick={() => setIsOpen(false)}
+              onClick={closeInbox}
             >
               ×
             </button>
