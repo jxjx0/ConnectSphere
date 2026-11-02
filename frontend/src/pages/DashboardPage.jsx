@@ -74,33 +74,16 @@ export default function DashboardPage() {
       {user.role === 'venue_staff' && (
         <section className="attendee-grid venue-overview__grid" aria-label="Venue management tasks">
           <Link to="/venues/reviewRequests" className="venue-overview__card">
-            <span className="venue-overview__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="5" y="4" width="14" height="17" rx="2" />
-                <path d="M9 3h6v3H9zM9 11l2 2 4-4M9 17h6" />
-              </svg>
-            </span>
             <h2>Booking requests</h2>
             <p>Review booking details and compare requests with the venue schedule.</p>
             <span className="venue-overview__card-action">Review requests <span aria-hidden="true">&rarr;</span></span>
           </Link>
           <Link to="/venues/availability" className="venue-overview__card">
-            <span className="venue-overview__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="5" width="18" height="16" rx="2" />
-                <path d="M7 3v4M17 3v4M3 10h18M7 14h3M14 14h3M7 17h3" />
-              </svg>
-            </span>
             <h2>Venue availability</h2>
             <p>Check booked time, operational blocks and tentative holds.</p>
             <span className="venue-overview__card-action">View calendar <span aria-hidden="true">&rarr;</span></span>
           </Link>
           <Link to="/venues" className="venue-overview__card">
-            <span className="venue-overview__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 21h18M5 21V5l7-2 7 2v16M9 21v-5h6v5M9 8h1M14 8h1M9 12h1M14 12h1" />
-              </svg>
-            </span>
             <h2>Venue catalogue</h2>
             <p>Manage venue details, room layouts, capacity and facilities.</p>
             <span className="venue-overview__card-action">View Venue Catalogue <span aria-hidden="true">&rarr;</span></span>
