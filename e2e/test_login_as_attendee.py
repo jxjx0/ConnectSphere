@@ -20,12 +20,12 @@ class TestSample(unittest.TestCase):
     def setUp(self):
         self.context = self.browser.new_context()
         self.page = self.context.new_page()
+        self.page.goto(BASE_URL)
 
     def tearDown(self):
         self.page.close()
         self.context.close()
 
-    #real test (this one is for passing test)(put in pklaywright test)
     def test_login_attendee(self):
             self.page.locator("#main-content").get_by_role("link", name="Log in").click()
             self.page.get_by_role("textbox", name="Email address").click()
