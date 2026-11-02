@@ -185,6 +185,9 @@ export default function BlockForm({ venue, onClose, onCreated }) {
             </label>)}
           </div>
         </fieldset>
+        <p className="field__hint">{isHold
+          ? 'Reserve time for an event until the hold expires.'
+          : 'Mark time when this venue cannot be used. Existing bookings may be affected.'}</p>
         {isHold && <div className="field">
           <label htmlFor="holdEvent">Hold this venue for which event?</label>
           <select id="holdEvent" aria-describedby="holdEventHint" required disabled={submitting || !events} value={eventId}

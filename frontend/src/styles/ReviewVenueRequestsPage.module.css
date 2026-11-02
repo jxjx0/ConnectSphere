@@ -1,77 +1,33 @@
-.container {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
+.container { display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
+.splitLayout { display: grid; grid-template-columns: 20rem minmax(0, 1fr); grid-template-rows: min-content min-content minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+.queue { grid-column: 1; grid-row: 1; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+.queueHeading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-4); border-bottom: 1px solid var(--rule); }
+.queueHeading h2 { font-size: 1rem; }
+.cardsList { list-style: none; padding: 0; margin: 0; max-height: 24rem; overflow-y: auto; }
+.cardsList li + li { border-top: 1px solid var(--rule); }
+.queueItem { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); border-inline-start: 3px solid transparent; color: var(--ink); text-decoration: none; overflow-wrap: anywhere; }
+.queueItem:visited { color: var(--ink); }
+.queueItem:hover { background: var(--sunken); color: var(--ink); }
+.queueItem.selectedCard { border-inline-start-color: var(--accent); background: var(--accent-faint); }
+.queueHint { font-size: .75rem; font-weight: 600; color: var(--accent); }
+.reviewDetail { display: contents; }
+.requestPanel { grid-column: 1; grid-row: 2; min-width: 0; scroll-margin-top: var(--space-5); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+.requestHeading { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-5); border-top: 4px solid var(--brand-primary); }
+.requestPanel > div:last-child { border: 0; border-radius: 0; padding: 0 var(--space-5) var(--space-5); }
+.requestPanel > div:last-child > div:first-child { flex-wrap: wrap; padding-bottom: var(--space-4); border-bottom: 1px solid var(--rule); }
+.calendarPanel { grid-column: 2; grid-row: 1 / span 3; position: sticky; top: var(--space-5); background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.calendarHeader { border-bottom: 1px solid var(--rule); padding-bottom: var(--space-4); }
+.calendarHeader p { margin-top: var(--space-2); }
+.decisionPanel { grid-column: 1; grid-row: 3; display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-5); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); }
+.decisionPanel .form-error { margin-bottom: var(--space-3); }
+@media (max-width: 60rem) {
+  .splitLayout { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
+  .queue, .requestPanel, .calendarPanel, .decisionPanel { grid-column: 1; grid-row: auto; }
+  .calendarPanel { position: static; }
+  .queue { position: static; }
+  .cardsList { max-height: 20rem; }
 }
-
-.splitLayout {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--space-6);
-  align-items: start;
-}
-
-@media (min-width: 60rem) {
-  .splitLayout {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-.cardsSection {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  min-width: 0;
-}
-
-.cardsList {
-  list-style: none;
-  padding-left: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.selectableCard {
-  cursor: pointer;
-  transition: box-shadow var(--ease), border-color var(--ease);
-  outline: none;
-}
-
-.selectableCard:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-}
-
-.selectableCard:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.selectedCard {
-  box-shadow: 0 0 0 2px var(--accent) !important;
-}
-
-/* Sticky calendar panel */
-.calendarPanel {
-  position: sticky;
-  top: var(--space-5);
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  padding: var(--space-5);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  min-width: 0;
-  max-height: calc(100vh - 2 * var(--space-5));
-  overflow-y: auto;
-}
-
-.calendarHeader {
-  border-bottom: 1px solid var(--rule);
-  padding-bottom: var(--space-3);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+@media (max-width: 767px) {
+  .requestHeading, .calendarPanel { padding: var(--space-4); }
+  .requestPanel > div:last-child { padding: 0 var(--space-4) var(--space-4); }
 }

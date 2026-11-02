@@ -1,0 +1,178 @@
+/* Reuse AttendeeLayout.css for tokens, typography, controls and cards.
+ * Only Venue Staff task layouts and presentation exceptions belong here. */
+.venue-workspace {
+  --venue-closed-shading: repeating-linear-gradient(135deg,
+    color-mix(in srgb, var(--ink-muted) 8%, var(--surface)) 0 8px,
+    color-mix(in srgb, var(--ink-muted) 14%, var(--surface)) 8px 16px);
+}
+.venue-workspace .venue-calendar__closed,
+.venue-workspace .venue-calendar__legend--closed::before { background: var(--venue-closed-shading); }
+.venue-workspace .app-main > * { min-width: 0; }
+.venue-workspace .venue-search__back { text-decoration: none; }
+.venue-workspace .venue-workspace__nav { flex-wrap: wrap; row-gap: var(--space-1); }
+.venue-workspace__skip {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 20;
+  padding: var(--space-3);
+  background: var(--surface);
+  transform: translateY(-200%);
+}
+.venue-workspace__skip:focus { transform: none; }
+
+.venue-workspace__section-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.venue-workspace__section-header .section-title { border: 0; padding: 0; }
+.venue-workspace__page-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.venue-list-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.venue-list-pagination__controls { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.venue-workspace .venue-list-pagination .button { padding: var(--space-2) var(--space-3); }
+.venue-list-pagination--queue { padding: var(--space-4); border-top: 1px solid var(--rule); }
+.venue-list-pagination--queue .venue-list-pagination__controls { width: 100%; }
+.venue-workspace__state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink-muted);
+}
+.venue-workspace__state h2 { color: var(--ink); }
+
+.venue-workspace .venue-profile-form { max-width: 52rem; gap: var(--space-5); }
+.venue-profile-form__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.venue-profile-form__group legend { padding-inline: var(--space-2); color: var(--ink); font-size: 1rem; font-weight: 650; }
+.venue-profile-form__label { font-size: 0.875rem; font-weight: 600; }
+.venue-workspace .field > .button { align-self: flex-start; }
+.venue-workspace .field textarea { border-radius: 8px; font: inherit; }
+.venue-workspace .field :is(input, textarea, select):not([type='radio']) { border-color: var(--ink-faint); }
+.venue-workspace .field textarea:focus { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: none; }
+.venue-workspace .field :is(input, textarea, select)[aria-invalid='true'] { border-color: var(--danger); }
+.venue-workspace .field :is(input, textarea, select)[aria-invalid='true']:focus { outline-color: var(--danger); }
+.venue-workspace .venue-profile-form .form-actions { padding-block: var(--space-2); }
+.venue-workspace .venue-block-dialog .form { max-width: none; }
+.venue-workspace .venue-block-dialog__type-options label { border-radius: 8px; }
+.venue-workspace .venue-block-dialog__type-options label:has(input:focus-visible) { outline: 2px solid var(--accent); }
+.venue-workspace .form-error,
+.venue-workspace .form-success { max-width: none; }
+
+.venue-workspace .venue-table thead th {
+  background: var(--sunken);
+  font: 600 0.875rem/1.5 var(--font-body);
+  letter-spacing: normal;
+  text-transform: none;
+}
+.venue-workspace .venue-table th,
+.venue-workspace .venue-table td { font-size: 0.875rem; }
+.venue-workspace .venue-calendar__selection { border-left: 3px solid var(--brand-primary); padding-left: var(--space-4); }
+.venue-workspace .venue-calendar__controls { padding: var(--space-5); background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); }
+.venue-workspace .venue-picker__trigger { height: 48px; border-radius: 8px; font: inherit; border-color: var(--ink-faint); }
+.venue-workspace .venue-picker__menu { box-shadow: none; border-radius: 8px; }
+.venue-workspace .venue-picker__option { min-height: 44px; }
+.venue-workspace .venue-picker__option[aria-selected='true'] { box-shadow: none; border-inline-start: 3px solid var(--accent); }
+.venue-workspace .venue-calendar__scroll,
+.venue-workspace .venue-calendar__day,
+.venue-workspace .venue-calendar__time-detail { border-radius: var(--radius); }
+.venue-workspace .venue-calendar__time-block:hover,
+.venue-workspace .venue-calendar__time-block[aria-expanded='true'] { box-shadow: none; outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* A compact overview with one creation action and three clear task destinations. */
+.venue-workspace .venue-overview__header { flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4); }
+.venue-workspace .venue-overview__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.venue-overview__card { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; padding: var(--space-5); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); color: var(--ink); text-decoration: none; }
+.venue-overview__card:hover { border-color: var(--accent); color: var(--ink); }
+.venue-overview__icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; background: var(--secondary-faint); color: var(--secondary); }
+.venue-overview__icon svg { width: 24px; height: 24px; }
+.venue-overview__card p { color: var(--ink-muted); line-height: 1.7; }
+.venue-overview__card-action { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: auto; padding-top: var(--space-4); border-top: 1px solid var(--rule); color: var(--accent); font-weight: 600; }
+.venue-overview__card-action > span { font-size: 1.25rem; }
+
+/* Venue cards keep the schedule and profile actions beside the venue facts. */
+.venue-workspace .venue-catalogue__card .session-card__head { border-top-color: var(--accent-ring); }
+.venue-catalogue__card .session-card__body { gap: var(--space-5); }
+.venue-catalogue__facts { display: grid; grid-template-columns: 1fr 1fr; margin: 0; padding: var(--space-4); gap: var(--space-4); background: var(--sunken); border-radius: 8px; }
+.venue-catalogue__facts dt { color: var(--ink-muted); font-size: .75rem; margin-bottom: var(--space-1); }
+.venue-catalogue__facts dd { margin: 0; font-weight: 600; }
+.venue-catalogue__layouts h3, .venue-catalogue__features h3 { font-size: .875rem; margin-bottom: var(--space-2); }
+.venue-catalogue__chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.venue-workspace .venue-catalogue__chips .tag { white-space: normal; overflow-wrap: anywhere; }
+.venue-catalogue__features { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); overflow-wrap: anywhere; }
+.venue-catalogue__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: auto; padding-top: var(--space-4); border-top: 1px solid var(--rule); }
+.venue-workspace .venue-booking-summary__facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); font-size: .875rem; }
+.venue-workspace .venue-booking-summary__facts > div { padding: var(--space-3); border-radius: 8px; background: var(--bg); }
+.venue-workspace .venue-booking-summary__header strong { font-size: 1rem; }
+
+/* A section index and a single form keep the profile editable in any order. */
+.venue-profile { display: grid; grid-template-columns: 15rem minmax(0, 1fr); align-items: start; gap: var(--space-6); }
+.venue-profile__nav { position: sticky; top: var(--space-5); display: flex; flex-direction: column; gap: var(--space-2); }
+.venue-profile__nav h2 { padding: var(--space-3); }
+.venue-profile__nav a { display: flex; gap: var(--space-3); align-items: center; min-height: 48px; padding: var(--space-3); color: var(--ink-muted); text-decoration: none; border-radius: 8px; }
+.venue-profile__nav a span { color: var(--secondary); font-size: .75rem; font-weight: 600; }
+.venue-profile__nav a:hover { background: var(--secondary-faint); color: var(--secondary); }
+.venue-workspace .venue-profile-form { max-width: none; }
+.venue-workspace #venue-basics { display: grid; grid-template-columns: 1fr 1fr; }
+.venue-profile-form__group { scroll-margin-top: var(--space-5); }
+.venue-profile-form__group:target { border-color: var(--secondary); }
+.venue-profile-form__group legend span { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin-right: var(--space-2); background: var(--secondary-faint); border-radius: 8px; color: var(--secondary); font-size: .75rem; }
+.venue-workspace .venue-profile__save { position: sticky; bottom: 0; z-index: 3; padding: var(--space-4); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); }
+.venue-profile__save > p { margin-bottom: var(--space-3); }
+
+/* Staff-only schedule layout; coordinator markup keeps its existing flow. */
+.venue-availability { display: grid; grid-template-columns: 17rem minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+.venue-availability__sidebar { position: sticky; top: var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); padding: var(--space-5); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); min-width: 0; }
+.venue-availability__sidebar h2 { font-size: 1rem; }
+.venue-workspace .venue-availability__sidebar .venue-calendar__controls { display: flex; flex-direction: column; gap: var(--space-4); padding: 0; border: 0; }
+.venue-availability__sidebar .venue-calendar__controls > * { width: 100%; }
+.venue-workspace .venue-availability__sidebar .venue-calendar__selection { border: 0; border-top: 1px solid var(--rule); padding: var(--space-4) 0 0; }
+.venue-availability__sidebar .venue-calendar__selection h2 { font-size: 1.25rem; }
+.venue-availability__block-button { width: 100%; }
+.venue-availability__calendar { min-width: 0; padding: var(--space-5); background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); }
+.venue-availability__calendar .venue-calendar__navigation { align-items: flex-start; }
+.venue-availability__calendar .venue-calendar__scroll { max-height: 38rem; }
+.venue-workspace .venue-block-dialog form.stack { gap: var(--space-5); }
+.venue-workspace .venue-block-dialog .venue-block-dialog__types { padding-block: var(--space-4); border-block: 1px solid var(--rule); }
+
+@media (max-width: 60rem) {
+  .venue-workspace .venue-overview__grid { grid-template-columns: minmax(0, 1fr); }
+  .venue-overview__card { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: var(--space-2) var(--space-4); }
+  .venue-overview__icon { grid-column: 1; grid-row: 1 / span 3; }
+  .venue-overview__card > :not(.venue-overview__icon) { grid-column: 2; }
+  .venue-overview__card-action { border: 0; padding-top: var(--space-2); }
+  .venue-profile, .venue-availability { grid-template-columns: minmax(0, 1fr); }
+  .venue-profile__nav, .venue-availability__sidebar { position: static; }
+  .venue-profile__nav { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-1); }
+  .venue-profile__nav h2 { grid-column: 1 / -1; }
+  .venue-workspace .venue-availability__sidebar .venue-calendar__controls { display: grid; grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 767px) {
+  .venue-workspace .venue-booking-summary__facts { grid-template-columns: minmax(0, 1fr); }
+  .venue-workspace #venue-basics { grid-template-columns: minmax(0, 1fr); }
+  .venue-catalogue__features { grid-template-columns: minmax(0, 1fr); }
+  .venue-overview__card, .venue-availability__calendar, .venue-availability__sidebar { padding: var(--space-4); }
+  .venue-workspace .venue-availability__sidebar .venue-calendar__controls { grid-template-columns: minmax(0, 1fr); }
+  .venue-workspace .topbar__inner { flex-wrap: wrap; }
+  .venue-workspace .venue-workspace__nav { column-gap: var(--space-4); }
+  .venue-workspace .venue-workspace__nav .button { flex: 1 1 40%; justify-content: center; }
+  .venue-profile-form__group { padding: var(--space-4); }
+  .venue-workspace .field :is(input, textarea, select):not([type='radio']) { font-size: 1rem; }
+  .venue-workspace .repeater__row { flex-wrap: wrap; }
+  .venue-workspace .repeater__row--equal { flex-direction: column; align-items: stretch; }
+  .venue-workspace .repeater__row--layout input:first-child { flex-basis: 100%; }
+  .venue-workspace .repeater__row--layout input:nth-child(2) { flex-basis: 50%; }
+  .venue-workspace .venue-calendar__controls { padding: var(--space-4); }
+  .venue-workspace .venue-calendar__timezone { margin-left: 0; }
+}

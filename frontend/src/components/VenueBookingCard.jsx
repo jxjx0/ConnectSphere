@@ -27,15 +27,15 @@ export default function VenueBookingCard({ booking, validationError, actions }) 
     || booking.events?.expected_attendance || booking.expected_attendance
 
   return (
-    <div className={`${styles.card} ${statusClass}`}>
-      <div className={styles.header}>
+    <div className={`${styles.card} ${statusClass} venue-booking-summary`}>
+      <div className={`${styles.header} venue-booking-summary__header`}>
         <strong className={styles.venueName}>
           {booking.venues?.name || `Venue ID: ${booking.venue_id}`}
         </strong>
-        <span className="tag">{readableStatus(booking.status)}</span>
+        <span className="tag">{booking.status === 'PENDING_VENUE_APPROVAL' ? 'Awaiting review' : readableStatus(booking.status)}</span>
       </div>
 
-      <div className={styles.grid}>
+      <div className={`${styles.grid} venue-booking-summary__facts`}>
         {booking.session?.name && (
           <div>
             <span className={`note ${styles.label}`}>Session:</span>
@@ -64,7 +64,7 @@ export default function VenueBookingCard({ booking, validationError, actions }) 
         </div>
         {(booking.setup_buffer_minutes > 0 || booking.teardown_buffer_minutes > 0) && (
           <div className={styles.fullWidth}>
-            <span className={`note ${styles.label}`}>Operational Buffers:</span>
+            <span className={`note ${styles.label}`}>Setup and turnaround:</span>
             <span className={styles.value}>
               {booking.setup_buffer_minutes}m setup · {booking.teardown_buffer_minutes}m turnaround
             </span>
@@ -87,7 +87,7 @@ export default function VenueBookingCard({ booking, validationError, actions }) 
       {/* Validation Failure Banner */}
       {validationError && (
         <div className={`form-error ${styles.rejectionError}`}>
-          <strong>Validation Issue:</strong> {validationError}
+          <strong>Needs attention:</strong> {validationError}
         </div>
       )}
 
