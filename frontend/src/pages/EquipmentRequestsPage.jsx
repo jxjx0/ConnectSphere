@@ -2,15 +2,24 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import {
+  getEquipmentCatalog,
   getEquipmentRequests,
   getEventEquipmentRequests,
   submitEquipmentRequest,
 } from '../api/equipmentRequests'
 import { getAssignedEventRequests } from '../api/events'
 import AppShell from '../components/AppShell'
+import EquipmentLinesField from '../components/EquipmentLinesField'
 import EquipmentRequestCard from '../components/EquipmentRequestCard'
 import { useAuth } from '../context/AuthContext'
 import { formatDateRange } from '../eventDisplay'
+import {
+  emptyLine,
+  linesToPayload,
+  requestableTypes,
+  suggestLines,
+  validateLines,
+} from '../equipmentCatalogue'
 import {
   equipmentRequestEligibleEvents,
   sessionsWithoutEquipmentRequest,
@@ -31,7 +40,8 @@ function CoordinatorEquipmentRequests() {
   const [requests, setRequests] = useState([])
   const [eventId, setEventId] = useState(requestedEventId)
   const [sessionId, setSessionId] = useState('')
-  const [requestDetails, setRequestDetails] = useState('')
+  const [lines, setLines] = useState([emptyLine()])
+  const [equipmentTypes, setEquipmentTypes] = useState([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -46,10 +56,11 @@ function CoordinatorEquipmentRequests() {
   ), [requestedEventId, token])
 
   useEffect(() => {
-    Promise.all([loadRequests(), getAssignedEventRequests(token)])
-      .then(([requestData, eventData]) => {
+    Promise.all([loadRequests(), getAssignedEventRequests(token), getEquipmentCatalog(token)])
+      .then(([requestData, eventData, catalogue]) => {
         setRequests(requestData.requests)
         setEvents(equipmentRequestEligibleEvents(eventData.events))
+        setEquipmentTypes(requestableTypes(catalogue))
       })
       .catch((caught) => setError(caught.message))
       .finally(() => setLoading(false))
@@ -76,19 +87,19 @@ function CoordinatorEquipmentRequests() {
   const requestedEvent = events.find((eventItem) => eventItem.id === requestedEventId)
 
   // Pick a session for the chosen event: the one asked for in the link, or
-  // the only one left. Its equipment needs fill in the description.
+  // the only one left. Its equipment needs suggest the starting rows.
   useEffect(() => {
     if (!selectedEvent || openSessions.some((session) => session.id === sessionId)) return
     const next = openSessions.find((session) => session.id === requestedSessionId)
       || (openSessions.length === 1 ? openSessions[0] : null)
     setSessionId(next?.id || '')
-    setRequestDetails(next?.equipment_requirements || '')
-  }, [openSessions, requestedSessionId, selectedEvent, sessionId])
+    setLines(suggestLines(next?.equipment_requirements, equipmentTypes))
+  }, [equipmentTypes, openSessions, requestedSessionId, selectedEvent, sessionId])
 
   function chooseSession(nextSessionId) {
     setSessionId(nextSessionId)
     const nextSession = openSessions.find((session) => session.id === nextSessionId)
-    setRequestDetails(nextSession?.equipment_requirements || '')
+    setLines(suggestLines(nextSession?.equipment_requirements, equipmentTypes))
   }
 
   async function handleSubmit(event) {
@@ -104,30 +115,23 @@ function CoordinatorEquipmentRequests() {
       setError('Select the session this equipment is for.')
       return
     }
-    if (!requestDetails.trim()) {
-      setError('Describe the equipment needed for this session.')
+    const linesError = validateLines(lines)
+    if (linesError) {
+      setError(linesError)
       return
     }
 
     setSubmitting(true)
     try {
-      const data = await submitEquipmentRequest({
+      await submitEquipmentRequest({
         event_id: eventId,
         session_id: sessionId,
-        request_details: requestDetails.trim(),
-        items: [],
+        lines: linesToPayload(lines),
       }, token)
-      const submittedRequest = {
-        // The save returns no timestamp, so show it as submitted just now.
-        created_at: new Date().toISOString(),
-        ...data.request,
-        event: selectedEvent,
-        session: selectedSession,
-        items: [],
-      }
-      setRequests((current) => [submittedRequest, ...current])
+      const refreshed = await loadRequests()
+      setRequests(refreshed.requests)
       setSessionId('')
-      setRequestDetails('')
+      setLines([emptyLine()])
       if (!requestedEventId) setEventId('')
       setSubmittedMessage(
         `Equipment request for ${selectedSession?.name || 'the session'} submitted for technical approval.`,
@@ -188,7 +192,7 @@ function CoordinatorEquipmentRequests() {
                     onChange={(change) => {
                       setEventId(change.target.value)
                       setSessionId('')
-                      setRequestDetails('')
+                      setLines([emptyLine()])
                     }}
                     required
                   >
@@ -232,22 +236,16 @@ function CoordinatorEquipmentRequests() {
 
             <section className="stack stack--tight">
               <h2 className="section-title">Required equipment</h2>
-              <label className="field" htmlFor="request-details">
-                Describe the equipment needed
-              </label>
-              <textarea
-                id="request-details"
-                rows={4}
-                maxLength={2000}
-                value={requestDetails}
-                onChange={(change) => setRequestDetails(change.target.value)}
-                placeholder="Describe the equipment and quantities needed."
-                required
-              />
+              {selectedSession?.equipment_requirements?.trim() && (
+                <p className="note">
+                  <strong>The Organiser asked for:</strong> {selectedSession.equipment_requirements}
+                </p>
+              )}
+              <EquipmentLinesField lines={lines} types={equipmentTypes} onChange={setLines} />
               <p className="field__hint">
-                Filled in from the Organiser's equipment needs for this session.
-                Technical Support will choose suitable catalogue equipment and
-                check its availability for the session's start and end time.
+                Rows are suggested from the Organiser's needs, so please check them.
+                Technical Support will choose suitable equipment and check its
+                availability for the session's start and end time.
               </p>
             </section>
 

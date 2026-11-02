@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { createEquipment, getEquipment } from '../api/equipment'
 import TechSupportShell from '../components/TechSupportShell'
@@ -7,6 +7,11 @@ import EquipmentForm from '../components/EquipmentForm'
 
 export default function EquipmentProfilePage() {
   const navigate = useNavigate()
+  // Set when a request asks for something not in the catalogue yet, so the
+  // new item counts towards it and Technical Support returns to allocate it.
+  const [searchParams] = useSearchParams()
+  const initialType = searchParams.get('type') || ''
+  const backTo = initialType ? '/equipment-requests' : '/equipment'
   const [catalogue, setCatalogue] = useState([])
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -21,7 +26,7 @@ export default function EquipmentProfilePage() {
     setSubmitting(true)
     try {
       await createEquipment(equipmentData)
-      navigate('/equipment')
+      navigate(backTo)
     } catch (caught) {
       setError(
         caught.response?.data?.error
@@ -35,7 +40,9 @@ export default function EquipmentProfilePage() {
   return (
     <TechSupportShell>
       <div className="content__header">
-        <Link to="/equipment" className="backlink">← Back to Equipment Catalogue</Link>
+        <Link to={backTo} className="backlink">
+          {initialType ? '← Back to Requests' : '← Back to Equipment Catalogue'}
+        </Link>
         <h1>Create Equipment Profile</h1>
         <p className="lead">Add new technical hardware to the equipment catalogue.</p>
       </div>
@@ -44,6 +51,7 @@ export default function EquipmentProfilePage() {
         <h2 className="section-title">Equipment details</h2>
         <EquipmentForm
           catalogue={catalogue}
+          initialType={initialType}
           error={error}
           submitting={submitting}
           onSubmit={handleSubmit}

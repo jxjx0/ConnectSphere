@@ -16,7 +16,7 @@ import {
   monthRange,
   toLocalInputValue,
 } from '../equipmentCalendar'
-import { statusTagClass } from '../equipmentCatalogue'
+import { removeBookingMessage, requestWantsItem, statusTagClass } from '../equipmentCatalogue'
 import { formatDateRange } from '../eventDisplay'
 import styles from '../styles/TechSupport.module.css'
 
@@ -51,9 +51,9 @@ export default function EquipmentBookingsPage() {
 
   const pendingRequests = useMemo(
     () => requests.filter((request) => (
-      request.status === PENDING
+      request.status === PENDING && item && requestWantsItem(request, item)
     )),
-    [requests],
+    [item, requests],
   )
   const alreadyAllocated = availabilityBookings.some(
     (booking) => booking.request_id === requestId,
@@ -86,7 +86,9 @@ export default function EquipmentBookingsPage() {
         setItem(found)
         setRequests(requestData.requests)
         // Fill in the request asked for in the link, or the only one waiting.
-        const waiting = requestData.requests.filter((request) => request.status === PENDING)
+        const waiting = requestData.requests.filter((request) => (
+          request.status === PENDING && requestWantsItem(request, found)
+        ))
         const preselected = searchParams.get('request')
         if (waiting.some((request) => request.id === preselected)) {
           chooseRequest(preselected, requestData.requests)
@@ -198,9 +200,10 @@ export default function EquipmentBookingsPage() {
     }
   }
 
-  async function handleRemove(bookingId) {
-    if (!window.confirm('Remove this booking?')) return
+  async function handleRemove(booking) {
+    if (!window.confirm(removeBookingMessage(booking))) return
 
+    const bookingId = booking.id
     setRemovingId(bookingId)
     setBookingsError('')
     try {
@@ -246,7 +249,7 @@ export default function EquipmentBookingsPage() {
           <Link to="/equipment" className="backlink">← Back to Equipment Catalogue</Link>
           <h1>{item.name} bookings</h1>
           <p className="lead">{item.type} · <span className={statusTagClass(item.maintenance_status)}>{item.maintenance_status}</span></p>
-          <p className={styles.equipmentId}>{item.id}</p>
+          <p className={styles.equipmentId}>ID: {item.id}</p>
         </div>
 
         <section className="stack stack--tight">
@@ -286,7 +289,7 @@ export default function EquipmentBookingsPage() {
                           type="button"
                           className="button button--secondary button--small"
                           disabled={removingId === booking.id}
-                          onClick={() => handleRemove(booking.id)}
+                          onClick={() => handleRemove(booking)}
                         >
                           {removingId === booking.id ? 'Removing…' : 'Remove'}
                         </button>
@@ -308,7 +311,7 @@ export default function EquipmentBookingsPage() {
             </p>
           )}
           {functional && pendingRequests.length === 0 && (
-            <p className="note">There are no pending equipment requests to book this item for.</p>
+            <p className="note">No pending request is waiting for this kind of equipment.</p>
           )}
           <div className="field">
             <label htmlFor="booking-request">Equipment request</label>

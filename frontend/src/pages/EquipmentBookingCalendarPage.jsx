@@ -80,7 +80,9 @@ export default function EquipmentBookingCalendarPage() {
                 <dt>Equipment</dt>
                 <dd>
                   {selectedBooking.equipment_name}
-                  {selectedBooking.equipment_type && ` · ${selectedBooking.equipment_type}`}
+                  {selectedBooking.equipment_type
+                    && selectedBooking.equipment_type !== selectedBooking.equipment_name
+                    && ` · ${selectedBooking.equipment_type}`}
                 </dd>
               </div>
               {selectedRequest?.session && (

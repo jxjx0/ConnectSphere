@@ -42,6 +42,12 @@ export function reviewEquipmentRequest(requestId, decision, token) {
   })
 }
 
+export function notifyEquipmentLineUnavailable(requestId, lineId, token) {
+  return request(`/equipment-requests/${requestId}/lines/${lineId}/notify-unavailable`, token, {
+    method: 'POST',
+  })
+}
+
 export function cancelEquipmentRequest(requestId, reason, token) {
   return request(`/equipment-requests/${requestId}/cancel`, token, {
     method: 'PATCH',

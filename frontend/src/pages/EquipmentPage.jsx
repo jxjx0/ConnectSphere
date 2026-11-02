@@ -5,14 +5,14 @@ import { getEquipment, updateEquipment } from '../api/equipment'
 import TechSupportShell from '../components/TechSupportShell'
 import {
   EQUIPMENT_STATUSES,
-  EQUIPMENT_TYPES,
+  equipmentTypes,
   filterEquipment,
   isBookable,
   statusTagClass,
 } from '../equipmentCatalogue'
 import styles from '../styles/TechSupport.module.css'
 
-function EditEquipmentDialog({ item, onClose, onSaved }) {
+function EditEquipmentDialog({ item, types, onClose, onSaved }) {
   const dialogRef = useRef(null)
   const [form, setForm] = useState({
     name: item.name,
@@ -20,6 +20,7 @@ function EditEquipmentDialog({ item, onClose, onSaved }) {
     maintenance_status: item.maintenance_status,
   })
   const [nameError, setNameError] = useState('')
+  const [typeError, setTypeError] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -35,13 +36,15 @@ function EditEquipmentDialog({ item, onClose, onSaved }) {
     event.preventDefault()
     setError('')
     const name = form.name.trim()
+    const type = form.type.trim()
     setNameError(name ? '' : 'Enter a name for this equipment.')
-    if (!name) return
+    setTypeError(type ? '' : 'Enter the type of this equipment.')
+    if (!name || !type) return
 
     setSaving(true)
     try {
-      await updateEquipment(item.id, { ...form, name })
-      onSaved({ ...item, ...form, name })
+      await updateEquipment(item.id, { ...form, name, type })
+      onSaved({ ...item, ...form, name, type })
     } catch (caught) {
       setError(caught.response?.data?.error || 'Could not save these changes. Try again.')
       setSaving(false)
@@ -74,13 +77,20 @@ function EditEquipmentDialog({ item, onClose, onSaved }) {
         </div>
         <div className="field">
           <label htmlFor="edit-type">Type</label>
-          <select
+          <input
             id="edit-type"
+            list="edit-types"
+            autoComplete="off"
+            maxLength={120}
+            aria-invalid={Boolean(typeError)}
             value={form.type}
             onChange={(change) => updateField('type', change.target.value)}
-          >
-            {EQUIPMENT_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
-          </select>
+          />
+          <datalist id="edit-types">
+            {types.map((known) => <option key={known} value={known} />)}
+          </datalist>
+          <p className="field__hint">What Coordinators ask for, such as Projector.</p>
+          {typeError && <p className="form-error" role="alert">{typeError}</p>}
         </div>
         <div className="field">
           <label htmlFor="edit-status">Status</label>
@@ -128,7 +138,11 @@ export default function EquipmentPage() {
     name: nameFilter,
     type: typeFilter,
     status: statusFilter,
-  })
+  }).sort((first, second) => (
+    first.type.localeCompare(second.type)
+    || first.name.localeCompare(second.name)
+  ))
+  const types = equipmentTypes(equipment)
   const hasFilters = Boolean(nameFilter || typeFilter || statusFilter)
 
   return (
@@ -167,7 +181,7 @@ export default function EquipmentPage() {
                 <label htmlFor="type-filter">Type</label>
                 <select id="type-filter" value={typeFilter} onChange={(change) => setTypeFilter(change.target.value)}>
                   <option value="">All types</option>
-                  {EQUIPMENT_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
+                  {types.map((option) => <option key={option} value={option}>{option}</option>)}
                 </select>
               </div>
               <div className="field">
@@ -264,6 +278,7 @@ export default function EquipmentPage() {
       {editingItem && (
         <EditEquipmentDialog
           item={editingItem}
+          types={types}
           onClose={() => setEditingItem(null)}
           onSaved={(saved) => {
             setEquipment((current) => current.map((item) => (item.id === saved.id ? saved : item)))

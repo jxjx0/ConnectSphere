@@ -13,7 +13,7 @@ import {
 import TechSupportShell from '../components/TechSupportShell'
 import EquipmentAllocationPanel from '../components/EquipmentAllocationPanel'
 import { useAuth } from '../context/AuthContext'
-import { statusTagClass } from '../equipmentCatalogue'
+import { allocationSummary, lineProgress, statusTagClass } from '../equipmentCatalogue'
 import { formatDateRange, readableStatus } from '../eventDisplay'
 import styles from '../styles/TechSupport.module.css'
 
@@ -30,6 +30,32 @@ function RequestDetails({ request, removingId, onRemove }) {
   const windows = request.bookings || []
   const allocated = request.equipment_bookings || []
   const pending = request.status === PENDING
+  const lines = lineProgress(request)
+  const lineIds = new Set(lines.map((line) => line.id))
+
+  function renderBooking(booking) {
+    return (
+      <span className={styles.allocatedRow} key={booking.id}>
+        <span className={styles.allocatedItem}>
+          <span>{booking.equipment_name}</span>
+          <span className={styles.equipmentId}>ID: {booking.equipment_id}</span>
+        </span>
+        {pending && (
+          <button
+            type="button"
+            className="button button--secondary button--small"
+            disabled={removingId === booking.id}
+            onClick={(click) => {
+              click.stopPropagation()
+              onRemove(booking)
+            }}
+          >
+            {removingId === booking.id ? 'Removing…' : 'Remove'}
+          </button>
+        )}
+      </span>
+    )
+  }
 
   return (
     <dl className={styles.details}>
@@ -59,32 +85,31 @@ function RequestDetails({ request, removingId, onRemove }) {
       </div>
       <div className={styles.fullWidth}>
         <dt>Equipment requested</dt>
-        <dd>{request.request_details || 'No description provided.'}</dd>
-        {(request.items || []).map((item) => (
-          <dd key={item.id}>{item.equipment?.name || 'Equipment'} × {item.quantity}</dd>
+        {lines.length === 0 ? (
+          <dd>{request.request_details || 'No description provided.'}</dd>
+        ) : lines.map((line) => (
+          <dd key={line.id}>
+            {line.item_name} × {line.quantity}
+            {line.specifics && <span className={styles.optionMeta}> · {line.specifics}</span>}
+          </dd>
         ))}
       </div>
       <div className={styles.fullWidth}>
         <dt>Allocated</dt>
-        {allocated.length === 0 ? (
-          <dd>Nothing allocated yet.</dd>
-        ) : allocated.map((booking) => (
-          <dd className={styles.allocatedRow} key={booking.id}>
-            <span>{booking.equipment_name}</span>
-            {pending && (
-              <button
-                type="button"
-                className="button button--secondary button--small"
-                disabled={removingId === booking.id}
-                onClick={(click) => {
-                  click.stopPropagation()
-                  onRemove(booking)
-                }}
-              >
-                {removingId === booking.id ? 'Removing…' : 'Remove'}
-              </button>
-            )}
+        {lines.map((line) => (
+          <dd className={styles.allocatedLine} key={line.id}>
+            <span className={styles.progressRow}>
+              <strong>{line.item_name}</strong>
+              <span className={line.complete ? 'tag tag--good' : 'tag tag--warning'}>
+                {line.allocated}/{line.quantity}
+              </span>
+            </span>
+            {allocated.filter((booking) => booking.line_id === line.id).map(renderBooking)}
           </dd>
+        ))}
+        {lines.length === 0 && allocated.length === 0 && <dd>Nothing allocated yet.</dd>}
+        {allocated.filter((booking) => !lineIds.has(booking.line_id)).map((booking) => (
+          <dd key={booking.id}>{renderBooking(booking)}</dd>
         ))}
       </div>
     </dl>
@@ -201,7 +226,7 @@ export default function EquipmentReviewPage() {
               <ul className={styles.requestList}>
                 {pending.map((request) => {
                   const isProcessing = processingId === request.id
-                  const nothingAllocated = (request.equipment_bookings || []).length === 0
+                  const summary = allocationSummary(request)
                   return (
                     <li
                       key={request.id}
@@ -229,8 +254,15 @@ export default function EquipmentReviewPage() {
                         {actionErrors[request.id] && (
                           <p className="form-error" role="alert">{actionErrors[request.id]}</p>
                         )}
-                        {nothingAllocated && (
-                          <p className="note">Allocate at least one item before approving this request.</p>
+                        {!summary.complete && (
+                          <p className="note">
+                            {summary.tracked
+                              ? `${summary.remaining} more to allocate before this request can be approved.`
+                              : 'Allocate at least one item before approving this request.'}
+                          </p>
+                        )}
+                        {summary.tracked && summary.complete && (
+                          <p className="form-success" role="status">Everything is allocated. Ready to approve.</p>
                         )}
                         <div className="form-actions" onClick={(click) => click.stopPropagation()}>
                           {rejectingId === request.id ? (
@@ -257,7 +289,7 @@ export default function EquipmentReviewPage() {
                               <button
                                 type="button"
                                 className="button"
-                                disabled={isProcessing || nothingAllocated}
+                                disabled={isProcessing || !summary.complete}
                                 onClick={() => handleReview(request, 'Approved')}
                               >
                                 {isProcessing ? 'Saving…' : 'Approve'}

@@ -6,9 +6,29 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
-class EquipmentRequestItemSubmit(BaseModel):
-    equipment_id: UUID
-    quantity: int = Field(gt=0)
+class EquipmentRequestLineSubmit(BaseModel):
+    """How many of a kind of equipment a session needs.
+
+    item_name is matched to equipment.type, so it may also name
+    something not in the catalogue yet.
+    """
+
+    item_name: str = Field(min_length=1, max_length=120)
+    quantity: int = Field(ge=1, le=100)
+    specifics: str | None = Field(default=None, max_length=500)
+
+    @field_validator("item_name")
+    @classmethod
+    def strip_item_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Choose or enter the equipment needed.")
+        return stripped
+
+    @field_validator("specifics")
+    @classmethod
+    def strip_specifics(cls, value: str | None) -> str | None:
+        return (value or "").strip() or None
 
 
 class EquipmentRequestSubmit(BaseModel):
@@ -16,21 +36,13 @@ class EquipmentRequestSubmit(BaseModel):
     # own start and end (T7-279).
     event_id: UUID
     session_id: UUID
-    request_details: str = Field(min_length=1, max_length=2000)
-    items: list[EquipmentRequestItemSubmit] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def validate_request_details(self) -> "EquipmentRequestSubmit":
-        self.request_details = self.request_details.strip()
-        if not self.request_details:
-            raise ValueError("Describe the equipment needed for this session.")
-        return self
+    lines: list[EquipmentRequestLineSubmit] = Field(min_length=1, max_length=30)
 
     @model_validator(mode="after")
     def validate_unique_equipment(self) -> "EquipmentRequestSubmit":
-        equipment_ids = [item.equipment_id for item in self.items]
-        if len(equipment_ids) != len(set(equipment_ids)):
-            raise ValueError("Each equipment item can only be listed once.")
+        names = [line.item_name.casefold() for line in self.lines]
+        if len(names) != len(set(names)):
+            raise ValueError("Each kind of equipment can only be listed once.")
         return self
 
 

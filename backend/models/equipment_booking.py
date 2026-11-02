@@ -10,6 +10,9 @@ class EquipmentBookingCreate(BaseModel):
     request_id: UUID
     start_at: AwareDatetime
     end_at: AwareDatetime
+    # Only for filling an "Other" line with a different item; otherwise the
+    # database finds the line from the item's type.
+    line_id: UUID | None = None
 
     @model_validator(mode="after")
     def validate_time_order(self) -> "EquipmentBookingCreate":

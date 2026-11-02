@@ -12,6 +12,7 @@ import * as cancelRules from '../src/cancelArrangements.js'
 import * as changeSessions from '../src/changeRequestSessions.js'
 import * as eventStatus from '../src/eventStatus.js'
 import * as coordinatorTabs from '../src/coordinatorEventTabs.js'
+import * as equipmentCatalogue from '../src/equipmentCatalogue.js'
 
 // Shared modules every page may import; the status components are added
 // once they are compiled below.
@@ -39,6 +40,7 @@ shared['../components/RequestHistory'] = { default: await compile('../src/compon
 
 const equipmentCard = () => compile('../src/components/EquipmentRequestCard.jsx', {
   './VenueBookingCard.module.css': { default: {}, __esModule: true },
+  '../equipmentCatalogue': equipmentCatalogue,
 })
 const link = ({ to, children, ...props }) => React.createElement('a', { ...props, href: to }, children)
 const event = { id: 'event-1', name: 'Workshop', category: 'workshop', status: 'planning',
@@ -287,4 +289,22 @@ test('rejected or cancelled bookings do not keep the safety check button disable
     const markup = await renderCoordinatorPage(event, null, bookings)
     assert.equal(!button(markup).includes('disabled'), enabled, bookings.map(b => b.status).join(', '))
   }
+})
+
+test('the Coordinator sees how much of each requested item is allocated', async () => {
+  const Card = await equipmentCard()
+  const html = renderToStaticMarkup(React.createElement(Card, {
+    title: 'Main session',
+    timing: event.sessions[0],
+    request: {
+      status: 'Pending Technical Approval',
+      created_at: '2099-11-01T10:00:00Z',
+      request_details: '2 x Projector (HDMI)',
+      lines: [{ id: 'line-1', item_name: 'Projector', quantity: 2, specifics: 'HDMI' }],
+      equipment_bookings: [{ id: 'booking-1', line_id: 'line-1', equipment: { name: 'Projector' } }],
+    },
+  }))
+
+  assert.match(html, /Projector: 1\/2 allocated/)
+  assert.match(html, /HDMI/)
 })

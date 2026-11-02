@@ -565,3 +565,36 @@ def test_service_reports_missing_booking_on_delete(booking_database):
         equipment_booking_service.delete_equipment_booking("tech-token", BOOKING_ID)
 
     assert caught.value.status_code == 404
+
+
+def test_allocating_past_a_lines_quantity_explains_why(booking_database):
+    client, _ = booking_database
+    client.rpc.return_value.execute.side_effect = PostgrestAPIError({
+        "message": "All 2 of Projector have already been allocated.",
+        "code": "EQ001", "details": None, "hint": None,
+    })
+
+    with pytest.raises(AuthError) as caught:
+        equipment_booking_service.create_equipment_booking(
+            "tech-token", EquipmentBookingCreate(**VALID_BOOKING)
+        )
+
+    assert caught.value.status_code == 409
+    assert caught.value.message == "All 2 of Projector have already been allocated."
+
+
+def test_filling_an_other_line_names_that_line(booking_database, monkeypatch):
+    client, _ = booking_database
+    monkeypatch.setattr(
+        equipment_booking_service, "_notify_coordinator_of_allocation", Mock()
+    )
+    client.rpc.return_value.execute.return_value = SimpleNamespace(
+        data={"outcome": "booked", "booking": SAVED_BOOKING}
+    )
+    line_id = "99999999-9999-9999-9999-999999999999"
+
+    equipment_booking_service.create_equipment_booking(
+        "tech-token", EquipmentBookingCreate(**VALID_BOOKING, line_id=line_id)
+    )
+
+    assert client.rpc.call_args.args[1]["p_line_id"] == line_id

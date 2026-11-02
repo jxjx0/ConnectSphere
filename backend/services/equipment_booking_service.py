@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 def _database_error(error: PostgrestAPIError) -> AuthError:
+    if error.code == "EQ001":
+        # Written for the user, e.g. "All 2 of Projector have already been allocated."
+        return AuthError(error.message, status_code=409)
     if error.code in {"PGRST202", "PGRST205"}:
         return AuthError(
             "The equipment booking database setup is missing or out of date. "
@@ -153,16 +156,16 @@ def create_equipment_booking(
 ) -> dict:
     """Book a requested item for its event and report any schedule conflict."""
     client = config.get_user_client(access_token)
+    params = {
+        "p_equipment_id": str(booking.equipment_id),
+        "p_request_id": str(booking.request_id),
+        "p_start_at": booking.start_at.isoformat(),
+        "p_end_at": booking.end_at.isoformat(),
+    }
+    if booking.line_id is not None:
+        params["p_line_id"] = str(booking.line_id)
     try:
-        result = client.rpc(
-            "create_equipment_booking",
-            {
-                "p_equipment_id": str(booking.equipment_id),
-                "p_request_id": str(booking.request_id),
-                "p_start_at": booking.start_at.isoformat(),
-                "p_end_at": booking.end_at.isoformat(),
-            },
-        ).execute()
+        result = client.rpc("create_equipment_booking", params).execute()
     except PostgrestAPIError as error:
         raise _database_error(error) from error
 
