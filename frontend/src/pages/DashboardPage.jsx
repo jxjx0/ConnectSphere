@@ -87,20 +87,6 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {user.role === 'safety_officer' && ( 
-        <section className="stack stack--tight"> 
-          <h2 className="section-title">Safety Check</h2>
-          <div className="form-actions"> 
-            <Link to="/safetyreview" className="button">
-              View Safety Check Queue
-            </Link>
-            {/* <Link to="/equipment/new" className="button button--secondary"> 
-              Create Equipment Profile 
-            </Link>  */}
-          </div> 
-        </section> 
-      )} 
-
       {/* A Coordinator's name is in the top bar, and this page is their event list. */}
       {!isCoordinator && (
         <section className="stack stack--tight">

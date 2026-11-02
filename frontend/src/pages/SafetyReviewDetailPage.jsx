@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { getSafetyEventDetails, submitSafetyDecision } from '../api/events'
 import AppShell from '../components/AppShell'
+import { safetyTabFrom } from '../components/SafetyTabs'
 import { useAuth } from '../context/AuthContext'
 import { categoryLabel } from '../eventCategories'
 import {
@@ -11,6 +12,7 @@ import {
   optional,
   sessionsOf,
 } from '../eventDisplay'
+import { statusLabel } from '../eventStatus'
 import SessionList from '../components/SessionList'
 
 function Answer({ label, value }) {
@@ -112,6 +114,10 @@ export default function SafetyReviewDetailPage() {
   const { eventId } = useParams()
   const { token } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  // Back returns to the list this event was opened from.
+  const fromTab = safetyTabFrom(searchParams.get('from'))
+  const backTo = fromTab === 'to-review' ? '/safetyreview' : `/safetyreview?tab=${fromTab}`
 
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -174,9 +180,7 @@ export default function SafetyReviewDetailPage() {
       <AppShell>
         <div className="page-state">
           <p className="form-error">{error}</p>
-          <Link to="/safetyreview" className="backlink">
-            ← Back to Safety Queue
-          </Link>
+          <Link to={backTo} className="backlink">← Back</Link>
         </div>
       </AppShell>
     )
@@ -187,15 +191,14 @@ export default function SafetyReviewDetailPage() {
       <AppShell>
         <div className="page-state">
           <p>No event details found.</p>
-          <Link to="/safetyreview" className="backlink">
-            ← Back to Safety Queue
-          </Link>
+          <Link to={backTo} className="backlink">← Back</Link>
         </div>
       </AppShell>
     )
   }
 
   const { event, venue_bookings = [], equipment_items = [], safety_flags = [] } = data
+  const awaitingDecision = event.status === 'awaiting_safety_check'
   // Each approved venue belongs to one session (T7-278). An event from
   // before sessions has a single stand-in session that gets every booking;
   // a booking with no matching session is listed separately.
@@ -219,9 +222,7 @@ export default function SafetyReviewDetailPage() {
   return (
     <AppShell>
       <div className="content">
-        <Link to="/safetyreview" className="backlink">
-          ← Back to Safety Queue
-        </Link>
+        <Link to={backTo} className="backlink">← Back</Link>
 
         <header className="record-head">
           <h1 className="record-head__title">{event.name}</h1>
@@ -232,7 +233,9 @@ export default function SafetyReviewDetailPage() {
             <span className="record-head__dot" aria-hidden="true">·</span>
             {formatSessionSummary(event)}
             <span className="record-head__dot" aria-hidden="true">·</span>
-            <span className="tag tag--orange">Safety Review Pending</span>
+            <span className={awaitingDecision ? 'tag tag--warning' : 'tag'}>
+              {awaitingDecision ? 'Waiting for your check' : statusLabel(event.status)}
+            </span>
           </p>
         </header>
 
@@ -312,6 +315,11 @@ export default function SafetyReviewDetailPage() {
         )}
 
         {/* Safety Assessment & Decision Form Section */}
+        {!awaitingDecision ? (
+          <p className="note">
+            This event is no longer waiting for a safety check, so no decision is needed.
+          </p>
+        ) : (
         <section className="stack stack--tight" style={{ marginTop: 'var(--space-6)' }}>
           <h2 className="section-title">Safety Officer Decision</h2>
 
@@ -442,6 +450,7 @@ export default function SafetyReviewDetailPage() {
             </form>
           )}
         </section>
+        )}
       </div>
     </AppShell>
   )

@@ -1,6 +1,6 @@
-// The page shown at /dashboard. Attendees, Technical Support and Lead
-// Coordinators each work from their own tabs, so they start on the first one;
-// everyone else gets the dashboard.
+// The page shown at /dashboard. Attendees, Technical Support, Lead Coordinators
+// and Safety Officers each work from their own tabs, so they start on the first
+// one; everyone else gets the dashboard.
 
 import { Navigate } from 'react-router-dom'
 
@@ -17,6 +17,9 @@ export default function HomeRedirect() {
   }
   if (user.role === 'event_coordinator_lead') {
     return <Navigate to="/events/unassigned-queue" replace />
+  }
+  if (user.role === 'safety_officer') {
+    return <Navigate to="/safetyreview" replace />
   }
   return <DashboardPage />
 }
