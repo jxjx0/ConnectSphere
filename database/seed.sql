@@ -18,12 +18,15 @@ begin;
 truncate table
     public.equipment_bookings,
     public.equipment_request_items,
+    public.equipment_request_lines,
     public.equipment_requests,
     public.equipment,
     public.event_activity_logs,
+    public.event_cancellation_requests,
     public.event_change_request_sessions,
     public.event_change_requests,
     public.event_clarifications,
+    public.event_registrations,
     public.event_safety_reviews,
     public.safety_change_request_messages,
     public.notifications,
@@ -107,19 +110,23 @@ insert into public.venues (id, name, location, capacity, facilities, accessibili
         '[{"name": "Networking", "capacity": 150}, {"name": "Banquet", "capacity": 100}]',
         '{"open": "10:00", "close": "22:00"}', 30, 45);
 
+-- The type is the kind of item Coordinators ask for, so an Old Projector
+-- still counts as a Projector.
 insert into public.equipment (id, name, type, maintenance_status) values
-    ('00000000-0000-4000-c000-000000000001', 'Wireless Microphone', 'Audio',  'Functional'),
-    ('00000000-0000-4000-c000-000000000002', 'Wireless Microphone', 'Audio',  'Functional'),
-    ('00000000-0000-4000-c000-000000000003', 'Audio Mixer',         'Audio',  'Functional'),
-    ('00000000-0000-4000-c000-000000000004', 'Speaker',             'Audio',  'Under Repair'),
-    ('00000000-0000-4000-c000-000000000005', 'Projector',           'Visual', 'Functional'),
-    ('00000000-0000-4000-c000-000000000006', 'Projector',           'Visual', 'Functional'),
-    ('00000000-0000-4000-c000-000000000007', 'Visualiser',          'Visual', 'Functional'),
-    ('00000000-0000-4000-c000-000000000008', 'Old Projector',       'Visual', 'Decommissioned');
+    ('00000000-0000-4000-c000-000000000001', 'Wireless Microphone', 'Wireless Microphone', 'Functional'),
+    ('00000000-0000-4000-c000-000000000002', 'Wireless Microphone', 'Wireless Microphone', 'Functional'),
+    ('00000000-0000-4000-c000-000000000003', 'Audio Mixer',         'Audio Mixer',         'Functional'),
+    ('00000000-0000-4000-c000-000000000004', 'Speaker',             'Speaker',             'Under Repair'),
+    ('00000000-0000-4000-c000-000000000005', 'Projector',           'Projector',           'Functional'),
+    ('00000000-0000-4000-c000-000000000006', 'Projector',           'Projector',           'Functional'),
+    ('00000000-0000-4000-c000-000000000007', 'Visualiser',          'Visualiser',          'Functional'),
+    ('00000000-0000-4000-c000-000000000008', 'Old Projector',       'Projector',           'Decommissioned');
 
 -- ---------------------------------------------------------------------------
 -- 4. Events: one per stage, each made of sessions.
 --    Organiser: Test Organiser. Coordinator: Test Coordinator unless noted.
+--    Open clarifications, change and cancellation requests sit on top of the
+--    stage rather than replacing it, so they are rows of their own below.
 --    Time, attendance, location, layout and equipment belong to each session
 --    (scope doc 9.1). The event's start, end and attendance are kept in step
 --    with its sessions by the database; the values here are just their span.
@@ -138,7 +145,7 @@ insert into public.events (id, organiser_id, coordinator_id, name, description, 
         pg_temp.sg(28, '09:00'), pg_temp.sg(28, '15:00'), 40, 'Wheelchair access', 'under_review'),
     ('00000000-0000-4000-d000-000000000004', '00000000-0000-4000-a000-000000000001', '00000000-0000-4000-a000-000000000003',
         'Startup Pitch Night', 'Student startups pitch to investors.', 'Showcase student ventures.', 'networking',
-        pg_temp.sg(35, '18:00'), pg_temp.sg(35, '21:00'), 100, null, 'awaiting_clarification'),
+        pg_temp.sg(35, '18:00'), pg_temp.sg(35, '21:00'), 100, null, 'under_review'),
     ('00000000-0000-4000-d000-000000000005', '00000000-0000-4000-a000-000000000001', '00000000-0000-4000-a000-000000000003',
         'Data Science Bootcamp', 'Full-day introduction to data science.', 'Upskill participants in data analysis.', 'training',
         pg_temp.sg(21, '09:00'), pg_temp.sg(21, '17:00'), 50, null, 'planning'),
@@ -156,7 +163,7 @@ insert into public.events (id, organiser_id, coordinator_id, name, description, 
         pg_temp.sg(50, '18:00'), pg_temp.sg(50, '22:00'), 180, null, 'planning'),
     ('00000000-0000-4000-d000-000000000010', '00000000-0000-4000-a000-000000000001', '00000000-0000-4000-a000-000000000003',
         'Marketing Workshop', 'Practical digital marketing skills.', 'Teach social media marketing.', 'workshop',
-        pg_temp.sg(25, '13:00'), pg_temp.sg(25, '16:00'), 30, null, 'change_requested'),
+        pg_temp.sg(25, '13:00'), pg_temp.sg(25, '16:00'), 30, null, 'planning'),
     ('00000000-0000-4000-d000-000000000011', '00000000-0000-4000-a000-000000000001', '00000000-0000-4000-a000-000000000003',
         'Overnight Hackathon', 'Overnight coding competition.', 'Build prototypes in 12 hours.', 'training',
         pg_temp.sg(20, '20:00'), pg_temp.sg(21, '08:00'), 60, null, 'rejected'),
@@ -165,7 +172,30 @@ insert into public.events (id, organiser_id, coordinator_id, name, description, 
         pg_temp.sg(-7, '18:00'), pg_temp.sg(-7, '21:00'), 120, null, 'completed'),
     ('00000000-0000-4000-d000-000000000013', '00000000-0000-4000-a000-000000000001', '00000000-0000-4000-a000-000000000004',
         'Design Thinking Workshop', 'Small-group design thinking exercises.', 'Practise human-centred design.', 'workshop',
-        pg_temp.sg(18, '10:00'), pg_temp.sg(18, '12:00'), 15, null, 'planning');
+        pg_temp.sg(18, '10:00'), pg_temp.sg(18, '12:00'), 15, null, 'planning'),
+    -- Confirmed, but registration is not set up yet.
+    ('00000000-0000-4000-d000-000000000014', '00000000-0000-4000-a000-000000000001', '00000000-0000-4000-a000-000000000003',
+        'Photography Walk', 'Guided photo walk around the civic district.', 'Teach street photography basics.', 'workshop',
+        pg_temp.sg(32, '09:00'), pg_temp.sg(32, '12:00'), 40, null, 'confirmed'),
+    -- Cancelled while it was waiting for its safety check.
+    ('00000000-0000-4000-d000-000000000015', '00000000-0000-4000-a000-000000000001', '00000000-0000-4000-a000-000000000003',
+        'Robotics Showcase', 'Student robotics teams demo their builds.', 'Show off student engineering projects.', 'conference',
+        pg_temp.sg(26, '10:00'), pg_temp.sg(26, '16:00'), 150, null, 'cancelled');
+
+-- Registration is published for Leadership Seminar only.
+update public.events
+set registration_opens_at = pg_temp.sg(-5, '09:00'),
+    registration_closes_at = pg_temp.sg(9, '23:59'),
+    attendee_capacity = 50,
+    published_at = now()
+where id = '00000000-0000-4000-d000-000000000008';
+
+-- When each reached the Safety Officer's queue. Only status changes set this,
+-- so seeded rows need it set directly.
+update public.events set safety_check_requested_at = now() - interval '2 days'
+where id = '00000000-0000-4000-d000-000000000007';
+update public.events set safety_check_requested_at = now() - interval '6 days'
+where id = '00000000-0000-4000-d000-000000000015';
 
 -- Session ids end in the event number and the session number: ...0000000071
 -- is event 07's first session.
@@ -212,17 +242,21 @@ insert into public.event_sessions (id, event_id, name, start_time, end_time, exp
     ('00000000-0000-4000-9000-000000000121', '00000000-0000-4000-d000-000000000012', 'Main session',
         pg_temp.sg(-7, '18:00'), pg_temp.sg(-7, '21:00'), 120, 'Stamford Road', 'Networking', null),
     ('00000000-0000-4000-9000-000000000131', '00000000-0000-4000-d000-000000000013', 'Main session',
-        pg_temp.sg(18, '10:00'), pg_temp.sg(18, '12:00'), 15, 'Victoria Street', 'Classroom', null);
+        pg_temp.sg(18, '10:00'), pg_temp.sg(18, '12:00'), 15, 'Victoria Street', 'Classroom', null),
+    ('00000000-0000-4000-9000-000000000141', '00000000-0000-4000-d000-000000000014', 'Photo walk',
+        pg_temp.sg(32, '09:00'), pg_temp.sg(32, '12:00'), 40, 'Stamford Road', 'Classroom', null),
+    ('00000000-0000-4000-9000-000000000151', '00000000-0000-4000-d000-000000000015', 'Showcase',
+        pg_temp.sg(26, '10:00'), pg_temp.sg(26, '16:00'), 150, 'Stamford Road', 'Networking', null);
 
 -- Clarification the organiser has not answered yet.
-insert into public.event_clarifications (event_id, organiser_id, coordinator_id, coordinator_notes, previous_status) values
+insert into public.event_clarifications (event_id, organiser_id, coordinator_id, coordinator_notes) values
     ('00000000-0000-4000-d000-000000000004', '00000000-0000-4000-a000-000000000001', '00000000-0000-4000-a000-000000000003',
-        'Please confirm whether food will be served and how many external guests are expected.', 'under_review');
+        'Please confirm whether food will be served and how many external guests are expected.');
 
 -- Pending change request: the session's attendance going up from 30 to 45.
-insert into public.event_change_requests (id, event_id, organiser_id, event_status_before_request, name, description, purpose, category,
+insert into public.event_change_requests (id, event_id, organiser_id, name, description, purpose, category,
     start_time, end_time, expected_attendance, reason_for_change)
-select '00000000-0000-4000-8000-000000000010', id, organiser_id, 'under_review', name, description, purpose, category,
+select '00000000-0000-4000-8000-000000000010', id, organiser_id, name, description, purpose, category,
     start_time, end_time, 45, 'More sign-ups than expected.'
 from public.events where id = '00000000-0000-4000-d000-000000000010';
 
@@ -231,6 +265,15 @@ insert into public.event_change_request_sessions (change_request_id, session_id,
 select '00000000-0000-4000-8000-000000000010', id, name, start_time, end_time, 45,
     location_preference, layout_preference, equipment_requirements
 from public.event_sessions where id = '00000000-0000-4000-9000-000000000101';
+
+-- Pending cancellation request, and the approved one that cancelled Robotics
+-- Showcase while it waited for its safety check.
+insert into public.event_cancellation_requests (event_id, organiser_id, reason, status, decision_reason, closed_by, closed_at) values
+    ('00000000-0000-4000-d000-000000000006', '00000000-0000-4000-a000-000000000001',
+        'The product launch has been moved to next quarter.', 'pending', null, null, null),
+    ('00000000-0000-4000-d000-000000000015', '00000000-0000-4000-a000-000000000001',
+        'Not enough teams signed up to run the showcase.', 'approved',
+        'Agreed, cancelling the event.', '00000000-0000-4000-a000-000000000003', now() - interval '1 day');
 
 -- ---------------------------------------------------------------------------
 -- 5. Venue bookings, one per session, with calendar blocks for approved ones
@@ -250,7 +293,9 @@ from (values
     ('00000000-0000-4000-e000-000000000081'::uuid, '00000000-0000-4000-9000-000000000081'::uuid, '00000000-0000-4000-b000-000000000001'::uuid, 'Classroom',  'APPROVED'),
     ('00000000-0000-4000-e000-000000000091'::uuid, '00000000-0000-4000-9000-000000000091'::uuid, '00000000-0000-4000-b000-000000000004'::uuid, 'Networking', 'APPROVED'),
     ('00000000-0000-4000-e000-000000000092'::uuid, '00000000-0000-4000-9000-000000000092'::uuid, '00000000-0000-4000-b000-000000000002'::uuid, 'Banquet',    'APPROVED'),
-    ('00000000-0000-4000-e000-000000000121'::uuid, '00000000-0000-4000-9000-000000000121'::uuid, '00000000-0000-4000-b000-000000000004'::uuid, 'Networking', 'APPROVED')
+    ('00000000-0000-4000-e000-000000000121'::uuid, '00000000-0000-4000-9000-000000000121'::uuid, '00000000-0000-4000-b000-000000000004'::uuid, 'Networking', 'APPROVED'),
+    ('00000000-0000-4000-e000-000000000141'::uuid, '00000000-0000-4000-9000-000000000141'::uuid, '00000000-0000-4000-b000-000000000001'::uuid, 'Classroom',  'APPROVED'),
+    ('00000000-0000-4000-e000-000000000151'::uuid, '00000000-0000-4000-9000-000000000151'::uuid, '00000000-0000-4000-b000-000000000002'::uuid, 'Theatre',    'CANCELLED')
 ) as b(booking_id, session_id, venue_id, layout, status)
 join public.event_sessions s on s.id = b.session_id
 join public.events e on e.id = s.event_id
@@ -275,6 +320,8 @@ from public.events where id = '00000000-0000-4000-d000-000000000013';
 
 -- ---------------------------------------------------------------------------
 -- 6. Equipment requests, one per session, booked for the session's own time
+--    Each request lists how many of each type it needs. A line's name matches
+--    equipment.type, or names something not in the catalogue ("Other").
 -- ---------------------------------------------------------------------------
 
 insert into public.equipment_requests (id, event_id, session_id, coordinator_id, status, request_details) values
@@ -283,18 +330,26 @@ insert into public.equipment_requests (id, event_id, session_id, coordinator_id,
     ('00000000-0000-4000-f000-000000000071', '00000000-0000-4000-d000-000000000007', '00000000-0000-4000-9000-000000000071',
         '00000000-0000-4000-a000-000000000003', 'Approved', 'Audio mixer for the keynote stage and a projector for slides.');
 
-insert into public.equipment_request_items (request_id, equipment_id, quantity) values
-    ('00000000-0000-4000-f000-000000000051', '00000000-0000-4000-c000-000000000001', 1),
-    ('00000000-0000-4000-f000-000000000051', '00000000-0000-4000-c000-000000000005', 1),
-    ('00000000-0000-4000-f000-000000000071', '00000000-0000-4000-c000-000000000003', 1),
-    ('00000000-0000-4000-f000-000000000071', '00000000-0000-4000-c000-000000000006', 1);
+-- Line ids end in the request's session number and the line number.
+insert into public.equipment_request_lines (id, request_id, item_name, quantity, specifics) values
+    ('00000000-0000-4000-7000-000000000511', '00000000-0000-4000-f000-000000000051', 'Wireless Microphone', 1, 'For the trainer'),
+    ('00000000-0000-4000-7000-000000000512', '00000000-0000-4000-f000-000000000051', 'Projector',           1, 'Must have an HDMI input'),
+    ('00000000-0000-4000-7000-000000000513', '00000000-0000-4000-f000-000000000051', 'Laser pointer',       1, null),
+    ('00000000-0000-4000-7000-000000000711', '00000000-0000-4000-f000-000000000071', 'Audio Mixer',         1, null),
+    ('00000000-0000-4000-7000-000000000712', '00000000-0000-4000-f000-000000000071', 'Projector',           1, null);
 
-insert into public.equipment_bookings (equipment_id, request_id, start_at, end_at, created_by)
-select i.equipment_id, i.request_id, s.start_time, s.end_time, '00000000-0000-4000-a000-000000000007'
-from public.equipment_request_items i
-join public.equipment_requests r on r.id = i.request_id
-join public.event_sessions s on s.id = r.session_id
-where r.status = 'Approved';
+-- The approved request is fully allocated; the pending one has its projector
+-- so far, leaving the microphone and the laser pointer ("Other") to do.
+insert into public.equipment_bookings (equipment_id, request_id, line_id, start_at, end_at, created_by)
+select b.equipment_id, l.request_id, l.id, s.start_time, s.end_time, '00000000-0000-4000-a000-000000000007'
+from (values
+    ('00000000-0000-4000-7000-000000000512'::uuid, '00000000-0000-4000-c000-000000000005'::uuid),
+    ('00000000-0000-4000-7000-000000000711'::uuid, '00000000-0000-4000-c000-000000000003'::uuid),
+    ('00000000-0000-4000-7000-000000000712'::uuid, '00000000-0000-4000-c000-000000000006'::uuid)
+) as b(line_id, equipment_id)
+join public.equipment_request_lines l on l.id = b.line_id
+join public.equipment_requests r on r.id = l.request_id
+join public.event_sessions s on s.id = r.session_id;
 
 -- ---------------------------------------------------------------------------
 -- 7. Safety reviews
@@ -302,6 +357,7 @@ where r.status = 'Approved';
 
 insert into public.event_safety_reviews (event_id, safety_officer_id, decision, notes, reason) values
     ('00000000-0000-4000-d000-000000000008', '00000000-0000-4000-a000-000000000008', 'APPROVED', 'All safety requirements met.', null),
+    ('00000000-0000-4000-d000-000000000014', '00000000-0000-4000-a000-000000000008', 'APPROVED', 'All safety requirements met.', null),
     ('00000000-0000-4000-d000-000000000012', '00000000-0000-4000-a000-000000000008', 'APPROVED', 'All safety requirements met.', null),
     ('00000000-0000-4000-d000-000000000009', '00000000-0000-4000-a000-000000000008', 'CHANGES_REQUESTED', null,
         'Add a crowd-control plan and assign a second emergency exit marshal.');
@@ -309,5 +365,23 @@ insert into public.event_safety_reviews (event_id, safety_officer_id, decision, 
 insert into public.safety_change_request_messages (event_id, sender_id, message) values
     ('00000000-0000-4000-d000-000000000009', '00000000-0000-4000-a000-000000000008',
         'Please add a crowd-control plan and a second exit marshal, then request the safety check again.');
+
+-- ---------------------------------------------------------------------------
+-- 8. Attendee registrations
+--    Leadership Seminar: withdrawn once, then registered again, so it shows
+--    once under Upcoming. Orientation Networking Night has ended (Past).
+-- ---------------------------------------------------------------------------
+
+insert into public.event_registrations (event_id, attendee_id, full_name, email, address, contact_number,
+    created_at, status, withdrawn_at) values
+    ('00000000-0000-4000-d000-000000000008', '00000000-0000-4000-a000-000000000002', 'Test Attendee',
+        'maggiemee3103+attendee@gmail.com', '80 Stamford Road, Singapore 178902', '98765432',
+        now() - interval '4 days', 'withdrawn', now() - interval '3 days'),
+    ('00000000-0000-4000-d000-000000000008', '00000000-0000-4000-a000-000000000002', 'Test Attendee',
+        'maggiemee3103+attendee@gmail.com', '80 Stamford Road, Singapore 178902', '98765432',
+        now() - interval '2 days', 'registered', null),
+    ('00000000-0000-4000-d000-000000000012', '00000000-0000-4000-a000-000000000002', 'Test Attendee',
+        'maggiemee3103+attendee@gmail.com', '80 Stamford Road, Singapore 178902', '98765432',
+        pg_temp.sg(-14, '12:00'), 'registered', null);
 
 commit;
