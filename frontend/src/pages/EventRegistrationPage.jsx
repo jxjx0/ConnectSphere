@@ -22,6 +22,14 @@ import {
   validateRegistration,
 } from '../eventRegistration'
 
+function OrganiserShell({ children }) {
+  return (
+    <div className="organiser-ui">
+      <AppShell>{children}</AppShell>
+    </div>
+  )
+}
+
 export default function EventRegistrationPage() {
   const { token } = useAuth()
   const { eventId } = useParams()
@@ -83,38 +91,47 @@ export default function EventRegistrationPage() {
 
   if (loading) {
     return (
-      <AppShell>
+      <OrganiserShell>
         <p className="page-state">Loading this event…</p>
-      </AppShell>
+      </OrganiserShell>
     )
   }
 
   if (loadError) {
     return (
-      <AppShell>
+      <OrganiserShell>
         <div className="page-state">
           <p>{loadError}</p>
           <Link to="/my-events">Back to my event requests</Link>
         </div>
-      </AppShell>
+      </OrganiserShell>
     )
   }
 
   const backlink = (
-    <Link to={`/my-events/${eventId}`} className="backlink">← Event details</Link>
+    <Link
+      to={`/my-events/${eventId}`}
+      className="organiser-registration__back"
+    >
+      ← Event details
+    </Link>
   )
 
   if (!REGISTRATION_STATUSES.includes(event.status)) {
     return (
-      <AppShell>
-        <div className="content">
+      <OrganiserShell>
+        <div className="content organiser-registration">
           {backlink}
-          <p className="note">
-            Registration can be set up once your Coordinator has approved the
-            event request.
-          </p>
+          <section className="organiser-registration__unavailable">
+            <p className="organiser-request__eyebrow">Registration setup</p>
+            <h1>Not ready to publish</h1>
+            <p className="note">
+              Registration can be set up once your Coordinator has approved the
+              event request.
+            </p>
+          </section>
         </div>
-      </AppShell>
+      </OrganiserShell>
     )
   }
 
@@ -126,11 +143,12 @@ export default function EventRegistrationPage() {
   const published = Boolean(event.published_at)
 
   return (
-    <AppShell>
-      <div className="content">
+    <OrganiserShell>
+      <div className="content organiser-registration">
         {backlink}
 
         <div className="content__header">
+          <p className="organiser-request__eyebrow">Attendee experience</p>
           <h1>Registration and capacity</h1>
           <p className="lead">
             Choose when attendees can register and how many can attend, then
@@ -146,7 +164,10 @@ export default function EventRegistrationPage() {
         )}
 
         {pending.length > 0 && (
-          <section className="notice" aria-label="Still pending">
+          <section
+            className="notice organiser-registration__pending"
+            aria-label="Still pending"
+          >
             <p><strong>Waiting for approval before publishing</strong></p>
             <ul>
               {pending.map((item) => <li key={item}>{item}</li>)}
@@ -155,117 +176,160 @@ export default function EventRegistrationPage() {
           </section>
         )}
 
-        <form className="form" noValidate onSubmit={(submitEvent) => submitEvent.preventDefault()}>
-          <fieldset className="stack stack--tight" disabled={closed || saving}>
-            <h2 className="section-title">Registration settings</h2>
-            {closed && (
-              <p className="note">Registration has closed, so these settings can no longer be edited.</p>
-            )}
-            <div className="field">
-              <label htmlFor="opensAt">Registration opens</label>
-              <input id="opensAt" type="datetime-local" value={form.opensAt} onChange={updateField('opensAt')} />
-            </div>
-            <div className="field">
-              <label htmlFor="closesAt">Registration closes</label>
-              <input id="closesAt" type="datetime-local" value={form.closesAt} onChange={updateField('closesAt')} />
-              <p className="field__hint">Must be before the event starts.</p>
-            </div>
-            <div className="field">
-              <label htmlFor="capacity">Attendee capacity</label>
-              <input id="capacity" type="number" min={1} max={capacityLimit ?? undefined} value={form.capacity} onChange={updateField('capacity')} />
-              <p className="field__hint">
-                {capacityLimit === null
-                  ? "The venue limit applies once every session's venue is approved."
-                  : `Up to ${capacityLimit}, the combined capacity of the sessions' venues.`}
-              </p>
-              {capacityNotes.length > 0 && (
-                <ul className="field__hint">
-                  {capacityNotes.map((note) => <li key={note}>{note}</li>)}
-                </ul>
+        <div className="organiser-registration__layout">
+          <form
+            className="form organiser-registration__form"
+            noValidate
+            onSubmit={(submitEvent) => submitEvent.preventDefault()}
+          >
+            <fieldset
+              className="organiser-registration__settings stack stack--tight"
+              disabled={closed || saving}
+            >
+              <h2 className="section-title">Registration settings</h2>
+              {closed && (
+                <p className="note">
+                  Registration has closed, so these settings can no longer be edited.
+                </p>
               )}
-            </div>
-          </fieldset>
+              <div className="field">
+                <label htmlFor="opensAt">Registration opens</label>
+                <input
+                  id="opensAt"
+                  type="datetime-local"
+                  value={form.opensAt}
+                  onChange={updateField('opensAt')}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="closesAt">Registration closes</label>
+                <input
+                  id="closesAt"
+                  type="datetime-local"
+                  value={form.closesAt}
+                  onChange={updateField('closesAt')}
+                />
+                <p className="field__hint">Must be before the event starts.</p>
+              </div>
+              <div className="field">
+                <label htmlFor="capacity">Attendee capacity</label>
+                <input
+                  id="capacity"
+                  type="number"
+                  min={1}
+                  max={capacityLimit ?? undefined}
+                  value={form.capacity}
+                  onChange={updateField('capacity')}
+                />
+                <p className="field__hint">
+                  {capacityLimit === null
+                    ? "The venue limit applies once every session's venue is approved."
+                    : `Up to ${capacityLimit}, the combined capacity of the sessions' venues.`}
+                </p>
+                {capacityNotes.length > 0 && (
+                  <ul className="field__hint">
+                    {capacityNotes.map((note) => <li key={note}>{note}</li>)}
+                  </ul>
+                )}
+              </div>
+            </fieldset>
 
-          {error && <p className="form-error" role="alert">{error}</p>}
-          {success && <p className="form-success" role="status">{success}</p>}
+            {error && <p className="form-error" role="alert">{error}</p>}
+            {success && <p className="form-success" role="status">{success}</p>}
 
-          {!closed && (
-            <div className="form-actions">
-              <button type="button" className="button button--secondary" disabled={saving} onClick={() => save(false)}>
-                {saving ? 'Saving…' : 'Save'}
-              </button>
-              {!published && (
-                <button type="button" className="button" disabled={saving || pending.length > 0} onClick={() => save(true)}>
-                  Save and publish
+            {!closed && (
+              <div className="form-actions organiser-registration__actions">
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  disabled={saving}
+                  onClick={() => save(false)}
+                >
+                  {saving ? 'Saving…' : 'Save'}
                 </button>
-              )}
-            </div>
-          )}
-        </form>
+                {!published && (
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={saving || pending.length > 0}
+                    onClick={() => save(true)}
+                  >
+                    Save and publish
+                  </button>
+                )}
+              </div>
+            )}
+          </form>
 
-        <section className="stack stack--tight" aria-label="Attendee preview">
-          <h2 className="section-title">Attendee preview</h2>
-          <p className="note">This is what attendees will see, using the settings above.</p>
-          <article className="session-card">
-            <header className="session-card__head">
-              <h3>{event.name}</h3>
-              <p className="session-card__meta">
-                {categoryLabel(event.category, event.category_other)}
-                {' · '}
-                {formatDateRange(event.start_time, event.end_time)}
-              </p>
-            </header>
-            <div className="session-card__body">
-              <dl className="detail-list detail-list--compact">
-                <div className="detail-list__row">
-                  <dt>About</dt>
-                  <dd>{event.description}</dd>
-                </div>
-                <div className="detail-list__row">
-                  <dt>Accessibility</dt>
-                  <dd>{optional(event.accessibility_requirements)}</dd>
-                </div>
-                <div className="detail-list__row">
-                  <dt>Registration</dt>
-                  <dd>
-                    {form.opensAt && form.closesAt
-                      ? `${formatDateTime(form.opensAt)} – ${formatDateTime(form.closesAt)}`
-                      : 'Not set yet'}
-                  </dd>
-                </div>
-                <div className="detail-list__row">
-                  <dt>Places</dt>
-                  <dd>{form.capacity || 'Not set yet'}</dd>
-                </div>
-              </dl>
-            </div>
-          </article>
-
-          {sessions.map((session) => (
-            <article className="session-card" key={session.id}>
+          <section
+            className="organiser-registration__preview stack stack--tight"
+            aria-label="Attendee preview"
+          >
+            <h2 className="section-title">Attendee preview</h2>
+            <p className="note">
+              This is what attendees will see, using the settings above.
+            </p>
+            <article className="session-card">
               <header className="session-card__head">
-                <h3>{session.name}</h3>
+                <h3>{event.name}</h3>
                 <p className="session-card__meta">
-                  {formatDateRange(session.start_time, session.end_time)}
+                  {categoryLabel(event.category, event.category_other)}
+                  {' · '}
+                  {formatDateRange(event.start_time, event.end_time)}
                 </p>
               </header>
               <div className="session-card__body">
                 <dl className="detail-list detail-list--compact">
                   <div className="detail-list__row">
-                    <dt>Venue</dt>
+                    <dt>About</dt>
+                    <dd>{event.description}</dd>
+                  </div>
+                  <div className="detail-list__row">
+                    <dt>Accessibility</dt>
+                    <dd>{optional(event.accessibility_requirements)}</dd>
+                  </div>
+                  <div className="detail-list__row">
+                    <dt>Registration</dt>
                     <dd>
-                      {session.venueName
-                        ? [session.venueName, session.venueLocation].filter(Boolean).join(', ')
-                        : 'To be announced'}
-                      {session.venueName && !session.venueConfirmed && ' (pending approval)'}
+                      {form.opensAt && form.closesAt
+                        ? `${formatDateTime(form.opensAt)} – ${formatDateTime(form.closesAt)}`
+                        : 'Not set yet'}
                     </dd>
+                  </div>
+                  <div className="detail-list__row">
+                    <dt>Places</dt>
+                    <dd>{form.capacity || 'Not set yet'}</dd>
                   </div>
                 </dl>
               </div>
             </article>
-          ))}
-        </section>
+
+            {sessions.map((session) => (
+              <article className="session-card" key={session.id}>
+                <header className="session-card__head">
+                  <h3>{session.name}</h3>
+                  <p className="session-card__meta">
+                    {formatDateRange(session.start_time, session.end_time)}
+                  </p>
+                </header>
+                <div className="session-card__body">
+                  <dl className="detail-list detail-list--compact">
+                    <div className="detail-list__row">
+                      <dt>Venue</dt>
+                      <dd>
+                        {session.venueName
+                          ? [session.venueName, session.venueLocation].filter(Boolean).join(', ')
+                          : 'To be announced'}
+                        {session.venueName && !session.venueConfirmed && ' (pending approval)'}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              </article>
+            ))}
+          </section>
+        </div>
       </div>
-    </AppShell>
+    </OrganiserShell>
   )
 }
