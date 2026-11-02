@@ -34,6 +34,9 @@ export default function EquipmentAllocationPanel({ request, catalogue, token, on
   const startTime = bookingWindow?.start.getTime()
   const endTime = bookingWindow?.end.getTime()
   const lines = lineProgress(request)
+  // Changes when an item is allocated or removed anywhere on the page, so what
+  // is shown as available stays in step with the request.
+  const allocationsKey = (request.equipment_bookings || []).map((booking) => booking.id).join()
 
   const [activeLineId, setActiveLineId] = useState('')
   const [overlapping, setOverlapping] = useState([])
@@ -67,7 +70,7 @@ export default function EquipmentAllocationPanel({ request, catalogue, token, on
 
   useEffect(() => {
     loadAvailability()
-  }, [loadAvailability])
+  }, [allocationsKey, loadAvailability])
 
   // Items of the line's type. If the catalogue has none (an "Other" line), or
   // the request is from before lines, any item can be used.
@@ -105,7 +108,7 @@ export default function EquipmentAllocationPanel({ request, catalogue, token, on
 
   useEffect(() => {
     loadMonth()
-  }, [loadMonth])
+  }, [allocationsKey, loadMonth])
 
   function chooseLine(lineId) {
     setActiveLineId(lineId)
@@ -132,7 +135,7 @@ export default function EquipmentAllocationPanel({ request, catalogue, token, on
       setMessage(`${item.name} (ID: ${item.id}) allocated.`)
       // Filling this line moves on to the next one still needing something.
       if (activeLine && activeLine.remaining === 1) setActiveLineId('')
-      await Promise.all([loadAvailability(), loadMonth(), onChanged()])
+      await onChanged()
     } catch (caught) {
       if (notifying && caught.status === 409) setMessage(caught.message)
       else setActionError(caught.message)

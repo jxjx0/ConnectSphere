@@ -40,9 +40,7 @@ export default function EquipmentProfilePage() {
   return (
     <TechSupportShell>
       <div className="content__header">
-        <Link to={backTo} className="backlink">
-          {initialType ? '← Back to Requests' : '← Back to Equipment Catalogue'}
-        </Link>
+        <Link to={backTo} className="backlink">← Back</Link>
         <h1>Create Equipment Profile</h1>
         <p className="lead">Add new technical hardware to the equipment catalogue.</p>
       </div>
