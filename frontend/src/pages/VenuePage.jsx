@@ -19,6 +19,7 @@ import {
 import BlockForm from "../components/BlockForm";
 
 const EMPTY_LAYOUT = { name: '', capacity: '' }
+const VENUES_PER_PAGE = 6
 
 function RequiredMark() {
   return <span aria-hidden="true" style={{ color: 'var(--danger)' }}>*</span>
@@ -110,6 +111,13 @@ export default function VenuePage({ createMode = false }) {
   const [history, setHistory] = useState([])
   const [historyError, setHistoryError] = useState('')
   const [bufferImpact, setBufferImpact] = useState(null)
+  const [query = '', setQuery] = useState('')
+  const [page = 1, setPage] = useState(1)
+  const visibleVenues = venues.filter((venue) => [venue.name, venue.location].filter(Boolean).join(' ').toLowerCase().includes(query.trim().toLowerCase()))
+  const pageCount = Math.max(1, Math.ceil(visibleVenues.length / VENUES_PER_PAGE))
+  const currentPage = Math.min(page, pageCount)
+  const pageStart = (currentPage - 1) * VENUES_PER_PAGE
+  const pagedVenues = visibleVenues.slice(pageStart, pageStart + VENUES_PER_PAGE)
   const editableVenue = editMode && venues.some((venue) => venue.id === venueId)
 
   useEffect(() => {
@@ -244,15 +252,10 @@ export default function VenuePage({ createMode = false }) {
   return (
     <AppShell>
       <div className="content__header venue-search__header">
-        <Link to={createMode || editMode ? '/venues' : '/dashboard'} className="venue-search__back">
-          {createMode || editMode ? '← Back to Venue Catalogue' : '← Back to Dashboard'}
-        </Link>
-        <h1>{createMode ? 'Create Venue Profile' : editMode ? 'Edit Venue Profile' : 'Venue Catalogue'}</h1>
-        <p className="lead">{createMode
-          ? 'Add a venue so organisers can include it in event planning.'
-          : editMode
-            ? 'Update the venue details used by organisers when planning events.'
-          : 'Review venue details, capacity, layouts and accessibility.'}</p>
+        <div className="venue-workspace__page-title">
+          <h1>{createMode ? 'Create Venue Profile' : editMode ? 'Edit Venue Profile' : 'Venue Catalogue'}</h1>
+          {!createMode && !editMode && <Link to="/venues/create" className="button">+ Create Venue Profile</Link>}
+        </div>
       </div>
 
       {editMode && loading && <p className="note">Loading venue…</p>}
@@ -277,230 +280,253 @@ export default function VenuePage({ createMode = false }) {
       </section>}
 
       {!bufferImpact && (createMode || (editableVenue && !loading)) && (
-        <section className="stack stack--tight">
-          <h2 className="section-title">Venue details</h2>
+        <section className="venue-profile">
+          <nav className="venue-profile__nav" aria-label="Venue profile sections">
+            <h2>Venue profile</h2>
+            <a href="#venue-basics"><span>01</span> Basic information</a>
+            <a href="#venue-layouts"><span>02</span> Layouts &amp; capacity</a>
+            <a href="#venue-features"><span>03</span> Facilities &amp; access</a>
+            <a href="#venue-hours"><span>04</span> Hours &amp; preparation</a>
+          </nav>
 
-          <form className="form" onSubmit={handleSubmit}>
+          <form className="form venue-profile-form" onSubmit={handleSubmit} aria-busy={submitting}>
             <p className="field__hint">Fields marked * are required.</p>
-            <div className="field">
-              <label htmlFor="venueName">Venue name <RequiredMark /></label>
-              <input
-                id="venueName"
-                value={form.name}
-                onChange={(event) => updateField('name', event.target.value)}
-                maxLength={200}
-                required
-              />
-            </div>
-
-            <div className="field">
-              <label htmlFor="location">Location or address</label>
-              <input
-                id="location"
-                value={form.location}
-                onChange={(event) => updateField('location', event.target.value)}
-              />
-            </div>
-
-            <div className="field">
-              <label htmlFor="capacity">Maximum Overall Capacity <RequiredMark /></label>
-              <input
-                id="capacity"
-                type="number"
-                min="1"
-                value={form.capacity}
-                onChange={(event) => updateField('capacity', event.target.value)}
-                required
-              />
-            </div>
-
-            <div className="field">
-              <label>Facilities</label>
-              <div className="repeater">
-                {form.facilities.map((facility, index) => (
-                  <div className="repeater__row" key={index}>
-                    <input
-                      aria-label={`Facility ${index + 1}`}
-                      value={facility}
-                      onChange={(event) => updateFacility(index, event.target.value)}
-                    />
-                    <button
-                      type="button"
-                      className="button button--secondary button--small"
-                      onClick={() =>
-                        setForm((current) => ({
-                          ...current,
-                          facilities: current.facilities.filter(
-                            (_, facilityIndex) => facilityIndex !== index,
-                          ),
-                        }))
-                      }
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
+            <fieldset id="venue-basics" className="venue-profile-form__group">
+              <legend><span>01</span> Basic information</legend>
+              <div className="field">
+                <label htmlFor="venueName">Venue name <RequiredMark /></label>
+                <input
+                  id="venueName"
+                  value={form.name}
+                  onChange={(event) => updateField('name', event.target.value)}
+                  maxLength={200}
+                  required
+                />
               </div>
-              <button
-                type="button"
-                className="button button--secondary button--small"
-                onClick={() =>
-                  setForm((current) => ({
-                    ...current,
-                    facilities: [...current.facilities, ''],
-                  }))
-                }
-              >
-                Add facility
-              </button>
-            </div>
 
-            <div className="field">
-              <label>Accessibility features</label>
-              <div className="repeater">
-                {form.accessibility.map((feature, index) => (
-                  <div className="repeater__row" key={index}>
-                    <input
-                      aria-label={`Accessibility feature ${index + 1}`}
-                      value={feature}
-                      onChange={(event) => updateAccessibility(index, event.target.value)}
-                    />
-                    <button
-                      type="button"
-                      className="button button--secondary button--small"
-                      onClick={() =>
-                        setForm((current) => ({
-                          ...current,
-                          accessibility: current.accessibility.filter(
-                            (_, featureIndex) => featureIndex !== index,
-                          ),
-                        }))
-                      }
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
+              <div className="field">
+                <label htmlFor="location">Location or address</label>
+                <input
+                  id="location"
+                  value={form.location}
+                  onChange={(event) => updateField('location', event.target.value)}
+                />
               </div>
-              <button
-                type="button"
-                className="button button--secondary button--small"
-                onClick={() =>
-                  setForm((current) => ({
-                    ...current,
-                    accessibility: [...current.accessibility, ''],
-                  }))
-                }
-              >
-                Add accessibility feature
-              </button>
-            </div>
 
-            <div className="field">
-              <label>Supported layouts <RequiredMark /></label>
-              <div className="repeater">
-                {form.layouts.map((layout, index) => (
-                  <div className="repeater__row repeater__row--layout" key={index}>
-                    <input
-                      aria-label={`Layout ${index + 1} name`}
-                      placeholder="Layout name"
-                      value={layout.name}
-                      onChange={(event) => updateLayout(index, 'name', event.target.value)}
-                      required
-                    />
-                    <input
-                      aria-label={`Layout ${index + 1} capacity`}
-                      type="number"
-                      min="1"
-                      placeholder="Capacity"
-                      value={layout.capacity}
-                      onChange={(event) => updateLayout(index, 'capacity', event.target.value)}
-                      required
-                    />
-                    {form.layouts.length > 1 && (
+            </fieldset>
+            <fieldset id="venue-layouts" className="venue-profile-form__group">
+              <legend><span>02</span> Layouts and capacity</legend>
+              <div className="field">
+                <label htmlFor="capacity">Maximum Overall Capacity <RequiredMark /></label>
+                <input
+                  id="capacity"
+                  type="number"
+                  min="1"
+                  value={form.capacity}
+                  onChange={(event) => updateField('capacity', event.target.value)}
+                  required
+                />
+              </div>
+              <p className="field__hint">Add each supported room layout and the number of people it can accommodate.</p>
+              <div className="field">
+                <span className="venue-profile-form__label">Supported layouts <RequiredMark /></span>
+                <div className="repeater">
+                  {form.layouts.map((layout, index) => (
+                    <div className="repeater__row repeater__row--layout" key={index}>
+                      <input
+                        aria-label={`Layout ${index + 1} name`}
+                        placeholder="Layout name"
+                        value={layout.name}
+                        onChange={(event) => updateLayout(index, 'name', event.target.value)}
+                        required
+                      />
+                      <input
+                        aria-label={`Layout ${index + 1} capacity`}
+                        type="number"
+                        min="1"
+                        placeholder="Capacity"
+                        value={layout.capacity}
+                        onChange={(event) => updateLayout(index, 'capacity', event.target.value)}
+                        required
+                      />
+                      {form.layouts.length > 1 && (
+                        <button
+                          type="button"
+                          className="button button--secondary button--small"
+                          aria-label={`Remove layout ${index + 1}`}
+                          onClick={() =>
+                            setForm((current) => ({
+                              ...current,
+                              layouts: current.layouts.filter(
+                                (_, layoutIndex) => layoutIndex !== index,
+                              ),
+                            }))
+                          }
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="button button--secondary button--small"
+                  onClick={() =>
+                    setForm((current) => ({
+                      ...current,
+                      layouts: [...current.layouts, { ...EMPTY_LAYOUT }],
+                    }))
+                  }
+                >
+                  Add layout
+                </button>
+              </div>
+
+            </fieldset>
+            <fieldset id="venue-features" className="venue-profile-form__group">
+              <legend><span>03</span> Facilities and accessibility</legend>
+              <div className="field">
+                <span className="venue-profile-form__label">Facilities</span>
+                <div className="repeater">
+                  {form.facilities.map((facility, index) => (
+                    <div className="repeater__row" key={index}>
+                      <input
+                        aria-label={`Facility ${index + 1}`}
+                        value={facility}
+                        onChange={(event) => updateFacility(index, event.target.value)}
+                      />
                       <button
                         type="button"
                         className="button button--secondary button--small"
+                        aria-label={`Remove facility ${index + 1}`}
                         onClick={() =>
                           setForm((current) => ({
                             ...current,
-                            layouts: current.layouts.filter(
-                              (_, layoutIndex) => layoutIndex !== index,
+                            facilities: current.facilities.filter(
+                              (_, facilityIndex) => facilityIndex !== index,
                             ),
                           }))
                         }
                       >
                         Remove
                       </button>
-                    )}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="button button--secondary button--small"
+                  onClick={() =>
+                    setForm((current) => ({
+                      ...current,
+                      facilities: [...current.facilities, ''],
+                    }))
+                  }
+                >
+                  Add facility
+                </button>
+              </div>
+
+              <div className="field">
+                <span className="venue-profile-form__label">Accessibility features</span>
+                <div className="repeater">
+                  {form.accessibility.map((feature, index) => (
+                    <div className="repeater__row" key={index}>
+                      <input
+                        aria-label={`Accessibility feature ${index + 1}`}
+                        value={feature}
+                        onChange={(event) => updateAccessibility(index, event.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="button button--secondary button--small"
+                        aria-label={`Remove accessibility feature ${index + 1}`}
+                        onClick={() =>
+                          setForm((current) => ({
+                            ...current,
+                            accessibility: current.accessibility.filter(
+                              (_, featureIndex) => featureIndex !== index,
+                            ),
+                          }))
+                        }
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="button button--secondary button--small"
+                  onClick={() =>
+                    setForm((current) => ({
+                      ...current,
+                      accessibility: [...current.accessibility, ''],
+                    }))
+                  }
+                >
+                  Add accessibility feature
+                </button>
+              </div>
+
+            </fieldset>
+            <fieldset id="venue-hours" className="venue-profile-form__group">
+              <legend><span>04</span> Operating hours and preparation</legend>
+              <div className="field">
+                <span className="venue-profile-form__label">Operating hours</span>
+                <div className="repeater__row repeater__row--equal">
+                  <div className="repeater__field">
+                    <label htmlFor="openingTime">Opening time <RequiredMark /></label>
+                    <input
+                      id="openingTime"
+                      type="time"
+                      value={form.open}
+                      onChange={(event) => updateField('open', event.target.value)}
+                      required
+                    />
                   </div>
-                ))}
-              </div>
-              <button
-                type="button"
-                className="button button--secondary button--small"
-                onClick={() =>
-                  setForm((current) => ({
-                    ...current,
-                    layouts: [...current.layouts, { ...EMPTY_LAYOUT }],
-                  }))
-                }
-              >
-                Add layout
-              </button>
-            </div>
-
-            <div className="field">
-              <label>Operating hours</label>
-              <div className="repeater__row repeater__row--equal">
-                <div className="repeater__field">
-                  <label htmlFor="openingTime">Opening time <RequiredMark /></label>
-                  <input
-                    id="openingTime"
-                    type="time"
-                    value={form.open}
-                    onChange={(event) => updateField('open', event.target.value)}
-                    required
-                  />
-                </div>
-                <div className="repeater__field">
-                  <label htmlFor="closingTime">Closing time <RequiredMark /></label>
-                  <input
-                    id="closingTime"
-                    type="time"
-                    value={form.close}
-                    onChange={(event) => updateField('close', event.target.value)}
-                    required
-                  />
+                  <div className="repeater__field">
+                    <label htmlFor="closingTime">Closing time <RequiredMark /></label>
+                    <input
+                      id="closingTime"
+                      type="time"
+                      value={form.close}
+                      onChange={(event) => updateField('close', event.target.value)}
+                      required
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="field">
-              <div className="repeater__row repeater__row--equal">
-                <div className="repeater__field">
-                  <label htmlFor="setupTime">Setup time (minutes) <RequiredMark /></label>
-                  <input id="setupTime" type="number" min="0" step="1" max="2147483647" required
-                    aria-describedby="venueBufferHint" value={form.setup_time_minutes}
-                    onChange={(event) => updateField('setup_time_minutes', event.target.value)} />
+              <div className="field">
+                <div className="repeater__row repeater__row--equal">
+                  <div className="repeater__field">
+                    <label htmlFor="setupTime">Setup time (minutes) <RequiredMark /></label>
+                    <input id="setupTime" type="number" min="0" step="1" max="2147483647" required
+                      aria-describedby="venueBufferHint" value={form.setup_time_minutes}
+                      onChange={(event) => updateField('setup_time_minutes', event.target.value)} />
+                  </div>
+                  <div className="repeater__field">
+                    <label htmlFor="turnaroundTime">Turnaround time (minutes) <RequiredMark /></label>
+                    <input id="turnaroundTime" type="number" min="0" step="1" max="2147483647" required
+                      aria-describedby="venueBufferHint" value={form.turnaround_time_minutes}
+                      onChange={(event) => updateField('turnaround_time_minutes', event.target.value)} />
+                  </div>
                 </div>
-                <div className="repeater__field">
-                  <label htmlFor="turnaroundTime">Turnaround time (minutes) <RequiredMark /></label>
-                  <input id="turnaroundTime" type="number" min="0" step="1" max="2147483647" required
-                    aria-describedby="venueBufferHint" value={form.turnaround_time_minutes}
-                    onChange={(event) => updateField('turnaround_time_minutes', event.target.value)} />
-                </div>
+                <p className="field__hint" id="venueBufferHint">Time needed before and after each event, used in availability and conflict checks. Enter 0 if none is needed.</p>
               </div>
-              <p className="field__hint" id="venueBufferHint">Time needed before and after each event, used in availability and conflict checks. Enter 0 if none is needed.</p>
-            </div>
+            </fieldset>
 
-            {error && <p className="form-error" role="alert">{error}</p>}
-            {success && <p className="form-success" role="status">{success}</p>}
-
-            <div className="form-actions">
-              <button type="submit" className="button" disabled={submitting}>
-                {submitting ? 'Saving venue…' : editMode ? 'Save changes' : 'Save venue'}
-              </button>
+            <div className="venue-profile__save">
+              {error && <p className="form-error" role="alert">{error}</p>}
+              {success && <p className="form-success" role="status">{success}</p>}
+              <div className="form-actions">
+                <button type="submit" className="button" disabled={submitting}>
+                  {submitting ? 'Saving venue…' : editMode ? 'Save changes' : 'Save venue'}
+                </button>
+                <Link to="/venues" className="button button--secondary">Back to catalogue</Link>
+              </div>
             </div>
           </form>
         </section>
@@ -551,87 +577,91 @@ export default function VenuePage({ createMode = false }) {
       )}
 
       {!createMode && !editMode && (
-        <section className="stack stack--tight">
-          <h2 className="section-title">Venue catalogue</h2>
-          <div className="form-actions">
-            <Link to="/venues/create" className="button">
-              Create Venue Profile
-            </Link>
+        <section className="stack stack--default" aria-label="Venue catalogue">
+          <div className="attendee-list-tools attendee-list-tools--search-only">
+            <div className="field">
+              <label htmlFor="venue-catalogue-search">Search venues</label>
+              <input id="venue-catalogue-search" type="search" placeholder="Search by venue name or location"
+                value={query} onChange={(event) => { setQuery(event.target.value); setPage(1) }} />
+            </div>
+            {!loading && !error && <p className="note attendee-result-count" role="status">
+              {query.trim() ? `${visibleVenues.length} of ${venues.length}` : venues.length} {venues.length === 1 ? 'venue' : 'venues'}
+            </p>}
+            {query && <button type="button" className="attendee-text-button" onClick={() => { setQuery(''); setPage(1) }}>Clear search</button>}
           </div>
-          {loading && <p className="note">Loading venues…</p>}
-          {!loading && venues.length === 0 && <p className="note">No venues have been added yet.</p>}
-          {!loading && venues.length > 0 && (
-            <div className="table-wrapper">
+          {loading && <p className="venue-workspace__state" role="status">Loading venues…</p>}
+          {!loading && error && <p className="form-error" role="alert">{error}</p>}
+          {!loading && !error && venues.length === 0 && <div className="venue-workspace__state">
+            <h2>Your venue catalogue starts here</h2>
+            <p>Create a venue profile to make its capacity, layouts and availability available for event planning.</p>
+          </div>}
+          {!loading && !error && venues.length > 0 && <>
+            {pageCount > 1 && <nav className="venue-list-pagination" aria-label="Venue catalogue pages, top">
+              <p className="note" role="status">Showing {pageStart + 1}–{Math.min(pageStart + VENUES_PER_PAGE, visibleVenues.length)} of {visibleVenues.length} venues</p>
+              <div className="venue-list-pagination__controls">
+                <button type="button" className="button button--secondary button--small" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button>
+                <span className="note">Page {currentPage} of {pageCount}</span>
+                <button type="button" className="button button--secondary button--small" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Next</button>
+              </div>
+            </nav>}
+            {visibleVenues.length === 0 && <p className="venue-workspace__state">No venues match your search. Try another name or location.</p>}
+            {pagedVenues.length > 0 && <div className="table-wrapper" tabIndex={0} role="region" aria-label="Venue catalogue table">
               <table className="venue-table venue-catalogue-table">
-                <caption className="visually-hidden">Venue catalogue</caption>
+                <caption className="visually-hidden">Venue profiles, facilities and management actions</caption>
                 <thead>
                   <tr>
                     <th scope="col">Venue</th>
-                    <th scope="col">Location</th>
-                    <th scope="col" className="venue-catalogue-table__hours">Operating hours</th>
-                    <th scope="col" className="venue-catalogue-table__capacity">Overall capacity</th>
-                    <th scope="col">Supported layouts</th>
+                    <th scope="col">Capacity &amp; layouts</th>
+                    <th scope="col">Hours &amp; preparation</th>
                     <th scope="col">Accessibility</th>
                     <th scope="col">Facilities</th>
                     <th scope="col" className="venue-table__actions">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {venues.map((venue) => (
+                  {pagedVenues.map((venue) => (
                     <tr key={venue.id}>
-                      <th scope="row">{venue.name}</th>
-                      <td>{venue.location || 'Not provided'}</td>
+                      <th scope="row">
+                        <strong>{venue.name}</strong>
+                        <p className="note venue-catalogue__location">{venue.location || 'Location not provided'}</p>
+                      </th>
                       <td>
-                        {venue.operating_hours.open}–{venue.operating_hours.close}
-                      </td>
-                      <td>{venue.capacity}</td>
-                      <td>
-                        <ul className="table-values">
-                          {venue.layouts.map((layout) => (
-                            <li key={`${venue.id}-${layout.name}`}>
-                              {layout.name} ({layout.capacity})
-                            </li>
-                          ))}
-                        </ul>
+                        <p className="venue-catalogue__capacity">Up to {venue.capacity} people</p>
+                        <ul className="table-values">{venue.layouts.map((layout) => (
+                          <li key={`${venue.id}-${layout.name}`}>{layout.name} · {layout.capacity}</li>
+                        ))}</ul>
                       </td>
                       <td>
-                        <ul className="table-values">
-                          {venue.accessibility?.length ? (
-                            venue.accessibility.map((feature) => (
-                              <li key={`${venue.id}-${feature}`}>{feature}</li>
-                            ))
-                          ) : (
-                            <li>None entered</li>
-                          )}
-                        </ul>
+                        <p className="venue-catalogue__hours">{venue.operating_hours.open}–{venue.operating_hours.close}</p>
+                        <p className="note">{venue.setup_time_minutes != null && venue.turnaround_time_minutes != null
+                          ? `${venue.setup_time_minutes}m setup · ${venue.turnaround_time_minutes}m turnaround` : 'Preparation time not specified'}</p>
                       </td>
+                      <td>{venue.accessibility?.length ? venue.accessibility.join(', ') : 'None entered'}</td>
                       <td>{formatFacilities(venue.facilities)}</td>
                       <td className="venue-table__actions">
                         <div className="venue-table__action-buttons">
                           <Link to={`/venues/availability?${new URLSearchParams({ venueId: venue.id, from: 'catalogue' })}`}
-                            className="button button--secondary button--small">View Availability</Link>
-                          <Link
-                            to={`/venues/${venue.id}/edit`}
-                            className="button button--secondary button--small"
-                          >
-                            Edit
-                          </Link>
-                          <button
-                            type="button"
-                            className="button button--secondary button--small"
-                            disabled={blockingVenue !== null}
-                            onClick={() => setBlockingVenue(venue)}
-                          >
-                            Block / Tentative Hold
-                          </button>
+                            className="button button--small" aria-label={`View availability for ${venue.name}`}>Availability</Link>
+                          <Link to={`/venues/${venue.id}/edit`} className="button button--secondary button--small" aria-label={`Edit ${venue.name}`}>Edit</Link>
+                          <button type="button" className="button button--secondary button--small"
+                            aria-label={`Block / Tentative Hold for ${venue.name}`}
+                            disabled={blockingVenue !== null} onClick={() => setBlockingVenue(venue)}>Block / Tentative Hold</button>
                         </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-          )}
+            </div>}
+            {pageCount > 1 && <nav className="venue-list-pagination" aria-label="Venue catalogue pages, bottom">
+              <p className="note">Showing {pageStart + 1}–{Math.min(pageStart + VENUES_PER_PAGE, visibleVenues.length)} of {visibleVenues.length} venues</p>
+              <div className="venue-list-pagination__controls">
+                <button type="button" className="button button--secondary button--small" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button>
+                <span className="note">Page {currentPage} of {pageCount}</span>
+                <button type="button" className="button button--secondary button--small" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Next</button>
+              </div>
+            </nav>}
+          </>}
         </section>
       )}
 

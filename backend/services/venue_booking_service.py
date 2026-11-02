@@ -1,6 +1,7 @@
 """Venue booking persistence, review workflow, and block synchronization."""
 
 from datetime import datetime, timezone
+import logging
 from httpx import HTTPError
 from postgrest import APIError as PostgrestAPIError
 
@@ -16,6 +17,9 @@ from services.auth_service import AuthError
 from services.notification_service import notify, notify_role
 from services.venue_availability_service import read_reservations, venue_buffers, effective_period
 from models.venue_search import OccupiedPeriod
+
+
+logger = logging.getLogger(__name__)
 
 
 def get_event_booking_context(access_token, event_id):
@@ -89,7 +93,42 @@ def get_pending_venue_bookings(access_token: str, venue_id: str | None = None) -
         query = query.eq("venue_id", venue_id)
 
     result = query.order("created_at", desc=True).execute()
-    return result.data or []
+    bookings = result.data or []
+    # Event/session joins respect RLS and may be null for Venue Staff.
+    # Resolve only the missing names, without granting access to either record.
+    missing_ids = [booking["booking_id"] for booking in bookings
+                   if (booking.get("event_id") and not (booking.get("events") or {}).get("name"))
+                   or (booking.get("session_id") and not (booking.get("session") or {}).get("name"))]
+    if not missing_ids:
+        return bookings
+
+    try:
+        names = client.rpc("get_venue_booking_event_names", {"p_booking_ids": missing_ids}).execute().data
+        if not isinstance(names, list) or any(
+            not isinstance(row, dict) or row.get("booking_id") not in missing_ids
+            or not isinstance(row.get("event_name"), str) or not row["event_name"].strip()
+            or "session_name" not in row
+            or (row["session_name"] is not None and (
+                not isinstance(row["session_name"], str) or not row["session_name"].strip()))
+            for row in names
+        ) or len({row["booking_id"] for row in names}) != len(names):
+            raise ValueError("Invalid booking names")
+    except (PostgrestAPIError, HTTPError, ValueError):
+        # Names are optional display metadata. Keep the existing list usable
+        # before migration rollout or on lookup failure; never invent names.
+        logger.warning("Booking name lookup unavailable; returning the existing booking list.")
+        return bookings
+
+    names_by_booking = {row["booking_id"]: row for row in names}
+    enriched = []
+    for booking in bookings:
+        names = names_by_booking.get(booking["booking_id"])
+        if names:
+            booking = {**booking, "events": {**(booking.get("events") or {}), "name": names["event_name"]}}
+            if names["session_name"] is not None:
+                booking["session"] = {**(booking.get("session") or {}), "name": names["session_name"]}
+        enriched.append(booking)
+    return enriched
 
 
 def check_schedule_conflict_details(client, venue_id: str, effective_start: str, effective_end: str, event_id=None) -> list[dict]:

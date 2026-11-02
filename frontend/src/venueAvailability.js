@@ -107,3 +107,8 @@ export function calendarItemLabel(item) {
   if (item.type === 'operational_block' && item.reason?.startsWith('Approved Booking:')) return 'Recorded block'
   return { operational_block: 'Operational block', confirmed_booking: 'Confirmed booking', tentative_hold: 'Tentative hold' }[item.type]
 }
+
+// Compact grid text only; full labels and reasons remain in accessible details.
+export function calendarItemShortLabel(item) {
+  return { operational_block: 'Blocked', confirmed_booking: 'Confirmed', tentative_hold: 'Hold' }[item.type]
+}

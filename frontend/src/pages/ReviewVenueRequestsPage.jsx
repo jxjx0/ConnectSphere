@@ -4,8 +4,11 @@ import AppShell from '../components/AppShell'
 import VenueBookingCard from '../components/VenueBookingCard'
 import VenueScheduleCalendar from '../components/VenueScheduleCalendar'
 import { useAuth } from '../context/AuthContext'
-import { getPendingVenueBookings, getVenueAvailability, reviewVenueBooking } from '../api/venues'
+import { getPendingVenueBookings, reviewVenueBooking } from '../api/venues'
+import { formatDateRange } from '../eventDisplay'
 import styles from '../styles/ReviewVenueRequestsPage.module.css'
+
+const REQUESTS_PER_PAGE = 8
 
 /**
  * Checks whether two time ranges overlap.
@@ -93,6 +96,9 @@ export default function ReviewVenueRequests() {
     const [processingId, setProcessingId] = useState(null)
     const [rejectionReasons, setRejectionReasons] = useState({})
     const [rejectingId, setRejectingId] = useState(null)
+    const [reviewMessage, setReviewMessage] = useState('')
+    const [query = '', setQuery] = useState('')
+    const [page = 1, setPage] = useState(1)
 
     useEffect(() => {
         let active = true
@@ -116,12 +122,28 @@ export default function ReviewVenueRequests() {
         }
     }, [token])
 
-    const selectedBooking = bookings.find((b) => b.booking_id === selectedBookingId)
+    const filteredBookings = bookings.filter(booking => [booking.events?.name, booking.session?.name, booking.venues?.name, booking.room_layout]
+        .filter(Boolean).join(' ').toLowerCase().includes(query.trim().toLowerCase()))
+    const pageCount = Math.max(1, Math.ceil(filteredBookings.length / REQUESTS_PER_PAGE))
+    const currentPage = Math.min(page, pageCount)
+    const pageStart = (currentPage - 1) * REQUESTS_PER_PAGE
+    const pagedBookings = filteredBookings.slice(pageStart, pageStart + REQUESTS_PER_PAGE)
+    const selectedBooking = pagedBookings.find((b) => b.booking_id === selectedBookingId) || pagedBookings[0]
+    const id = selectedBooking?.booking_id
+    const isProcessing = processingId === id
+    const isRejecting = rejectingId === id
+    const validationError = selectedBooking ? validateBookingRequest(selectedBooking) : null
 
     // Formats start date into YYYY-MM-DD in local timezone for VenueScheduleCalendar focus
     const selectedBookingDate = selectedBooking?.start_at
         ? new Date(selectedBooking.start_at).toLocaleDateString('sv-SE')
         : null
+
+    function clearSearch() {
+        setQuery('')
+        setPage(1)
+        setSelectedBookingId(null)
+    }
 
     async function handleApprove(booking) {
         const bookingId = booking.booking_id
@@ -136,6 +158,7 @@ export default function ReviewVenueRequests() {
 
         try {
             await reviewVenueBooking(bookingId, { status: 'APPROVED' }, token)
+            setReviewMessage(`Booking request for ${booking.venues?.name || 'this venue'} approved.`)
 
             setBookings((prev) => {
                 const next = prev.filter((b) => b.booking_id !== bookingId)
@@ -172,6 +195,7 @@ export default function ReviewVenueRequests() {
                 { status: 'REJECTED', rejection_reason: reason },
                 token
             )
+            setReviewMessage('Booking request rejected. Your reason has been saved.')
 
             setBookings((prev) => {
                 const next = prev.filter((b) => b.booking_id !== bookingId)
@@ -192,150 +216,158 @@ export default function ReviewVenueRequests() {
         <AppShell>
             <div className={styles.container}>
                 <div className="content__header venue-search__header">
-                    <Link to="/dashboard" className="venue-search__back">
-                        ← Back to Dashboard
-                    </Link>
                     <h1>Review Venue Requests</h1>
-                    <p className="lead">Select a venue booking request to review its full schedule and availability grid.</p>
                 </div>
 
-                <section className="stack stack--tight">
-                    <h2 className="section-title">Venue Requests</h2>
-                </section>
-
-                {loading && <p className="page-state">Loading pending requests…</p>}
-                {error && <p className="form-error">{error}</p>}
+                {reviewMessage && <p className="form-success" role="status">{reviewMessage}</p>}
+                {loading && <p className="venue-workspace__state" role="status">Loading pending requests…</p>}
+                {error && <p className="form-error" role="alert">{error}</p>}
 
                 {!loading && !error && bookings.length === 0 && (
-                    <p className="note">No pending venue booking requests to review.</p>
+                    <div className="venue-workspace__state" role="status">
+                        <h2>No pending requests</h2>
+                        <p>There are no venue booking requests waiting for your review.</p>
+                        <Link to="/venues/availability">View venue availability</Link>
+                    </div>
                 )}
 
                 {!loading && !error && bookings.length > 0 && (
-                    <div className={styles.splitLayout}>
-                        {/* Selectable Requests List */}
-                        <section className={styles.cardsSection}>
-                            <h2 className="section-title">Pending Requests ({bookings.length})</h2>
-                            <ul className={styles.cardsList}>
-                                {bookings.map((booking) => {
-                                    const id = booking.booking_id
-                                    const isSelected = selectedBookingId === id
-                                    const isProcessing = processingId === id
-                                    const isRejecting = rejectingId === id
-                                    const validationError = validateBookingRequest(booking)
-
-                                    return (
-                                        <li
-                                            key={id}
-                                            tabIndex={0}
-                                            onClick={() => setSelectedBookingId(id)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter' || e.key === ' ') {
-                                                    e.preventDefault()
-                                                    setSelectedBookingId(id)
-                                                }
-                                            }}
-                                            className={`${styles.selectableCard} ${isSelected ? styles.selectedCard : ''}`}
-                                        >
-                                            <VenueBookingCard
-                                                booking={booking}
-                                                validationError={validationError}
-                                                actions={
-                                                    <div style={{ width: '100%' }} onClick={(e) => e.stopPropagation()}>
-                                                        {actionError[id] && (
-                                                            <p className="form-error" style={{ marginBottom: 'var(--space-2)' }}>
-                                                                {actionError[id]}
-                                                            </p>
-                                                        )}
-
-                                                        {!isRejecting ? (
-                                                            <div className="form-actions">
-                                                                <button
-                                                                    type="button"
-                                                                    className="button"
-                                                                    onClick={() => handleApprove(booking)}
-                                                                    disabled={isProcessing || Boolean(validationError)}
-                                                                    title={validationError || undefined}
-                                                                >
-                                                                    {isProcessing ? 'Saving…' : 'Approve'}
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    className="button button--secondary"
-                                                                    onClick={() => {
-                                                                        setRejectingId(id)
-                                                                        setActionError((prev) => ({ ...prev, [id]: '' }))
-                                                                    }}
-                                                                    disabled={isProcessing}
-                                                                >
-                                                                    Reject
-                                                                </button>
-                                                            </div>
-                                                        ) : (
-                                                            <form onSubmit={(e) => handleRejectSubmit(e, id)} className="stack stack--tight">
-                                                                <label className="field">
-                                                                    <span className="field__label">Reason for Rejection</span>
-                                                                    <textarea
-                                                                        value={rejectionReasons[id] || ''}
-                                                                        onChange={(e) =>
-                                                                            setRejectionReasons((prev) => ({
-                                                                                ...prev,
-                                                                                [id]: e.target.value,
-                                                                            }))
-                                                                        }
-                                                                        placeholder="Enter rejection reason..."
-                                                                        rows={2}
-                                                                        required
-                                                                        autoFocus
-                                                                    />
-                                                                </label>
-                                                                <div className="form-actions">
-                                                                    <button className="button" disabled={isProcessing}>
-                                                                        {isProcessing ? 'Submitting…' : 'Confirm Rejection'}
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        className="button button--secondary"
-                                                                        disabled={isProcessing}
-                                                                        onClick={() => setRejectingId(null)}
-                                                                    >
-                                                                        Cancel
-                                                                    </button>
-                                                                </div>
-                                                            </form>
-                                                        )}
-                                                    </div>
-                                                }
-                                            />
-                                        </li>
-                                    )
-                                })}
-                            </ul>
-                        </section>
-
-                        {/* Sticky Venue Calendar Column */}
-                        <aside className={styles.calendarPanel}>
-                            <div className={styles.calendarHeader}>
-                                <div>
-                                    <h2 className="section-title" style={{ border: 0, padding: 0 }}>
-                                        Venue Calendar
-                                    </h2>
-                                    <strong style={{ fontSize: '1.0625rem', color: 'var(--ink)' }}>
-                                        {selectedBooking?.venues?.name || `Venue ID: ${selectedBooking?.venue_id}`}
-                                    </strong>
-                                </div>
-                            </div>
-                            {selectedBooking ? (
-                                <VenueScheduleCalendar
-                                    venueId={selectedBooking.venue_id}
-                                    operatingHours={selectedBooking.venues?.operating_hours}
-                                    initialDate={selectedBookingDate}
-                                    token={token}
-                                />
-                            ) : (
-                                <p className="note">Select a request card to load its schedule calendar.</p>
-                            )}
-                        </aside>
+                    <>
+                    <div className="attendee-list-tools attendee-list-tools--search-only">
+                        <div className="field">
+                            <label htmlFor="request-search">Search booking requests</label>
+                            <input id="request-search" type="search" placeholder="Search by event, session, venue or layout"
+                                value={query} onChange={event => { setQuery(event.target.value); setPage(1); setSelectedBookingId(null) }} />
+                        </div>
+                        <p className="note attendee-result-count" role="status">
+                            {query.trim() ? `${filteredBookings.length} of ${bookings.length}` : bookings.length} {bookings.length === 1 ? 'request' : 'requests'}
+                        </p>
+                        {query && <button type="button" className="attendee-text-button" onClick={clearSearch}>Clear search</button>}
                     </div>
+                    <div className={styles.splitLayout}>
+                        <section className={styles.queue} aria-labelledby="pending-requests-title">
+                            <div className={styles.queueHeading}>
+                                <h2 id="pending-requests-title">Pending requests</h2>
+                                <span className="tag">{filteredBookings.length}</span>
+                            </div>
+                            <ul className={styles.cardsList}>
+                                {pagedBookings.map((booking) => (
+                                    <li key={booking.booking_id}>
+                                        <a href="#venue-request-detail"
+                                            className={`${styles.queueItem} ${selectedBooking?.booking_id === booking.booking_id ? styles.selectedCard : ''}`}
+                                            aria-current={selectedBooking?.booking_id === booking.booking_id ? 'true' : undefined}
+                                            onClick={() => setSelectedBookingId(booking.booking_id)}>
+                                            <strong>{booking.events?.name || booking.venues?.name || `Venue ID: ${booking.venue_id}`}</strong>
+                                            {booking.events?.name && <span>{booking.venues?.name || `Venue ID: ${booking.venue_id}`}</span>}
+                                            <span className="note">{formatDateRange(booking.start_at, booking.end_at)}</span>
+                                            <span className="note">{[booking.session?.name, booking.room_layout].filter(Boolean).join(' · ')}</span>
+                                            <span className={styles.queueHint}>{selectedBooking?.booking_id === booking.booking_id ? 'Currently reviewing' : 'Review request →'}</span>
+                                        </a>
+                                    </li>
+                                ))}
+                            </ul>
+                            {filteredBookings.length > 0 && <nav className="venue-list-pagination venue-list-pagination--queue" aria-label="Booking request pages">
+                                <p className="note" role="status">Showing {pageStart + 1}–{Math.min(pageStart + REQUESTS_PER_PAGE, filteredBookings.length)} of {filteredBookings.length} requests</p>
+                                {pageCount > 1 && <div className="venue-list-pagination__controls">
+                                    <button type="button" className="button button--secondary button--small" disabled={currentPage === 1}
+                                        onClick={() => { setPage(currentPage - 1); setSelectedBookingId(null) }}>Previous</button>
+                                    <span className="note">Page {currentPage} of {pageCount}</span>
+                                    <button type="button" className="button button--secondary button--small" disabled={currentPage === pageCount}
+                                        onClick={() => { setPage(currentPage + 1); setSelectedBookingId(null) }}>Next</button>
+                                </div>}
+                            </nav>}
+                        </section>
+                        {!selectedBooking && <section className={styles.calendarPanel}>
+                            <h2>No matching requests</h2>
+                            <p className="note">Try another event, session, venue or layout name.</p>
+                        </section>}
+                        {selectedBooking && <div className={styles.reviewDetail}>
+                            <section id="venue-request-detail" className={styles.requestPanel} aria-labelledby="selected-request-title">
+                                <header className={styles.requestHeading}>
+                                    <span className="attendee-category">Booking review</span>
+                                    <h2 id="selected-request-title">{selectedBooking.events?.name || 'Booking details'}</h2>
+                                </header>
+                                <VenueBookingCard booking={selectedBooking} validationError={validationError} />
+                            </section>
+                            <section id="request-venue-calendar" className={styles.calendarPanel} aria-labelledby="request-calendar-title">
+                                <div className={styles.calendarHeader}>
+                                    <div>
+                                        <h2 id="request-calendar-title">Venue schedule</h2>
+                                        <p className="note">{selectedBooking.venues?.name || `Venue ID: ${selectedBooking.venue_id}`}</p>
+                                    </div>
+                                </div>
+                                <VenueScheduleCalendar key={selectedBooking.booking_id} venueId={selectedBooking.venue_id}
+                                    operatingHours={selectedBooking.venues?.operating_hours}
+                                    initialDate={selectedBookingDate} token={token} request={selectedBooking} />
+                            </section>
+                            <section className={styles.decisionPanel} aria-label="Booking decision">
+                                <h2>Your decision</h2>
+                                {actionError[id] && (
+                                    <p className="form-error" role="alert" style={{ marginBottom: 'var(--space-2)' }}>
+                                        {actionError[id]}
+                                    </p>
+                                )}
+
+                                {!isRejecting ? (
+                                    <div className="form-actions">
+                                        <button
+                                            type="button"
+                                            className="button"
+                                            onClick={() => handleApprove(selectedBooking)}
+                                            disabled={isProcessing || Boolean(validationError)}
+                                            title={validationError || undefined}
+                                        >
+                                            {isProcessing ? 'Saving…' : 'Approve'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="button button--danger"
+                                            onClick={() => {
+                                                setRejectingId(id)
+                                                setActionError((prev) => ({ ...prev, [id]: '' }))
+                                            }}
+                                            disabled={isProcessing}
+                                        >
+                                            Reject
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <form onSubmit={(e) => handleRejectSubmit(e, id)} className="stack stack--tight">
+                                        <label className="field">
+                                            <span className="field__label">Reason for Rejection</span>
+                                            <textarea
+                                                value={rejectionReasons[id] || ''}
+                                                onChange={(e) =>
+                                                    setRejectionReasons((prev) => ({
+                                                        ...prev,
+                                                        [id]: e.target.value,
+                                                    }))
+                                                }
+                                                placeholder="Enter rejection reason..."
+                                                rows={2}
+                                                required
+                                                autoFocus
+                                            />
+                                        </label>
+                                        <div className="form-actions">
+                                            <button className="button button--danger" disabled={isProcessing}>
+                                                {isProcessing ? 'Submitting…' : 'Confirm Rejection'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="button button--secondary"
+                                                disabled={isProcessing}
+                                                onClick={() => setRejectingId(null)}
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </form>
+                                )}
+                            </section>
+                        </div>}
+                    </div>
+                    </>
                 )}
             </div>
         </AppShell>
