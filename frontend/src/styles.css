@@ -1704,6 +1704,221 @@ a:hover {
   flex: 0 0 7rem;
 }
 
+.organiser-ui .page-state {
+  min-height: 45svh;
+}
+
+.organiser-event-detail {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-5);
+}
+
+.organiser-event-detail > * {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.organiser-event-detail__back {
+  align-self: flex-start;
+  color: var(--ink-muted);
+  font-size: 0.8125rem;
+  text-decoration: none;
+}
+
+.organiser-event-detail__back:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.organiser-event-detail .record-head {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.organiser-event-detail .record-head__title {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
+}
+
+.organiser-event-detail .record-head__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1);
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+
+.organiser-event-detail__progress {
+  min-width: 0;
+}
+
+.organiser-event-detail__progress > .progress {
+  gap: var(--space-5);
+  padding: var(--space-5);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.organiser-event-detail .progress__next {
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+
+.organiser-event-detail .progress .form-actions {
+  margin: 0;
+}
+
+.organiser-event-detail__notice {
+  gap: var(--space-4);
+}
+
+.organiser-event-detail__coordinator {
+  grid-column: span 4;
+}
+
+.organiser-event-detail__brief {
+  grid-column: span 8;
+}
+
+.organiser-event-detail__coordinator .answers--paired {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.organiser-event-detail__sessions {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.organiser-event-detail__sessions > section {
+  min-width: 0;
+  gap: var(--space-4);
+}
+
+.organiser-event-detail__sessions .session-card {
+  background: var(--surface);
+}
+
+.organiser-event-detail__registration,
+.organiser-event-detail__actions {
+  grid-column: span 6;
+}
+
+.organiser-event-detail__actions .form-actions {
+  margin-top: 0;
+}
+
+.organiser-event-detail__history:empty {
+  display: none;
+}
+
+.organiser-event-detail__history > section {
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.organiser-event-detail__history .notice {
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+}
+
+.organiser-event-detail__history-error {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.organiser-event-detail .tag {
+  min-height: 1.75rem;
+  padding: var(--space-1) var(--space-3);
+  border-color: var(--rule);
+  border-radius: 999px;
+  background: var(--sunken);
+  color: var(--ink-muted);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
+}
+
+.organiser-event-detail .tag--your-turn {
+  border-color: var(--accent);
+  background: var(--accent-faint);
+  color: var(--accent);
+}
+
+.organiser-event-detail > .stack.stack--tight {
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.organiser-event-detail .section-title {
+  padding-bottom: var(--space-3);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-transform: none;
+}
+
+.organiser-event-detail .answers {
+  max-width: none;
+  gap: var(--space-4);
+}
+
+.organiser-event-detail .answer dt {
+  margin-bottom: var(--space-2);
+  color: var(--ink-muted);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.organiser-event-detail .answer dd {
+  font-size: 0.875rem;
+}
+
+.organiser-event-detail .notice {
+  border-left-width: 4px;
+  border-radius: 0 8px 8px 0;
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+
+.organiser-event-detail .record-foot {
+  padding-top: var(--space-2);
+}
+
+@media (max-width: 56rem) {
+  .organiser-event-detail__coordinator,
+  .organiser-event-detail__brief,
+  .organiser-event-detail__registration,
+  .organiser-event-detail__actions {
+    grid-column: 1 / -1;
+  }
+}
+
 .organiser-dashboard {
   display: grid;
   gap: var(--space-6);
@@ -2082,6 +2297,31 @@ a:hover {
 
   .organiser-ui .content__header h1 {
     font-size: 1.75rem;
+  }
+
+  .organiser-event-detail {
+    gap: var(--space-4);
+  }
+
+  .organiser-event-detail .record-head__title {
+    font-size: 1.75rem;
+  }
+
+  .organiser-event-detail__progress > .progress,
+  .organiser-event-detail > .stack.stack--tight {
+    padding: var(--space-4);
+  }
+
+  .organiser-event-detail__history > section {
+    padding: var(--space-4);
+  }
+
+  .organiser-event-detail .track__label {
+    font-size: 0.6875rem;
+  }
+
+  .organiser-event-detail .answers--paired {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .organiser-request {

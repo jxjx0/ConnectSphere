@@ -34,6 +34,14 @@ function Answer({ label, value, wide }) {
   )
 }
 
+function OrganiserShell({ children }) {
+  return (
+    <div className="organiser-ui">
+      <AppShell>{children}</AppShell>
+    </div>
+  )
+}
+
 export default function MyEventDetailPage() {
   const { token } = useAuth()
   const { eventId } = useParams()
@@ -137,9 +145,9 @@ export default function MyEventDetailPage() {
 
   if (loading) {
     return (
-      <AppShell>
+      <OrganiserShell>
         <p className="page-state">Loading this event request…</p>
-      </AppShell>
+      </OrganiserShell>
     )
   }
 
@@ -147,12 +155,12 @@ export default function MyEventDetailPage() {
   // which is deliberate -- see get_my_event in event_service.py.
   if (error) {
     return (
-      <AppShell>
+      <OrganiserShell>
         <div className="page-state">
           <p>{error}</p>
           <Link to="/my-events">Back to my event requests</Link>
         </div>
-      </AppShell>
+      </OrganiserShell>
     )
   }
 
@@ -168,13 +176,14 @@ export default function MyEventDetailPage() {
     && !pendingCancellation
 
   return (
-    <AppShell>
-      <div className="content">
-        <Link to="/my-events" className="backlink">
+    <OrganiserShell>
+      <div className="content organiser-event-detail">
+        <Link to="/my-events" className="organiser-event-detail__back">
           ← My event requests
         </Link>
 
-        <header className="record-head">
+        <header className="record-head organiser-event-detail__header">
+          <p className="organiser-request__eyebrow">Event overview</p>
           <h1 className="record-head__title">{event.name}</h1>
           <p className="record-head__meta">
             {categoryLabel(event.category, event.category_other)}
@@ -189,11 +198,13 @@ export default function MyEventDetailPage() {
           </p>
         </header>
 
-        <EventStatusPanel event={event} role="organiser" />
+        <div className="organiser-event-detail__progress">
+          <EventStatusPanel event={event} role="organiser" />
+        </div>
 
         {/* Open requests come first: one of them may be waiting on you. */}
         {openClarification && (
-          <section className="stack stack--tight">
+          <section className="stack stack--tight organiser-event-detail__notice">
             <h2 className="section-title">The Coordinator has a question</h2>
             <article className="notice">
               <p><strong>Coordinator · {formatDateTime(openClarification.created_at)}</strong></p>
@@ -222,7 +233,7 @@ export default function MyEventDetailPage() {
         )}
 
         {pendingChange && (
-          <section className="stack stack--tight">
+          <section className="stack stack--tight organiser-event-detail__notice">
             <h2 className="section-title">Your change request</h2>
             <p className="notice" role="status">
               Waiting for the Coordinator to review it. You can submit another
@@ -233,7 +244,7 @@ export default function MyEventDetailPage() {
         )}
 
         {pendingCancellation && (
-          <section className="stack stack--tight">
+          <section className="stack stack--tight organiser-event-detail__notice">
             <h2 className="section-title">Your cancellation request</h2>
             <p className="notice" role="status">
               Waiting for the Coordinator to review it.
@@ -242,9 +253,13 @@ export default function MyEventDetailPage() {
           </section>
         )}
 
-        {historyError && <p className="note" role="status">{historyError}</p>}
+        {historyError && (
+          <p className="note organiser-event-detail__history-error" role="status">
+            {historyError}
+          </p>
+        )}
 
-        <section className="stack stack--tight">
+        <section className="stack stack--tight organiser-event-detail__section organiser-event-detail__coordinator">
           <h2 className="section-title">Who is handling this</h2>
 
           <dl className="answers">
@@ -261,7 +276,7 @@ export default function MyEventDetailPage() {
           </dl>
         </section>
 
-        <section className="stack stack--tight">
+        <section className="stack stack--tight organiser-event-detail__section organiser-event-detail__brief">
           <h2 className="section-title">What you asked for</h2>
 
           <dl className="answers">
@@ -277,10 +292,12 @@ export default function MyEventDetailPage() {
 
         {/* Time, attendance, location, layout and equipment belong to
             each session (T7-276). */}
-        <SessionList event={event} />
+        <div className="organiser-event-detail__sessions">
+          <SessionList event={event} />
+        </div>
 
         {REGISTRATION_STATUSES.includes(event.status) && (
-          <section className="stack stack--tight">
+          <section className="stack stack--tight organiser-event-detail__section organiser-event-detail__registration">
             <h2 className="section-title">Attendee registration</h2>
             <dl className="answers">
               <div className="answers--paired">
@@ -312,7 +329,7 @@ export default function MyEventDetailPage() {
         )}
 
         {(canRequestChange || canRequestCancellation) && (
-          <section className="stack stack--tight">
+          <section className="stack stack--tight organiser-event-detail__section organiser-event-detail__actions">
             {cancellationFormOpen ? (
               <>
                 <h2 className="section-title">Request cancellation</h2>
@@ -379,12 +396,14 @@ export default function MyEventDetailPage() {
           </section>
         )}
 
-        <RequestHistory clarifications={clarifications} event={event} role="organiser" />
+        <div className="organiser-event-detail__history">
+          <RequestHistory clarifications={clarifications} event={event} role="organiser" />
+        </div>
 
-        <p className="record-foot">
+        <p className="record-foot organiser-event-detail__footer">
           Submitted {formatDateTime(event.created_at)}
         </p>
       </div>
-    </AppShell>
+    </OrganiserShell>
   )
 }
