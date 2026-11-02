@@ -13,6 +13,7 @@ import { openRequestBadges, statusLabel } from '../eventStatus'
 import {
   ORGANISER_EVENT_TABS,
   defaultOrganiserTab,
+  needsRegistrationSetup,
   organiserEventsForTab,
   organiserTabCount,
 } from '../organiserEventTabs'
@@ -52,11 +53,10 @@ export default function MyEventsPage() {
   return (
     <AppShell>
       <div className="content">
-        <Link to="/dashboard" className="backlink">← Dashboard</Link>
         <div className="content__header">
-          <h1>My event requests</h1>
+          <h1>My Events</h1>
           <p className="lead">
-            See what needs your reply, follow your requests, or continue a saved draft.
+            See what needs you next, follow your requests, or continue a saved draft.
           </p>
         </div>
 
@@ -81,17 +81,13 @@ export default function MyEventsPage() {
 
         {!error && tabEvents.length === 0 && (
           <section className="stack stack--tight">
-            <p className="note">{tab.empty}</p>
-            {tab.id === 'drafts' && (
-              <p className="note">
-                Use “Save as draft” on an event request to finish it later.
-              </p>
-            )}
+            <p className="workspace-empty">
+              {tab.empty}
+              {tab.id === 'drafts' && ' Use "Save as draft" on an event request to finish it later.'}
+            </p>
             {(tab.id === 'drafts' || tab.id === 'in-progress') && (
-              <div className="form-actions">
-                <Link to="/my-events/new" className="button">
-                  Request an Event
-                </Link>
+              <div>
+                <Link to="/my-events/new" className="button">Request an event</Link>
               </div>
             )}
           </section>
@@ -99,7 +95,7 @@ export default function MyEventsPage() {
 
         {!error && tabEvents.length > 0 && (
           <section className="stack stack--tight">
-            <h2 className="section-title">{tab.label}</h2>
+            <h2 className="section-title">{tab.label} ({tabEvents.length})</h2>
             <div className="choices">
               {tabEvents.map((item) => {
                 const isDraft = tab.id === 'drafts'
@@ -114,19 +110,21 @@ export default function MyEventsPage() {
                       <span className="choice__description">
                         {isDraft
                           ? `Last edited ${formatDateTime(item.updated_at)}`
-                          : (
-                            <>
-                              {formatDateRange(item.start_time, item.end_time)}{' · '}{formatSessionSummary(item)}{' · '}
-                              <span className="tag">{statusLabel(item.status)}</span>
-                              {openRequestBadges(item, 'organiser').map((badge) => (
-                                <span key={badge.kind}>
-                                  {' '}
-                                  <span className={badge.yourTurn ? 'tag tag--your-turn' : 'tag'}>{badge.label}</span>
-                                </span>
-                              ))}
-                            </>
-                          )}
+                          : `${formatDateRange(item.start_time, item.end_time)} · ${formatSessionSummary(item)}`}
                       </span>
+                      {!isDraft && (
+                        <span className="event-card__tags">
+                          <span className="tag">{statusLabel(item.status)}</span>
+                          {openRequestBadges(item, 'organiser').map((badge) => (
+                            <span key={badge.kind} className={badge.yourTurn ? 'tag tag--your-turn' : 'tag'}>
+                              {badge.label}
+                            </span>
+                          ))}
+                          {needsRegistrationSetup(item) && (
+                            <span className="tag tag--your-turn">Set up registration</span>
+                          )}
+                        </span>
+                      )}
                     </span>
                     <span className="choice__arrow" aria-hidden="true">→</span>
                   </Link>
