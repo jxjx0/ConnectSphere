@@ -78,25 +78,6 @@ export default function DashboardPage() {
               </div>
             </section>
 
-            <section
-              className="organiser-dashboard__account"
-              aria-labelledby="organiser-account-title"
-            >
-              <div className="organiser-dashboard__section-heading">
-                <h2 id="organiser-account-title">Account</h2>
-                <p>Your profile currently signed in to ConnectSphere.</p>
-              </div>
-              <dl className="organiser-dashboard__account-details">
-                <div>
-                  <dt>Name</dt>
-                  <dd>{user.full_name}</dd>
-                </div>
-                <div>
-                  <dt>Role</dt>
-                  <dd>{readableRole(user.role)}</dd>
-                </div>
-              </dl>
-            </section>
           </div>
         </AppShell>
       </div>
