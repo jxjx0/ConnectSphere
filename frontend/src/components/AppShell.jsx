@@ -4,7 +4,9 @@
 import { Link, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
+import CoordinatorTabs from './CoordinatorTabs'
 import NotificationDropdown from './NotificationDropdown'
+import './WorkspaceLayout.css'
 
 export default function AppShell({ children }) {
   const { user, logout } = useAuth()
@@ -15,7 +17,8 @@ export default function AppShell({ children }) {
     navigate('/')
   }
 
-  return (
+  const isCoordinator = user.role === 'coordinator'
+  const shell = (
     <>
       <header className="topbar">
         <div className="topbar__inner">
@@ -37,7 +40,13 @@ export default function AppShell({ children }) {
         </div>
       </header>
 
-      <main className="app-main">{children}</main>
+      <main className="app-main">
+        {isCoordinator && <CoordinatorTabs />}
+        {children}
+      </main>
     </>
   )
+
+  // Coordinators have their own workspace on every page they share with others.
+  return isCoordinator ? <div className="workspace-ui">{shell}</div> : shell
 }

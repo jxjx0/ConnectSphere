@@ -4,7 +4,7 @@
 import { Link, useLocation } from 'react-router-dom'
 
 import AppShell from './AppShell'
-import './TechSupportLayout.css'
+import './WorkspaceLayout.css'
 
 const TABS = [
   { path: '/equipment-requests', label: 'Requests' },
@@ -23,9 +23,9 @@ export default function TechSupportShell({ children }) {
   const current = currentTab(useLocation().pathname)
 
   return (
-    <div className="tech-ui">
+    <div className="workspace-ui">
       <AppShell>
-        <nav className="form-actions tech-tabs" aria-label="Technical Support pages">
+        <nav className="form-actions workspace-tabs" aria-label="Technical Support pages">
           {TABS.map((tab) => (
             <Link
               key={tab.path}

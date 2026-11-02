@@ -32,9 +32,14 @@ import {
 import { cancelVenueBooking, getVenueBookingsForEvent } from '../api/venues'
 import { cancelEquipmentRequest, getEventEquipmentRequests } from '../api/equipmentRequests'
 import { canCancelEquipmentRequest, canCancelVenueBooking } from '../cancelArrangements'
+import {
+  safetyCheckChecklist,
+  venueTagClass,
+  visibleVenueBookings,
+} from '../coordinatorEventView'
 import { sessionsWithoutEquipmentRequest } from '../equipmentRequestEligibility'
 import { sessionChanges, sessionsNeedingRebooking } from '../changeRequestSessions'
-import { ACTIVE_STATUSES, forwardBlocker, statusLabel } from '../eventStatus'
+import { ACTIVE_STATUSES, forwardBlocker } from '../eventStatus'
 
 import { requestSafetyCheck } from '../api/events'
 
@@ -362,7 +367,7 @@ export default function EventReviewDetailPage() {
       <AppShell>
         <div className="page-state">
           <p>{error}</p>
-          <Link to="/dashboard">Back to dashboard</Link>
+          <Link to="/dashboard">← Back</Link>
         </div>
       </AppShell>
     )
@@ -372,6 +377,11 @@ export default function EventReviewDetailPage() {
   const pendingBookingsToCancel = pendingBookingsAffectedBy(event, venueBookings)
   const blocker = forwardBlocker(event, 'coordinator')
   const pendingChange = event.change_request?.status === 'pending' ? event.change_request : null
+  // A change to sessions alone has no event details to compare.
+  const changedFields = pendingChange
+    ? CHANGE_FIELDS.filter(({ key }) => normalizedValue(key, event[key])
+      !== normalizedValue(key, pendingChange[key]))
+    : []
   const pendingCancellation = event.cancellation_request?.status === 'pending'
     ? event.cancellation_request
     : null
@@ -381,11 +391,8 @@ export default function EventReviewDetailPage() {
   const canAskClarification = ACTIVE_STATUSES.includes(event.status)
     && !event.has_open_clarification && !pendingCancellation
 
-  const liveVenueStatuses = venueBookings
-    .map((booking) => (booking.status || '').toUpperCase())
-    .filter((status) => !['CANCELLED', 'REJECTED', 'REJECTED_BY_SAFETY'].includes(status))
-  const hasApprovedVenue =
-    liveVenueStatuses.length > 0 && liveVenueStatuses.every((status) => status === 'APPROVED')
+  const shownVenueBookings = visibleVenueBookings(event, venueBookings)
+  const safetyChecklist = safetyCheckChecklist(event, venueBookings, equipmentRequests)
   // Each session has one equipment request, so hide the link once every
   // session has one (or while we can't tell because loading them failed).
   const canRequestEquipment = !equipmentRequestError
@@ -415,7 +422,7 @@ export default function EventReviewDetailPage() {
     <AppShell>
       <div className="content">
         <Link to="/dashboard" className="backlink">
-          ← Dashboard
+          ← Back
         </Link>
 
         <header className="record-head">
@@ -426,95 +433,93 @@ export default function EventReviewDetailPage() {
             {formatDateRange(event.start_time, event.end_time)}
             <span className="record-head__dot" aria-hidden="true">·</span>
             {formatSessionSummary(event)}
-            <span className="record-head__dot" aria-hidden="true">·</span>
-            <span className="tag">{statusLabel(event.status)}</span>
           </p>
 
-          {venueError && <p role="alert">Unable to load venue arrangements. Please refresh and try again.</p>}
-          {/* Venues are requested only after the request is approved: an
-              Under review event can be held by Venue Staff but not booked. */}
-          {hasActiveHold && event.status === 'confirmed' && (
-            <div className="form-actions">
-              <Link to={`/venues/search?eventId=${encodeURIComponent(eventId)}`} className="button">
-                Find / Request Venue
-              </Link>
-            </div>
-          )}
-          {event.status === 'planning' && (
-            <div className="stack stack--tight">
-              {['CHANGES_REQUESTED', 'REJECTED'].includes(safetyDecision?.decision) && (
-                <div className="notice" role="status">
-                  <p>
-                    <strong>
-                      {safetyDecision.decision === 'REJECTED'
-                        ? 'Safety check rejected'
-                        : 'Safety Officer requested changes'}
-                    </strong>
-                    {safetyDecision.created_at && <> on {formatDateTime(safetyDecision.created_at)}</>}.
-                    {safetyDecision.decision === 'REJECTED'
-                      && ' Venue and equipment reservations were released.'}
-                  </p>
-                  {safetyDecision.reason && <p>Reason: {safetyDecision.reason}</p>}
-                  <p>Update the arrangements, then request the safety check again.</p>
-                </div>
-              )}
-              <div className="form-actions">
-                <Link to={`/venues/search?eventId=${encodeURIComponent(eventId)}`} className="button">
-                  {venueBookings.length > 0 ? 'Find / Request Additional Venue' : 'Find Venue'}
-                </Link>
-
-                {canRequestEquipment && (
-                  <Link
-                    to={`/equipment-requests?eventId=${encodeURIComponent(eventId)}`}
-                    className="button button--secondary"
-                  >
-                    Request Equipment
-                  </Link>
-                )}
-
-                <button
-                  type="button"
-                  className="button button--secondary"
-                  disabled={submittingSafety || !hasApprovedVenue || Boolean(blocker)}
-                  onClick={async () => {
-                    setSubmittingSafety(true)
-                    setSafetyError('')
-                    try {
-                      await requestSafetyCheck(eventId, token)
-                      setEvent((prev) => ({
-                        ...prev,
-                        status: 'awaiting_safety_check',
-                      }))
-                    } catch (err) {
-                      setSafetyError(err.message || 'Failed to request safety check')
-                    } finally {
-                      setSubmittingSafety(false)
-                    }
-                  }}
-                >
-                  {submittingSafety ? 'Requesting...' : 'Request Safety Check'}
-                </button>
-              </div>
-
-              {blocker && <p className="note">{blocker}</p>}
-              {!hasApprovedVenue && (
-                <p className="note">
-                  A safety check can be requested once every session has an approved venue booking (rejected or cancelled ones don't count), every session that needs equipment has an equipment request, and no equipment request is still pending.
-                </p>
-              )}
-              {safetyError && <p className="form-error" role="alert">{safetyError}</p>}
-            </div>
-          )}
-
-          {event.status === 'awaiting_safety_check' && (
-            <div className="stack stack--tight">
-              <span className="tag tag--orange">Safety Review Pending</span>
-              <p className="note">Waiting for the Safety Officer's review.</p>
-            </div>
-          )}
         </header>
 
         <EventStatusPanel event={event} role="coordinator" />
+
+        {venueError && <p role="alert">Unable to load venue arrangements. Please refresh and try again.</p>}
+        {/* Venues are requested only after the request is approved: an
+            Under review event can be held by Venue Staff but not booked. */}
+        {hasActiveHold && event.status === 'confirmed' && (
+          <div className="form-actions">
+            <Link to={`/venues/search?eventId=${encodeURIComponent(eventId)}`} className="button">
+              Find / Request Venue
+            </Link>
+          </div>
+        )}
+        {event.status === 'planning' && (
+          <div className="stack stack--tight">
+            {['CHANGES_REQUESTED', 'REJECTED'].includes(safetyDecision?.decision) && (
+              <div className="notice" role="status">
+                <p>
+                  <strong>
+                    {safetyDecision.decision === 'REJECTED'
+                      ? 'Safety check rejected'
+                      : 'Safety Officer requested changes'}
+                  </strong>
+                  {safetyDecision.created_at && <> on {formatDateTime(safetyDecision.created_at)}</>}.
+                  {safetyDecision.decision === 'REJECTED'
+                    && ' Venue and equipment reservations were released.'}
+                </p>
+                {safetyDecision.reason && <p>Reason: {safetyDecision.reason}</p>}
+                <p>Update the arrangements, then request the safety check again.</p>
+              </div>
+            )}
+            <div className="form-actions">
+              <Link to={`/venues/search?eventId=${encodeURIComponent(eventId)}`} className="button">
+                {venueBookings.length > 0 ? 'Find / Request Additional Venue' : 'Find Venue'}
+              </Link>
+
+              {canRequestEquipment && (
+                <Link
+                  to={`/equipment-requests?eventId=${encodeURIComponent(eventId)}`}
+                  className="button button--secondary"
+                >
+                  Request Equipment
+                </Link>
+              )}
+
+              <button
+                type="button"
+                className={safetyChecklist.length === 0 ? 'button' : 'button button--secondary'}
+                disabled={submittingSafety || safetyChecklist.length > 0 || Boolean(blocker)}
+                onClick={async () => {
+                  setSubmittingSafety(true)
+                  setSafetyError('')
+                  try {
+                    await requestSafetyCheck(eventId, token)
+                    setEvent((prev) => ({
+                      ...prev,
+                      status: 'awaiting_safety_check',
+                    }))
+                  } catch (err) {
+                    setSafetyError(err.message || 'Failed to request safety check')
+                  } finally {
+                    setSubmittingSafety(false)
+                  }
+                }}
+              >
+                {submittingSafety ? 'Requesting...' : 'Request Safety Check'}
+              </button>
+            </div>
+
+            {blocker && <p className="note">{blocker}</p>}
+            {safetyChecklist.length > 0 ? (
+              <>
+                <p className="note">To request the safety check:</p>
+                <ul className="next-steps">
+                  {safetyChecklist.map((item) => <li key={item}>{item}</li>)}
+                </ul>
+              </>
+            ) : (
+              !blocker && <p className="note">Everything is ready for the safety check.</p>
+            )}
+            {safetyError && <p className="form-error" role="alert">{safetyError}</p>}
+          </div>
+        )}
+
 
         {/* Open requests and decisions come first: they are what needs doing. */}
         {event.status === 'under_review' && (
@@ -588,11 +593,9 @@ export default function EventReviewDetailPage() {
           <section className="stack stack--tight">
             <h2 className="section-title">Review proposed changes</h2>
             <p><strong>Reason for change:</strong> {pendingChange.reason_for_change}</p>
-            <dl className="answers">
-              {CHANGE_FIELDS
-                .filter(({ key }) => normalizedValue(key, event[key])
-                  !== normalizedValue(key, pendingChange[key]))
-                .map(({ key, label }) => (
+            {changedFields.length > 0 && (
+              <dl className="answers">
+                {changedFields.map(({ key, label }) => (
                   <div className="answer answer--wide" key={key}>
                     <dt>{label}</dt>
                     <dd>
@@ -606,7 +609,8 @@ export default function EventReviewDetailPage() {
                     </dd>
                   </div>
                 ))}
-            </dl>
+              </dl>
+            )}
             <h3>Sessions</h3>
             <ProposedSessionChanges event={event} />
             {decisionError && !pendingCancellation && (
@@ -748,16 +752,20 @@ export default function EventReviewDetailPage() {
           </div>
         )}
 
+        {/* Time, attendance, location, layout and equipment belong to each
+            session (T7-277). */}
+        <SessionList event={event} />
+
         {event.status !== 'under_review' && (
         <section className="stack stack--tight">
           <h2 className="section-title">
-            Venue Booking Requests ({venueBookings.length})
+            Venue Booking Requests ({shownVenueBookings.length})
           </h2>
-          {venueBookings.length === 0 ? (
+          {shownVenueBookings.length === 0 ? (
             <p className="note">No venue booking requests have been submitted for this event yet.</p>
           ) : (
             <ul className="stack stack--tight" style={{ listStyle: 'none', paddingLeft: 0, margin: 0 }}>
-              {venueBookings.map((booking) => {
+              {shownVenueBookings.map((booking) => {
                 const cardStyle = getBookingCardStyle(booking.status)
                 return (
                   <li
@@ -775,7 +783,7 @@ export default function EventReviewDetailPage() {
                       <strong style={{ fontSize: '0.9375rem', color: 'var(--ink)' }}>
                         {booking.venues?.name || `Venue ID: ${booking.venue_id}`}
                       </strong>
-                      <span className="tag">
+                      <span className={venueTagClass(booking.status)}>
                         {readableStatus(booking.status)}
                       </span>
                     </div>
@@ -838,6 +846,11 @@ export default function EventReviewDetailPage() {
                       <div className="form-error" style={{ marginTop: 'var(--space-3)', maxWidth: 'none' }}>
                         <strong>Rejection Reason:</strong> {booking.rejection_reason}
                       </div>
+                    )}
+                    {booking.status === 'REJECTED' && event.status === 'planning' && (
+                      <p className="note" style={{ marginTop: 'var(--space-3)' }}>
+                        Use Find Venue above to request another venue for this session.
+                      </p>
                     )}
                     {booking.status === 'CANCELLED' && booking.cancellation_reason && (
                       <p className="note" style={{ marginTop: 'var(--space-3)' }}>
@@ -943,10 +956,6 @@ export default function EventReviewDetailPage() {
             <Answer label="Accessibility needs" value={event.accessibility_requirements} />
           </dl>
         </section>
-
-        {/* Time, attendance, location, layout and equipment belong to each
-            session (T7-277). */}
-        <SessionList event={event} />
 
         <RequestHistory clarifications={clarifications} event={event} role="coordinator" />
       </div>

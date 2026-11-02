@@ -23,6 +23,7 @@ import EquipmentPage from './pages/EquipmentPage'
 import EquipmentBookingsPage from './pages/EquipmentBookingsPage'
 import EquipmentBookingCalendarPage from './pages/EquipmentBookingCalendarPage'
 import EventReviewDetailPage from './pages/EventReviewDetailPage'
+import CoordinatorVenueRequestsPage from './pages/CoordinatorVenueRequestsPage'
 import EquipmentRequestsPage from './pages/EquipmentRequestsPage'
 import LeadDashboardPage from './pages/LeadDashboardPage'
 import UnassignedQueuePage from './pages/UnassignedQueuePage'
@@ -166,6 +167,15 @@ export default function App() {
         element={
           <AuthGuard allowedRoles={['venue_staff']}>
             <VenuePage />
+          </AuthGuard>
+        }
+      />
+
+      <Route
+        path="/venue-requests"
+        element={
+          <AuthGuard allowedRoles={['coordinator']}>
+            <CoordinatorVenueRequestsPage />
           </AuthGuard>
         }
       />

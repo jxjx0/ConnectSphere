@@ -30,9 +30,11 @@ export default function DashboardPage() {
   return (
     <AppShell>
       <div className="content__header">
-        <h1>Dashboard</h1>
+        <h1>{isCoordinator ? 'My Events' : 'Dashboard'}</h1>
         <p className="lead">
-          Access your tasks and manage the arrangements relevant to your role.
+          {isCoordinator
+            ? 'See what needs you next, and manage the arrangements for each event.'
+            : 'Access your tasks and manage the arrangements relevant to your role.'}
         </p>
       </div>
 
@@ -62,9 +64,6 @@ export default function DashboardPage() {
           {!assignedLoading && !assignedError && (
             <AssignedRequestTabs events={assignedEvents} />
           )}
-          <div className="form-actions">
-            <Link to="/venues/search" className="backlink">Browse Venues</Link>
-          </div>
         </section>
       )}
 
@@ -116,22 +115,25 @@ export default function DashboardPage() {
         </section> 
       )} 
 
-      <section className="stack stack--tight">
-        <h2 className="section-title">Your account</h2>
+      {/* A Coordinator's name is in the top bar, and this page is their event list. */}
+      {!isCoordinator && (
+        <section className="stack stack--tight">
+          <h2 className="section-title">Your account</h2>
 
-        <dl className="detail-list">
-          <div className="detail-list__row">
-            <dt>Name</dt>
-            <dd>{user.full_name}</dd>
-          </div>
-          <div className="detail-list__row">
-            <dt>Role</dt>
-            <dd>
-              <span className="tag">{readableRole(user.role)}</span>
-            </dd>
-          </div>
-        </dl>
-      </section>
+          <dl className="detail-list">
+            <div className="detail-list__row">
+              <dt>Name</dt>
+              <dd>{user.full_name}</dd>
+            </div>
+            <div className="detail-list__row">
+              <dt>Role</dt>
+              <dd>
+                <span className="tag">{readableRole(user.role)}</span>
+              </dd>
+            </div>
+          </dl>
+        </section>
+      )}
     </AppShell>
   )
 }
