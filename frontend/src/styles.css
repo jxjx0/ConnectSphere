@@ -1465,7 +1465,7 @@ a:hover {
 
 .organiser-ui .topbar {
   background: var(--surface);
-  padding: var(--space-5) var(--space-6);
+  padding: var(--space-5) var(--space-8);
 }
 
 .organiser-ui .topbar__inner {
@@ -1478,8 +1478,8 @@ a:hover {
   gap: var(--space-3);
   font-family: inherit;
   font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: -0.04em;
+  font-weight: 750;
+  letter-spacing: -0.7px;
   text-transform: none;
 }
 
@@ -1498,8 +1498,8 @@ a:hover {
 
 .organiser-ui .app-main {
   max-width: 76.5rem;
-  padding: var(--space-6) var(--space-6) var(--space-8);
-  gap: var(--space-6);
+  padding: var(--space-7) var(--space-7) var(--space-8);
+  gap: var(--space-8);
 }
 
 .organiser-ui .content {
@@ -1516,9 +1516,21 @@ a:hover {
 
 .organiser-ui .content__header h1 {
   font-size: 2rem;
-  font-weight: 700;
-  letter-spacing: -0.04em;
+  font-weight: 750;
+  letter-spacing: -1px;
   overflow-wrap: anywhere;
+}
+
+.organiser-ui h2 {
+  font-size: 1.25rem;
+  line-height: 1.4;
+  font-weight: 650;
+  letter-spacing: -0.4px;
+  overflow-wrap: anywhere;
+}
+
+.organiser-ui h3 {
+  font-size: 1rem;
 }
 
 .organiser-ui .lead {
@@ -2722,18 +2734,23 @@ a:hover {
   color: var(--accent);
 }
 
-@media (max-width: 40rem) {
+@media (max-width: 48rem) {
   .organiser-ui .topbar {
-    padding: var(--space-4) var(--space-5);
+    padding: var(--space-4);
   }
 
   .organiser-ui .app-main {
-    padding: var(--space-5) var(--space-5) var(--space-7);
-    gap: var(--space-5);
+    padding: var(--space-6) var(--space-4) var(--space-8);
+    gap: var(--space-6);
   }
 
   .organiser-ui .content__header h1 {
     font-size: 1.75rem;
+  }
+
+  .organiser-ui .wordmark {
+    gap: var(--space-2);
+    font-size: 1rem;
   }
 
   .organiser-event-detail {
