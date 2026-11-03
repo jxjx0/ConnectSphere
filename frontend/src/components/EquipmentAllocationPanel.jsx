@@ -3,7 +3,7 @@
 // availability is checked for every item of that line's type, and an item is
 // allocated in one click. Remount it (by key) for each request.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import {
@@ -97,13 +97,21 @@ export default function EquipmentAllocationPanel({ request, catalogue, token, on
     || options.find((option) => option.state === 'available')?.item
     || options[0]?.item
 
+  // Only the latest load may update the calendar, so a slow reply for an
+  // item that is no longer chosen cannot show its bookings under another.
+  const latestLoad = useRef(0)
   const loadMonth = useCallback(() => {
     if (!chosen) return Promise.resolve()
+    const loadId = ++latestLoad.current
     const { from, to } = monthRange(month.year, month.month)
     setMonthError('')
     return getEquipmentBookings(chosen.id, from, to, token)
-      .then((data) => setMonthBookings(data.bookings))
-      .catch((caught) => setMonthError(caught.message))
+      .then((data) => {
+        if (loadId === latestLoad.current) setMonthBookings(data.bookings)
+      })
+      .catch((caught) => {
+        if (loadId === latestLoad.current) setMonthError(caught.message)
+      })
   }, [chosen, month, token])
 
   useEffect(() => {
