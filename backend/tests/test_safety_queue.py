@@ -157,7 +157,7 @@ def test_get_safety_event_details_all_flags_triggered(monkeypatch):
             "events": [large_crowd_event],
             "venue_bookings": [APPROVED_VENUE_BOOKING],
             "equipment_requests": [APPROVED_EQUIPMENT_REQUEST],
-            "equipment_request_items": [
+            "equipment_bookings": [
                 {
                     "request_id": "req-1",
                     "quantity": 2,

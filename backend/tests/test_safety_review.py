@@ -92,7 +92,7 @@ def test_equipment_not_in_working_order_is_flagged(monkeypatch, maintenance_stat
     fake_database(monkeypatch, {
         "events": [PLANNING_EVENT],
         "equipment_requests": [{"id": "request-1", "status": "Approved"}],
-        "equipment_request_items": [{
+        "equipment_bookings": [{
             "quantity": 1,
             "equipment": {"name": "Microphone", "type": "Audio", "maintenance_status": maintenance_status},
         }],
@@ -109,7 +109,7 @@ def test_functional_equipment_is_not_flagged(monkeypatch):
     fake_database(monkeypatch, {
         "events": [PLANNING_EVENT],
         "equipment_requests": [{"id": "request-1", "status": "Approved"}],
-        "equipment_request_items": [{
+        "equipment_bookings": [{
             "quantity": 1,
             "equipment": {"name": "Microphone", "type": "Audio", "maintenance_status": "Functional"},
         }],
@@ -124,13 +124,30 @@ def test_only_approved_equipment_requests_are_shown(monkeypatch):
     filters, _ = fake_database(monkeypatch, {
         "events": [PLANNING_EVENT],
         "equipment_requests": [{"id": "request-1", "status": "Rejected"}],
-        "equipment_request_items": [{"quantity": 1, "equipment": {"name": "Projector"}}],
+        "equipment_bookings": [{"quantity": 1, "equipment": {"name": "Projector"}}],
     })
 
     details = safety_review_service.get_safety_event_details(EVENT_ID, "token")
 
     assert ("equipment_requests", "status", "Approved") in filters
     assert details["equipment_items"] == []
+
+
+def test_allocated_equipment_is_shown_one_item_per_booking(monkeypatch):
+    fake_database(monkeypatch, {
+        "events": [PLANNING_EVENT],
+        "equipment_requests": [{"id": "request-1", "status": "Approved", "session_id": "session-1"}],
+        "equipment_bookings": [
+            {"request_id": "request-1", "equipment": {"name": "Projector", "type": "Projector", "maintenance_status": "Functional"}},
+            {"request_id": "request-1", "equipment": {"name": "Wireless Microphone", "type": "Wireless Microphone", "maintenance_status": "Functional"}},
+        ],
+    })
+
+    details = safety_review_service.get_safety_event_details(EVENT_ID, "token")
+
+    assert [item["equipment"]["name"] for item in details["equipment_items"]] == ["Projector", "Wireless Microphone"]
+    assert all(item["quantity"] == 1 for item in details["equipment_items"])
+    assert all(item["session_id"] == "session-1" for item in details["equipment_items"])
 
 
 @pytest.mark.parametrize(

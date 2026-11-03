@@ -225,7 +225,9 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
         except Exception as exc:
             logger.warning(f"Could not load venue bookings for event {event_id}: {exc}")
 
-        # 3. Fetch Equipment Requests & Joined Items
+        # 3. Fetch approved equipment requests and the items allocated to them.
+        # Tech Support allocates each physical item as one equipment_bookings
+        # row, so each booking is shown as one item.
         equipment_items = []
         try:
             equip_res = (
@@ -243,16 +245,20 @@ def get_safety_event_details(event_id: str, access_token: str) -> dict:
                     if isinstance(req, dict) and req.get("id")
                 }
                 if session_by_request:
-                    items_res = (
-                        client.table("equipment_request_items")
-                        .select("request_id, quantity, equipment:equipment_id(name, type, maintenance_status)")
+                    bookings_res = (
+                        client.table("equipment_bookings")
+                        .select("request_id, equipment:equipment_id(name, type, maintenance_status)")
                         .in_("request_id", list(session_by_request))
                         .execute()
                     )
                     equipment_items = [
-                        {**item, "session_id": session_by_request.get(item.get("request_id"))}
-                        for item in (items_res.data or [])
-                        if isinstance(item, dict)
+                        {
+                            **booking,
+                            "quantity": 1,
+                            "session_id": session_by_request.get(booking.get("request_id")),
+                        }
+                        for booking in (bookings_res.data or [])
+                        if isinstance(booking, dict)
                     ]
         except Exception as exc:
             logger.warning(f"Could not load equipment items for event {event_id}: {exc}")
