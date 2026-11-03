@@ -1,103 +1,271 @@
-This is Mermaid code: renders automatically as a diagram wherever Mermaid is supported (e.g. GitHub, this Markdown viewer).
+# ConnectSphere — ER Diagram
+
+Generated from the live Supabase `public` schema (21 tables). This is Mermaid
+code: it renders as a diagram on GitHub and in most Markdown viewers.
+
+`profiles.id` is also a foreign key to Supabase's `auth.users(id)` — every
+profile belongs to one Supabase Auth account. `?` in a column note means the
+column is nullable.
 
 ```mermaid
 erDiagram
+    %% ---------- People ----------
     PROFILES ||--o{ EVENTS : "organises (organiser_id)"
-    PROFILES ||--o{ EVENTS : "coordinates (coordinator_id)"
-    PROFILES ||--o{ EVENT_COORDINATOR_ASSIGNMENTS : "assigned as coordinator"
-    EVENTS ||--o{ EVENT_COORDINATOR_ASSIGNMENTS : "assignment history"
-    EVENTS ||--o{ VENUE_BOOKINGS : requests
-    EVENTS ||--o{ VENUE_TENTATIVE_HOLDS : "temporarily reserves"
+    PROFILES |o--o{ EVENTS : "coordinates (coordinator_id)"
+    PROFILES |o--o{ EVENTS : "safety-reviews (safety_reviewed_by)"
+    PROFILES ||--o{ NOTIFICATIONS : receives
+
+    %% ---------- Event lifecycle ----------
+    EVENTS ||--o{ EVENT_SESSIONS : "split into"
+    EVENTS ||--o{ EVENT_ACTIVITY_LOGS : "coordinator assignment history"
+    PROFILES ||--o{ EVENT_ACTIVITY_LOGS : "changed by / previous / new coordinator"
+    EVENTS ||--o{ EVENT_CLARIFICATIONS : "clarified via"
+    PROFILES ||--o{ EVENT_CLARIFICATIONS : "asked by coordinator / answered by organiser"
+    EVENTS ||--o{ EVENT_CHANGE_REQUESTS : "amended via"
+    PROFILES ||--o{ EVENT_CHANGE_REQUESTS : "requested by organiser / closed by"
+    EVENT_CHANGE_REQUESTS ||--o{ EVENT_CHANGE_REQUEST_SESSIONS : "proposes sessions"
+    EVENT_SESSIONS |o--o{ EVENT_CHANGE_REQUEST_SESSIONS : "changes"
+    EVENTS ||--o{ EVENT_CANCELLATION_REQUESTS : "cancelled via"
+    PROFILES ||--o{ EVENT_CANCELLATION_REQUESTS : "requested by organiser / closed by"
+    EVENTS o|--o{ NOTIFICATIONS : "relates to"
+
+    %% ---------- Safety ----------
+    EVENTS ||--o{ EVENT_SAFETY_REVIEWS : "safety-checked in"
+    PROFILES ||--o{ EVENT_SAFETY_REVIEWS : "decided by safety officer"
+    EVENTS ||--o{ SAFETY_CHANGE_REQUEST_MESSAGES : "discussed in"
+    PROFILES ||--o{ SAFETY_CHANGE_REQUEST_MESSAGES : sends
+
+    %% ---------- Registration ----------
+    EVENTS ||--o{ EVENT_REGISTRATIONS : accepts
+    PROFILES ||--o{ EVENT_REGISTRATIONS : "registers as attendee"
+
+    %% ---------- Venues ----------
+    VENUES ||--o{ VENUE_BOOKINGS : "booked for"
+    EVENTS o|--o{ VENUE_BOOKINGS : requests
+    EVENT_SESSIONS o|--o{ VENUE_BOOKINGS : "venue for session"
+    PROFILES ||--o{ VENUE_BOOKINGS : "requested by coordinator / reviewed / cancelled by"
     VENUES ||--o{ VENUE_TENTATIVE_HOLDS : "held for"
+    EVENTS ||--o{ VENUE_TENTATIVE_HOLDS : "temporarily reserves"
     PROFILES ||--o{ VENUE_TENTATIVE_HOLDS : "created by"
     VENUE_BOOKINGS |o--o{ VENUE_TENTATIVE_HOLDS : "completes"
+    VENUES ||--o{ VENUE_BLOCKS : "blocked in"
     VENUE_BOOKINGS |o--o{ VENUE_BLOCKS : "reservation source"
-    VENUES ||--o{ VENUE_BOOKINGS : "booked for"
-    PROFILES ||--o{ VENUE_BOOKINGS : "decided by (venue staff)"
+    PROFILES ||--o{ VENUE_BLOCKS : "issued by"
     VENUES ||--o{ VENUE_EDIT_HISTORY : "has edit history"
     PROFILES ||--o{ VENUE_EDIT_HISTORY : "made changes"
-    EVENTS ||--o{ EQUIPMENT_RESERVATIONS : requests
-    EQUIPMENT ||--o{ EQUIPMENT_RESERVATIONS : "reserved for"
-    PROFILES ||--o{ EQUIPMENT_RESERVATIONS : "decided by (tech support)"
-    EVENTS ||--o{ REGISTRATIONS : accepts
-    PROFILES ||--o{ REGISTRATIONS : "registers as attendee"
-    EVENTS ||--o{ EVENT_CHANGE_REQUESTS : "amended via"
-    PROFILES ||--o{ EVENT_CHANGE_REQUESTS : requests
-    PROFILES ||--o{ EVENT_CHANGE_REQUESTS : "decided by (coordinator)"
-    PROFILES ||--o{ NOTIFICATIONS : receives
-    EVENTS ||--o{ NOTIFICATIONS : "relates to"
+
+    %% ---------- Equipment ----------
+    EVENTS ||--o{ EQUIPMENT_REQUESTS : "needs equipment via"
+    EVENT_SESSIONS o|--o{ EQUIPMENT_REQUESTS : "for session"
+    PROFILES ||--o{ EQUIPMENT_REQUESTS : "submitted by coordinator / cancelled by"
+    EQUIPMENT_REQUESTS ||--o{ EQUIPMENT_REQUEST_LINES : "lists items"
+    EQUIPMENT_REQUESTS ||--o{ EQUIPMENT_REQUEST_ITEMS : "catalogue items"
+    EQUIPMENT ||--o{ EQUIPMENT_REQUEST_ITEMS : "requested as"
+    EQUIPMENT_REQUESTS ||--o{ EQUIPMENT_BOOKINGS : "fulfilled by"
+    EQUIPMENT_REQUEST_LINES |o--o{ EQUIPMENT_BOOKINGS : "allocated to line"
+    EQUIPMENT ||--o{ EQUIPMENT_BOOKINGS : "booked unit"
+    PROFILES ||--o{ EQUIPMENT_BOOKINGS : "created by tech support"
 
     PROFILES {
-        uuid id PK
+        uuid id PK "FK to auth.users"
         text full_name
-        text role "organiser, attendee, coordinator, venue_staff, tech_support"
-        text contact_number "nullable, required for attendee + organiser at signup"
-        text organization "nullable, required for organiser at signup"
+        text role "organiser, attendee, coordinator, event_coordinator_lead, venue_staff, tech_support, safety_officer"
+        text contact_number "?"
+        text organization "?"
         timestamptz created_at
     }
 
     EVENTS {
         uuid id PK
-        uuid organiser_id FK "must reference a profile with role=organiser"
-        uuid coordinator_id FK "must reference a profile with role=coordinator"
+        uuid organiser_id FK
+        uuid coordinator_id FK "?"
         text name
-        text purpose
+        text description "? (required unless draft)"
+        text purpose "? (required unless draft)"
+        text category "conference, workshop, seminar, meeting, networking, product_launch, training, social_event, ceremony, other"
+        text category_other "required only when category = other"
+        timestamptz start_time "?"
+        timestamptz end_time "?"
+        int expected_attendance "?"
+        text location_preference "?"
+        text layout_preference "?"
+        text accessibility_requirements "?"
+        text equipment_requirements "?"
+        text status "draft, under_review, planning, awaiting_safety_check, confirmed, completed, rejected, cancelled"
+        varchar safety_status "? default not_requested"
+        uuid safety_reviewed_by FK "?"
+        timestamptz safety_check_requested_at "?"
+        timestamptz registration_opens_at "?"
+        timestamptz registration_closes_at "?"
+        int attendee_capacity "?"
+        timestamptz published_at "?"
+        timestamptz completed_at "?"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    EVENT_SESSIONS {
+        uuid id PK
+        uuid event_id FK
+        text name "?"
+        timestamptz start_time "?"
+        timestamptz end_time "?"
+        int expected_attendance "?"
+        text location_preference "?"
+        text layout_preference "?"
+        text equipment_requirements "?"
+        timestamptz created_at
+    }
+
+    EVENT_ACTIVITY_LOGS {
+        uuid id PK
+        uuid event_id FK
+        uuid previous_coordinator_id FK "?"
+        uuid new_coordinator_id FK
+        uuid changed_by_id FK
+        text action_type "default REASSIGNMENT"
+        text reason "?"
+        timestamptz created_at
+    }
+
+    EVENT_CLARIFICATIONS {
+        uuid id PK
+        uuid event_id FK
+        uuid organiser_id FK
+        uuid coordinator_id FK
+        text coordinator_notes
+        text organiser_response "?"
+        text status "pending, answered, expired"
+        uuid closed_by FK "?"
+        timestamptz created_at
+        timestamptz closed_at "?"
+    }
+
+    EVENT_CHANGE_REQUESTS {
+        uuid id PK
+        uuid event_id FK
+        uuid organiser_id FK
+        text name
         text description
+        text purpose
+        text category
+        text category_other "?"
         timestamptz start_time
         timestamptz end_time
         int expected_attendance
-        text layout_preference
-        text accessibility_requirements
-        text status "draft, under_review, rejected, planning, confirmed, completed, change_requested"
-        text review_notes "coordinator's clarification/amendment request to the organiser"
-        bool is_draft
-        bool registration_enabled
-        int registration_capacity
-        timestamptz registration_deadline
+        text location_preference "?"
+        text layout_preference "?"
+        text accessibility_requirements "?"
+        text equipment_requirements "?"
+        text reason_for_change
+        text status "pending, approved, rejected, expired"
+        text decision_reason "?"
+        uuid closed_by FK "?"
         timestamptz created_at
-        timestamptz completed_at "nullable; time of automatic completion"
+        timestamptz closed_at "?"
     }
 
-    EVENT_COORDINATOR_ASSIGNMENTS {
+    EVENT_CHANGE_REQUEST_SESSIONS {
+        uuid id PK
+        uuid change_request_id FK
+        uuid session_id FK "? (null = new session)"
+        text name
+        timestamptz start_time
+        timestamptz end_time
+        int expected_attendance
+        text location_preference "?"
+        text layout_preference "?"
+        text equipment_requirements "?"
+        timestamptz created_at
+    }
+
+    EVENT_CANCELLATION_REQUESTS {
         uuid id PK
         uuid event_id FK
-        uuid coordinator_id FK "must reference a profile with role=coordinator"
-        timestamptz assigned_at
+        uuid organiser_id FK
+        text reason
+        text status "pending, approved, rejected, expired"
+        text decision_reason "?"
+        uuid closed_by FK "?"
+        timestamptz created_at
+        timestamptz closed_at "?"
+    }
+
+    EVENT_SAFETY_REVIEWS {
+        uuid id PK
+        uuid event_id FK
+        uuid safety_officer_id FK
+        text decision "APPROVED, REJECTED, CHANGES_REQUESTED"
+        text notes "?"
+        text reason "? (required unless APPROVED)"
+        timestamptz created_at
+    }
+
+    SAFETY_CHANGE_REQUEST_MESSAGES {
+        uuid id PK
+        uuid event_id FK
+        uuid sender_id FK
+        text message
+        timestamptz created_at
+    }
+
+    EVENT_REGISTRATIONS {
+        uuid id PK
+        uuid event_id FK
+        uuid attendee_id FK
+        text full_name
+        text email
+        text address "?"
+        text contact_number "?"
+        text status "registered, withdrawn"
+        timestamptz created_at
+        timestamptz withdrawn_at "? (set only when withdrawn)"
+    }
+
+    NOTIFICATIONS {
+        uuid id PK
+        uuid user_id FK
+        uuid event_id FK "?"
+        text type
+        text title
+        text body
+        bool is_read
+        timestamptz created_at
     }
 
     VENUES {
         uuid id PK
         text name
-        text location
+        text location "?"
         int capacity
-        jsonb facilities
-        jsonb accessibility
+        jsonb facilities "?"
+        jsonb accessibility "?"
         jsonb layouts
         jsonb operating_hours
-        int setup_time_minutes "not null, default 0, nonnegative"
-        int turnaround_time_minutes "not null, default 0, nonnegative"
-    }
-
-    VENUE_EDIT_HISTORY {
-        uuid id PK
-        uuid venue_id FK
-        uuid changed_by FK
-        timestamptz changed_at
-        text[] changed_fields
-        jsonb old_values
-        jsonb new_values
+        int setup_time_minutes "default 0"
+        int turnaround_time_minutes "default 0"
     }
 
     VENUE_BOOKINGS {
-        uuid id PK
-        uuid event_id FK
+        uuid booking_id PK
         uuid venue_id FK
-        text status "tentative, confirmed, rejected"
-        text decision_reason
-        uuid decided_by FK "must reference a profile with role=venue_staff"
-        timestamptz decided_at
-        timestamptz start_time
-        timestamptz end_time
+        uuid coordinator_id FK
+        uuid event_id FK "?"
+        uuid session_id FK "?"
+        varchar room_layout
+        timestamptz start_at
+        timestamptz end_at
+        int setup_buffer_minutes
+        int teardown_buffer_minutes
+        timestamptz effective_start_at
+        timestamptz effective_end_at
+        varchar status "PENDING_VENUE_APPROVAL, APPROVED, REJECTED, CANCELLED"
+        text rejection_reason "?"
+        uuid reviewed_by FK "?"
+        text cancellation_reason "?"
+        timestamptz cancelled_at "?"
+        uuid cancelled_by FK "?"
+        timestamptz created_at
     }
 
     VENUE_TENTATIVE_HOLDS {
@@ -105,89 +273,100 @@ erDiagram
         uuid venue_id FK
         uuid event_id FK
         uuid created_by FK
-        timestamptz created_at
         timestamptz start_at
         timestamptz end_at
         timestamptz expires_at
-        timestamptz released_at "nullable; active derived from expiry and release"
-        uuid completed_booking_id FK "nullable"
-        timestamptz expiry_claimed_at "notification retry lease"
-        timestamptz expiry_notified_at
+        timestamptz released_at "?"
+        uuid completed_booking_id FK "?"
+        timestamptz expiry_claimed_at "?"
+        timestamptz expiry_notified_at "?"
+        timestamptz created_at
     }
 
     VENUE_BLOCKS {
         uuid block_id PK
         uuid venue_id FK
-        uuid source_booking_id FK "nullable; populated for new booking reservations"
+        uuid booking_id FK "?"
+        uuid source_booking_id FK "?"
         text block_reason
         timestamptz start_at
         timestamptz end_at
         uuid block_issuer FK
     }
 
+    VENUE_EDIT_HISTORY {
+        uuid id PK
+        uuid venue_id FK
+        uuid changed_by FK
+        timestamptz changed_at
+        text_array changed_fields
+        jsonb old_values
+        jsonb new_values
+    }
+
     EQUIPMENT {
         uuid id PK
         text name
         text type
-        text maintenance_status
-    }
-
-    EQUIPMENT_RESERVATIONS {
-        uuid id PK
-        uuid event_id FK
-        uuid equipment_id FK
-        int quantity_requested
-        text technical_requirements
-        text status "requested, reserved, rejected"
-        text decision_reason
-        uuid decided_by FK "must reference a profile with role=tech_support"
-        timestamptz decided_at
-    }
-
-    REGISTRATIONS {
-        uuid id PK
-        uuid event_id FK
-        uuid attendee_id FK "must reference a profile with role=attendee; one active registration per event"
-        text status "registered, withdrawn"
+        text maintenance_status "default Functional"
         timestamptz created_at
-        timestamptz withdrawn_at "required only when withdrawn"
     }
 
-    EVENT_CHANGE_REQUESTS {
+    EQUIPMENT_REQUESTS {
         uuid id PK
         uuid event_id FK
-        uuid requested_by FK "must reference a profile with role=organiser"
-        text change_type
-        text details
-        text status "pending, approved, rejected, expired"
-        text decision_reason
-        uuid decided_by FK "must reference a profile with role=coordinator"
-        timestamptz requested_at
-        timestamptz decided_at
+        uuid session_id FK "?"
+        uuid coordinator_id FK
+        text request_details
+        text status "Pending Technical Approval, Approved, Rejected, Cancelled"
+        text rejection_reason "?"
+        text cancellation_reason "?"
+        timestamptz cancelled_at "?"
+        uuid cancelled_by FK "?"
+        timestamptz created_at
     }
 
-    NOTIFICATIONS {
+    EQUIPMENT_REQUEST_LINES {
         uuid id PK
-        uuid user_id FK
-        uuid event_id FK
-        text type
-        text title
-        text body
-        boolean is_read
+        uuid request_id FK
+        text item_name
+        int quantity "1-100"
+        text specifics "?"
+    }
+
+    EQUIPMENT_REQUEST_ITEMS {
+        uuid id PK
+        uuid request_id FK "unique with equipment_id"
+        uuid equipment_id FK
+        int quantity
+    }
+
+    EQUIPMENT_BOOKINGS {
+        uuid id PK
+        uuid equipment_id FK
+        uuid request_id FK
+        uuid line_id FK "?"
+        timestamptz start_at
+        timestamptz end_at
+        uuid created_by FK
         timestamptz created_at
     }
 ```
 
-T7-266 adds `events.completed_at` through `database/event_completion.sql` and the
-`expired` request status through `database/event_request_expiry.sql`. Cancellation requests use
-`previous_event_status`; change requests use `event_status_before_request` to
-preserve their original workflow states. Completion does not add or remove any
-relationships.
+## Notes
 
-Tentative holds are deployed with the additive `database/venue_tentative_holds.sql` script.
-An active hold has no release time and `expires_at > now()`; expiry does not delete history or depend on a scheduler.
-A same-event, same-venue approval covering the full held event period records its completion.
-Booking occupancy uses current venue setup/turnaround as a minimum and retains any larger stored reservation.
-Expiry notifications remain due after a late completion; the system runner leases and acknowledges delivery through the existing notification service.
-New booking blocks carry `source_booking_id`. Uniquely fingerprinted older blocks are grouped with the booking without changing stored records;
-the calendar retains their details and marks uncertain classification. Other blocks remain visible.
+- **Roles live in `profiles.role`.** Organisers and attendees sign up
+  themselves; every other role is an internal account.
+- **Sessions.** An event is split into one or more `event_sessions`. Venue
+  bookings and equipment requests can point at a specific session.
+- **Venue occupancy.** A booking's `effective_start_at` / `effective_end_at`
+  include the venue's setup and turnaround buffers, and are what conflict
+  checks use. Approved bookings also create `venue_blocks` rows.
+- **Tentative holds.** A hold is active while `released_at` is null and
+  `expires_at > now()`. Expired holds are processed by
+  `backend/scripts/process_expired_venue_holds.py`.
+- **Equipment.** A coordinator lists what they need as free-text
+  `equipment_request_lines`; tech support then allocates specific units as
+  `equipment_bookings`, optionally linked back to the line they fulfil.
+- **Audit history.** `event_activity_logs` (coordinator reassignment) and
+  `venue_edit_history` (venue changes) are append-only records.

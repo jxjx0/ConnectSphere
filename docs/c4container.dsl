@@ -1,51 +1,56 @@
-workspace "ConnectSphere - Containers" "C4 Level 2 (v1): the runtime building blocks of the ConnectSphere Event Planning and Venue Booking System." {
+workspace "ConnectSphere - Containers" "C4 Level 2 (v2): the runtime building blocks of the ConnectSphere Event Planning and Venue Booking System." {
 
     model {
         # ---------------------------------------------------------------
-        # People (briefing Sec 3 — every user has an authenticated account)
+        # People — every user has an authenticated account.
+        # Organisers and attendees self-register; the rest are internal.
         # ---------------------------------------------------------------
-        organiser = person "Event Organiser" "External client representative who submits an event request, supplies requirements, and requests changes." "External User"
-        attendee = person "Attendee" "External participant who signs up, registers for an event, and views confirmed event information." "External User"
-        coordinator = person "Event Coordinator" "Internal staff member assigned to an event; reviews requests, searches venues, submits booking requests, records equipment needs, and confirms the event." "Internal User"
+        organiser = person "Event Organiser" "External client representative who submits event requests, answers clarifications, and requests changes or cancellation." "External User"
+        attendee = person "Attendee" "External participant who signs up, browses published events, and registers or withdraws." "External User"
+        coordinator = person "Event Coordinator" "Internal staff member assigned to an event; reviews the request, books venues and equipment for each session, and confirms the event." "Internal User"
+        coordinatorLead = person "Event Coordinator Lead" "Internal staff member who oversees all coordinators' workload, assigns unassigned events, and reassigns coordinators." "Internal User"
         venueStaff = person "Venue Staff" "Internal staff member who maintains the venue catalogue and availability, and approves or rejects venue booking requests." "Internal User"
-        techStaff = person "Technical Support Staff" "Internal staff member who reviews equipment requests, checks availability, and reserves equipment for an event." "Internal User"
+        techStaff = person "Technical Support Staff" "Internal staff member who maintains equipment, reviews equipment requests, and allocates units to events." "Internal User"
+        safetyOfficer = person "Safety Officer" "Internal staff member who approves, rejects, or requests changes on events before they are confirmed." "Internal User"
 
         # ---------------------------------------------------------------
         # The system we are building — one software system, four containers
         # ---------------------------------------------------------------
-        connectSphere = softwareSystem "ConnectSphere Event Planning System" "Manages the event request lifecycle, venue bookings, equipment reservations, attendee registration, and notifications." {
+        connectSphere = softwareSystem "ConnectSphere Event Planning System" "Manages the event request lifecycle, coordinator assignment, venue bookings, equipment allocation, safety review, attendee registration, and notifications." {
 
-            spa = container "Web Application" "Role-based UI for all five user groups: event requests, review, venue calendar and search, equipment, registration, and dashboards." "React 18 (Vite)" "Web Browser"
+            spa = container "Web Application" "Role-based UI for all seven user groups: event requests and sessions, review queues, venue search and calendars, equipment allocation, safety review, registration, and the notification inbox." "React 18, Vite, React Router" "Web Browser"
 
-            api = container "API Application" "Enforces the business rules: authorisation by role, event status transitions, automatic event assignments, venue suitability and conflict detection, equipment availability, registration capacity, and notification triggers." "Python 3, Flask 3" "API"
+            api = container "API Application" "Enforces the business rules: authorisation by role, event status transitions, coordinator assignment, venue suitability, holds and conflict detection, equipment availability, safety review, registration capacity, and notification triggers." "Python, Flask 3, Pydantic" "API"
 
-            database = container "Application Database" "Stores profiles, events, venues, bookings, equipment, reservations, registrations, notifications, and the change/activity history used for auditability." "Supabase Postgres (managed PostgreSQL, row-level security)" "Database"
+            database = container "Application Database" "Stores profiles, events and sessions, venues, holds, blocks and bookings, equipment requests and bookings, safety reviews, registrations, notifications, and audit history. Database functions perform atomic multi-step operations such as registration and request submission." "Supabase PostgreSQL (row-level security)" "Database"
 
-            authService = container "Authentication Service" "Stores credentials, issues and validates JWT access tokens, and provides the user identity that each account's role is attached to." "Supabase Auth" "Auth"
+            authService = container "Authentication Service" "Stores credentials, issues and validates JWT access tokens, and provides the user identity that each profile and role is attached to." "Supabase Auth" "Auth"
         }
 
         # ---------------------------------------------------------------
         # Things we neither build, own nor operate
         # ---------------------------------------------------------------
-        emailService = softwareSystem "Email Delivery Service" "Third-party provider that delivers notification and reminder emails to users' inboxes." "External System"
+        emailService = softwareSystem "SendGrid" "Third-party email delivery service that delivers notification emails to users' inboxes." "External System"
 
         # ---------------------------------------------------------------
         # People -> containers
         # ---------------------------------------------------------------
-        organiser -> spa "Drafts and submits event requests, and tracks their status, using" "HTTPS"
+        organiser -> spa "Submits event requests and tracks their status using" "HTTPS"
         attendee -> spa "Registers for events and manages registrations using" "HTTPS"
-        coordinator -> spa "Reviews requests, searches venues, and manages event arrangements using" "HTTPS"
+        coordinator -> spa "Reviews requests and books venues and equipment using" "HTTPS"
+        coordinatorLead -> spa "Monitors workload and reassigns events using" "HTTPS"
         venueStaff -> spa "Maintains venues and decides on booking requests using" "HTTPS"
-        techStaff -> spa "Reviews and reserves equipment using" "HTTPS"
+        techStaff -> spa "Reviews requests and allocates equipment using" "HTTPS"
+        safetyOfficer -> spa "Reviews events awaiting a safety check using" "HTTPS"
 
         # ---------------------------------------------------------------
         # Container -> container / external system
         # ---------------------------------------------------------------
-        spa -> api "Reads event, venue, equipment, registration, and notification data from, and submits user actions to, including signup and login" "JSON/HTTPS"
+        spa -> api "Reads data from, and submits user actions to, including signup and login" "JSON/HTTPS"
 
         api -> authService "Verifies the JWT on every protected request, and creates accounts and sessions at signup and login" "JSON/HTTPS"
-        api -> database "Reads and writes event, venue, booking, equipment, registration, and audit records" "PostgREST over HTTPS"
-        api -> emailService "Sends notification and reminder emails triggered by status changes, booking decisions, and registration updates" "SMTP/HTTPS"
+        api -> database "Reads and writes application records, and calls database functions" "PostgREST over HTTPS"
+        api -> emailService "Sends notification emails triggered by status changes and decisions" "HTTPS (SendGrid Web API)"
 
         authService -> database "Stores user identities and credentials in" "Internal (Postgres auth schema)"
     }
