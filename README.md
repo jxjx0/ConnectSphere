@@ -359,13 +359,27 @@ This is a GitHub repository setting, separate from the workflow file.
 
 ### End to End Testing
 
-Utilize playwright to simulate a real user interaction with the application.
-To use playwright: simply type in your terminal
-turn on backend
-turn on frontend
-python -m playwright codegen --target python http://localhost:5173/ (or your the current running link)
+The Playwright browser tests cover attendee signup validation, login validation
+and errors, successful login, and redirecting unauthenticated visitors away
+from attendee pages. The authentication and event-list API responses are
+mocked, so these flows do not depend on shared Supabase accounts or event data.
 
-Once done, copy the code from the playwright window (in run function, after page.goto(link)), you can put it in e2e folder, and make it a test.
+Install the backend requirements, then install Playwright's browser once:
+
+```bash
+python -m playwright install chromium
+```
+
+Start the frontend (`cd frontend && npm run dev`). In another terminal, run:
+
+```bash
+python -m unittest discover -s e2e -v
+```
+
+By default, the tests use `http://localhost:5173/`. Set `BASE_URL` to use a
+different frontend URL. To record a new browser interaction, run
+`python -m playwright codegen --target python http://localhost:5173/` and adapt
+the generated actions into an assertion-based test in `e2e/`.
 ---
 
 ## API endpoints
