@@ -14,7 +14,7 @@ workspace "ConnectSphere - Containers" "C4 Level 2 (v2): the runtime building bl
         safetyOfficer = person "Safety Officer" "Internal staff member who approves, rejects, or requests changes on events before they are confirmed." "Internal User"
 
         # ---------------------------------------------------------------
-        # The system we are building — one software system, four containers
+        # The system we are building — one software system, three containers
         # ---------------------------------------------------------------
         connectSphere = softwareSystem "ConnectSphere Event Planning System" "Manages the event request lifecycle, coordinator assignment, venue bookings, equipment allocation, safety review, attendee registration, and notifications." {
 
@@ -22,9 +22,7 @@ workspace "ConnectSphere - Containers" "C4 Level 2 (v2): the runtime building bl
 
             api = container "API Application" "Enforces the business rules: authorisation by role, event status transitions, coordinator assignment, venue suitability, holds and conflict detection, equipment availability, safety review, registration capacity, and notification triggers." "Python, Flask 3, Pydantic" "API"
 
-            database = container "Application Database" "Stores profiles, events and sessions, venues, holds, blocks and bookings, equipment requests and bookings, safety reviews, registrations, notifications, and audit history. Database functions perform atomic multi-step operations such as registration and request submission." "Supabase PostgreSQL (row-level security)" "Database"
-
-            authService = container "Authentication Service" "Stores credentials, issues and validates JWT access tokens, and provides the user identity that each profile and role is attached to." "Supabase Auth" "Auth"
+            database = container "Supabase" "Stores all application data and user accounts, and issues login tokens." "PostgreSQL + Supabase Auth" "Database"
         }
 
         # ---------------------------------------------------------------
@@ -48,11 +46,8 @@ workspace "ConnectSphere - Containers" "C4 Level 2 (v2): the runtime building bl
         # ---------------------------------------------------------------
         spa -> api "Reads data from, and submits user actions to, including signup and login" "JSON/HTTPS"
 
-        api -> authService "Verifies the JWT on every protected request, and creates accounts and sessions at signup and login" "JSON/HTTPS"
-        api -> database "Reads and writes application records, and calls database functions" "PostgREST over HTTPS"
+        api -> database "Reads and writes data, and signs users in" "JSON/HTTPS"
         api -> emailService "Sends notification emails triggered by status changes and decisions" "HTTPS (SendGrid Web API)"
-
-        authService -> database "Stores user identities and credentials in" "Internal (Postgres auth schema)"
     }
 
     views {

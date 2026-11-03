@@ -146,7 +146,13 @@ Rerun the install commands — `venv/bin/pip install -r requirements.txt`
 | `FRONTEND_ORIGIN` | Where the frontend runs, for CORS (`http://localhost:5173`). |
 
 Without the service-role and SendGrid keys the app still runs, but
-notifications aren't saved or emailed. **Never commit `.env`** or paste its
+notifications aren't saved or emailed.
+
+> [!IMPORTANT]
+> **The SendGrid free trial ends on 30 November 2026.** After that, the account
+> must be upgraded or replaced, or notification emails will stop sending. The
+> app keeps working and in-app inbox notifications are unaffected — failed
+> emails are only logged in the backend terminal. **Never commit `.env`** or paste its
 keys into chats, Jira or PRs.
 
 The frontend needs no `.env` locally — it defaults to

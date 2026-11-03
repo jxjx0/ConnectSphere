@@ -1,12 +1,5 @@
 # ConnectSphere — ER Diagram
 
-Generated from the live Supabase `public` schema (21 tables). This is Mermaid
-code: it renders as a diagram on GitHub and in most Markdown viewers.
-
-`profiles.id` is also a foreign key to Supabase's `auth.users(id)` — every
-profile belongs to one Supabase Auth account. `?` in a column note means the
-column is nullable.
-
 ```mermaid
 erDiagram
     %% ---------- People ----------
@@ -32,8 +25,6 @@ erDiagram
     %% ---------- Safety ----------
     EVENTS ||--o{ EVENT_SAFETY_REVIEWS : "safety-checked in"
     PROFILES ||--o{ EVENT_SAFETY_REVIEWS : "decided by safety officer"
-    EVENTS ||--o{ SAFETY_CHANGE_REQUEST_MESSAGES : "discussed in"
-    PROFILES ||--o{ SAFETY_CHANGE_REQUEST_MESSAGES : sends
 
     %% ---------- Registration ----------
     EVENTS ||--o{ EVENT_REGISTRATIONS : accepts
@@ -59,8 +50,6 @@ erDiagram
     EVENT_SESSIONS o|--o{ EQUIPMENT_REQUESTS : "for session"
     PROFILES ||--o{ EQUIPMENT_REQUESTS : "submitted by coordinator / cancelled by"
     EQUIPMENT_REQUESTS ||--o{ EQUIPMENT_REQUEST_LINES : "lists items"
-    EQUIPMENT_REQUESTS ||--o{ EQUIPMENT_REQUEST_ITEMS : "catalogue items"
-    EQUIPMENT ||--o{ EQUIPMENT_REQUEST_ITEMS : "requested as"
     EQUIPMENT_REQUESTS ||--o{ EQUIPMENT_BOOKINGS : "fulfilled by"
     EQUIPMENT_REQUEST_LINES |o--o{ EQUIPMENT_BOOKINGS : "allocated to line"
     EQUIPMENT ||--o{ EQUIPMENT_BOOKINGS : "booked unit"
@@ -201,14 +190,6 @@ erDiagram
         timestamptz created_at
     }
 
-    SAFETY_CHANGE_REQUEST_MESSAGES {
-        uuid id PK
-        uuid event_id FK
-        uuid sender_id FK
-        text message
-        timestamptz created_at
-    }
-
     EVENT_REGISTRATIONS {
         uuid id PK
         uuid event_id FK
@@ -334,13 +315,6 @@ erDiagram
         text specifics "?"
     }
 
-    EQUIPMENT_REQUEST_ITEMS {
-        uuid id PK
-        uuid request_id FK "unique with equipment_id"
-        uuid equipment_id FK
-        int quantity
-    }
-
     EQUIPMENT_BOOKINGS {
         uuid id PK
         uuid equipment_id FK
@@ -352,21 +326,3 @@ erDiagram
         timestamptz created_at
     }
 ```
-
-## Notes
-
-- **Roles live in `profiles.role`.** Organisers and attendees sign up
-  themselves; every other role is an internal account.
-- **Sessions.** An event is split into one or more `event_sessions`. Venue
-  bookings and equipment requests can point at a specific session.
-- **Venue occupancy.** A booking's `effective_start_at` / `effective_end_at`
-  include the venue's setup and turnaround buffers, and are what conflict
-  checks use. Approved bookings also create `venue_blocks` rows.
-- **Tentative holds.** A hold is active while `released_at` is null and
-  `expires_at > now()`. Expired holds are processed by
-  `backend/scripts/process_expired_venue_holds.py`.
-- **Equipment.** A coordinator lists what they need as free-text
-  `equipment_request_lines`; tech support then allocates specific units as
-  `equipment_bookings`, optionally linked back to the line they fulfil.
-- **Audit history.** `event_activity_logs` (coordinator reassignment) and
-  `venue_edit_history` (venue changes) are append-only records.
