@@ -6,6 +6,9 @@ from unittest.mock import Mock
 
 import pytest
 from postgrest import APIError as PostgrestAPIError
+from httpx import ReadTimeout
+
+from fake_supabase import FakeDatabase, FakeQuery as RecordingQuery
 
 import config
 from models.event import Event
@@ -168,7 +171,9 @@ def test_get_unassigned_events_queue_error_raises_autherror(monkeypatch):
     mock_admin_client(monkeypatch, [], raise_error=True)
     with pytest.raises(AuthError) as exc_info:
         event_assignment_service.get_unassigned_events_queue("lead-token")
-    assert exc_info.value.status_code == 400
+    assert exc_info.value.status_code == 502
+    assert "DB Error" not in exc_info.value.message
+    assert isinstance(exc_info.value.__cause__, PostgrestAPIError)
 
 
 def test_initial_assignment_updates_database_and_notifies(monkeypatch):
@@ -293,7 +298,9 @@ def test_get_lead_coordinator_events_error_raises_autherror(monkeypatch):
     mock_admin_client(monkeypatch, [], raise_error=True)
     with pytest.raises(AuthError) as exc_info:
         overview_coordinator_events_service.get_lead_coordinator_events("lead-token")
-    assert exc_info.value.status_code == 400
+    assert exc_info.value.status_code == 502
+    assert "DB Error" not in exc_info.value.message
+    assert isinstance(exc_info.value.__cause__, PostgrestAPIError)
 
 
 # ============================================================================
@@ -419,7 +426,8 @@ def test_route_reassign_event_service_error(client, monkeypatch):
         json={"new_coordinator_id": NEW_COORD_ID},
         headers=LEAD_HEADERS,
     )
-    assert response.status_code == 400
+    assert response.status_code == 500
+    assert 'Service failed' not in response.get_data(as_text=True)
 
 
 def test_route_get_lead_overview_success(client, monkeypatch):
@@ -440,7 +448,8 @@ def test_route_get_lead_overview_error(client, monkeypatch):
     def _raise(*args, **kwargs): raise Exception("Overview error")
     monkeypatch.setattr(overview_coordinator_events_service, "get_lead_coordinator_events", _raise)
     response = client.get("/events/lead-overview", headers=LEAD_HEADERS)
-    assert response.status_code == 400
+    assert response.status_code == 500
+    assert 'Overview error' not in response.get_data(as_text=True)
 
 
 def test_route_get_unassigned_queue_success(client, monkeypatch):
@@ -458,7 +467,8 @@ def test_route_get_unassigned_queue_error(client, monkeypatch):
     def _raise(*args, **kwargs): raise Exception("Queue error")
     monkeypatch.setattr(event_assignment_service, "get_unassigned_events_queue", _raise)
     response = client.get("/events/unassigned-queue", headers=LEAD_HEADERS)
-    assert response.status_code == 400
+    assert response.status_code == 500
+    assert 'Queue error' not in response.get_data(as_text=True)
 
 
 def test_route_organiser_cannot_access_unassigned_queue(client, monkeypatch):
@@ -516,3 +526,73 @@ def test_lead_endpoints_require_a_verified_identity(client, monkeypatch, method,
         verify.assert_not_called()
     else:
         verify.assert_called_once_with(token)
+
+
+@pytest.fixture
+def lead_database(monkeypatch):
+    database = FakeDatabase({
+        ("events", "select"): [EVENT_ASSIGNED_ROW],
+        ("events", "update"): [{**EVENT_ASSIGNED_ROW, "coordinator_id": NEW_COORD_ID}],
+        ("event_activity_logs", "insert"): [{"id": "log-1"}],
+    })
+    database.client.from_ = database.client.table
+    monkeypatch.setattr(RecordingQuery, "not_", property(lambda self: self), raising=False)
+    monkeypatch.setattr(config, "get_admin_client", lambda: database.client)
+    notify = Mock()
+    monkeypatch.setattr(event_assignment_service, "notify", notify)
+    return database, notify
+
+
+def lead_failure(code):
+    if code == "transport":
+        return ReadTimeout("private transport endpoint and token")
+    return PostgrestAPIError({"code": code, "message": "private database relation and row details"})
+
+
+@pytest.mark.parametrize("path", ["/events/lead-overview", "/events/unassigned-queue"])
+@pytest.mark.parametrize("code,status", [("42501",403),("PGRST301",403),("XX000",502),("transport",502)])
+def test_lead_read_failures_keep_their_status_without_exposing_provider_details(client, monkeypatch, lead_database, path, code, status):
+    authenticate_as(monkeypatch, LEAD_COORDINATOR)
+    database, notify = lead_database
+    database.responses[("events", "select")] = lead_failure(code)
+    response = client.get(path, headers=LEAD_HEADERS)
+    assert response.status_code == status
+    message = response.get_json()["error"]
+    assert "private" not in message
+    assert "permission" in message if status == 403 else "Unable to load" in message
+    assert [(q.table,q.operation) for q in database.calls] == [("events","select")]
+    notify.assert_not_called()
+
+
+@pytest.mark.parametrize("table,operation,attempts", [("events","select",1),("events","update",2),("event_activity_logs","insert",3)])
+@pytest.mark.parametrize("code,status", [("42501",403),("PGRST301",403),("23503",400),("XX000",502),("transport",502)])
+def test_assignment_read_update_and_audit_failures_are_safe_and_do_not_notify(client, monkeypatch, lead_database, table, operation, attempts, code, status):
+    authenticate_as(monkeypatch, LEAD_COORDINATOR)
+    database, notify = lead_database
+    database.responses[(table,operation)] = lead_failure(code)
+    response = client.post(f"/events/review/{EVENT_ID}/reassign", headers=LEAD_HEADERS,
+                           json={"new_coordinator_id": NEW_COORD_ID, "reason": "Schedule conflict"})
+    assert response.status_code == status
+    expected = {403:"You do not have permission to assign this event.",
+                400:"Check the event assignment details and selected coordinator.",
+                502:"Unable to save the event assignment. Please try again."}[status]
+    assert response.get_json() == {"error": expected}
+    assert len(database.calls) == attempts
+    assert (database.calls[-1].table,database.calls[-1].operation) == (table,operation)
+    notify.assert_not_called()
+
+
+@pytest.mark.parametrize("method,path,module,service", [
+    ("POST",f"/events/review/{EVENT_ID}/reassign",event_assignment_service,"assign_or_reassign_event"),
+    ("GET","/events/lead-overview",overview_coordinator_events_service,"get_lead_coordinator_events"),
+    ("GET","/events/unassigned-queue",event_assignment_service,"get_unassigned_events_queue"),
+])
+@pytest.mark.parametrize("status", [400,403,404,409,502])
+def test_lead_routes_preserve_domain_error_statuses(client, monkeypatch, method, path, module, service, status):
+    authenticate_as(monkeypatch, LEAD_COORDINATOR)
+    failure = Mock(side_effect=AuthError("Safe workflow failure.", status_code=status))
+    monkeypatch.setattr(module,service,failure)
+    response = client.open(path,method=method,headers=LEAD_HEADERS,json={"new_coordinator_id":NEW_COORD_ID})
+    assert response.status_code == status
+    assert response.get_json() == {"error":"Safe workflow failure."}
+    failure.assert_called_once()

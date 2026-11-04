@@ -29,7 +29,7 @@ MIGRATIONS = (
 
 
 @contextmanager
-def event_database():
+def event_database(*, broad_table_defaults=False):
     url = os.environ.get("CANCELLATION_TEST_DATABASE_URL")
     if not url:
         pytest.skip("CANCELLATION_TEST_DATABASE_URL is not configured")
@@ -43,6 +43,10 @@ def event_database():
     connection = psycopg.connect(psycopg.conninfo.make_conninfo(url, dbname=name), autocommit=True)
     try:
         connection.execute((ROOT / "backend/tests/sql/event_workflow_dependencies.sql").read_text())
+        if broad_table_defaults:
+            # Exercise the migration against an installer that grants broad
+            # application-role permissions to every new public table.
+            connection.execute("alter default privileges in schema public grant all on tables to anon, authenticated, service_role")
         for migration in MIGRATIONS:
             connection.execute((ROOT / "database" / migration).read_text(encoding="utf-8"))
         for user, role in ((ORGANISER, "organiser"), (COORDINATOR, "coordinator"),
@@ -209,3 +213,43 @@ def test_pending_change_blocks_forward_progress_without_changing_the_stage(db):
         with db.transaction():
             db.execute("update public.events set status='awaiting_safety_check' where id=%s", (EVENT,))
     assert state(db)[0] == "planning"
+
+
+def test_proposal_migration_removes_powerful_privileges_even_with_broad_defaults():
+    with event_database(broad_table_defaults=True) as connection:
+        import psycopg
+
+        privileges = connection.execute("""
+            select case when acl.grantee = 0 then 'PUBLIC'
+                        else pg_get_userbyid(acl.grantee) end, acl.privilege_type
+            from pg_class relation
+            cross join lateral aclexplode(relation.relacl) acl
+            where relation.oid = 'public.event_change_request_sessions'::regclass
+              and acl.grantee <> relation.relowner
+        """).fetchall()
+        assert privileges == [("authenticated", "SELECT")]
+        for role, user in (("anon", None), ("authenticated", ORGANISER), ("service_role", None)):
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                with signed_in(connection, user, role):
+                    connection.execute("truncate public.event_change_request_sessions")
+
+
+@pytest.mark.parametrize("user,visible", [
+    (ORGANISER, True), (COORDINATOR, True), (OTHER_COORDINATOR, False), (ATTENDEE, False),
+])
+def test_proposal_reads_follow_the_parent_request_rls(db, user, visible):
+    event(db, "planning", end="1 day", start="1 hour")
+    request = submit_change(db)
+    with signed_in(db, user):
+        rows = db.execute("select name, session_id from public.event_change_request_sessions where change_request_id=%s", (request,)).fetchall()
+    assert rows == ([("Main", SESSION)] if visible else [])
+
+
+def test_coordinator_can_reject_via_rpc_without_direct_proposal_write_privileges(db):
+    event(db, "planning", end="1 day", start="1 hour")
+    request = submit_change(db)
+    with signed_in(db, COORDINATOR):
+        db.execute("select public.reject_event_change_request(%s,%s)", (EVENT, "Resources unavailable"))
+    assert db.execute("select status, closed_by, decision_reason from public.event_change_requests where id=%s", (request,)).fetchone() == ("rejected", COORDINATOR, "Resources unavailable")
+    with signed_in(db, ORGANISER):
+        assert db.execute("select name from public.event_change_request_sessions where change_request_id=%s", (request,)).fetchall() == [("Main",)]

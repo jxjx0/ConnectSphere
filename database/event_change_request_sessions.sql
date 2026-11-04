@@ -1,4 +1,4 @@
--- Reconstructed from deployed PostgreSQL catalog metadata on 2026-11-04.
+-- Table structure reconstructed from deployed catalog metadata on 2026-11-04.
 -- Apply as postgres after event_sessions.sql and event_change_requests.sql,
 -- before event_status_badges.sql and change_request_in_safety_check.sql.
 -- The shared database already contains this table; this file restores the
@@ -48,11 +48,12 @@ create policy "Users can view sessions of change requests they can view"
         where change_request.id = event_change_request_sessions.change_request_id
     ));
 
--- Preserve the deployed ACL, rather than introducing a permission change.
--- ALL is version-aware: PostgreSQL 17+ also includes MAINTAIN, present in the
--- deployed ACL; PostgreSQL 16 (CI) grants the privileges available there.
-revoke all on public.event_change_request_sessions from public;
-grant all privileges on public.event_change_request_sessions
-    to anon, authenticated, service_role;
+-- Callers read proposals through the parent request's RLS. Existing submission
+-- and approval RPCs write as their trusted owner, not as the calling role.
+-- Clear broad defaults too, so a new Supabase table cannot inherit TRUNCATE,
+-- REFERENCES, TRIGGER, MAINTAIN or direct write access for application roles.
+revoke all on public.event_change_request_sessions
+    from public, anon, authenticated, service_role;
+grant select on public.event_change_request_sessions to authenticated;
 
 commit;

@@ -691,32 +691,24 @@ def reassign_event(event_id):
     if not new_coordinator_id:
         return jsonify({"error": "Please select a coordinator to reassign to."}), 400
 
-    try:
-        updated_event = event_assignment_service.assign_or_reassign_event(
-            event_id=event_id,
-            new_coordinator_id=new_coordinator_id,
-            changed_by_id=g.user_id,
-            reason=reason or None,
-        )
-        return jsonify({"event": updated_event}), 200
-    except AuthError:
-        raise
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    updated_event = event_assignment_service.assign_or_reassign_event(
+        event_id=event_id,
+        new_coordinator_id=new_coordinator_id,
+        changed_by_id=g.user_id,
+        reason=reason or None,
+    )
+    return jsonify({"event": updated_event}), 200
     
 
 @events_bp.get("/lead-overview")
 @require_auth
 def get_lead_overview():
     _require_coordinator_lead()
-    try:
-        raw_events = overview_coordinator_events_service.get_lead_coordinator_events(
-            access_token=g.access_token
-        )
-        formatted_events = Event.format_lead_overview(raw_events)
-        return jsonify(formatted_events), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    raw_events = overview_coordinator_events_service.get_lead_coordinator_events(
+        access_token=g.access_token
+    )
+    formatted_events = Event.format_lead_overview(raw_events)
+    return jsonify(formatted_events), 200
     
 
 @events_bp.get("/unassigned-queue")
@@ -724,13 +716,10 @@ def get_lead_overview():
 def get_unassigned_queue():
     """Fetch unassigned events queue for Lead Coordinators."""
     _require_coordinator_lead()
-    try:
-        queue = event_assignment_service.get_unassigned_events_queue(
-            access_token=g.access_token
-        )
-        return jsonify(queue), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    queue = event_assignment_service.get_unassigned_events_queue(
+        access_token=g.access_token
+    )
+    return jsonify(queue), 200
 
 
 # --- Safety Review Routes -----------------------------------------------------

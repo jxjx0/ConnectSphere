@@ -14,7 +14,6 @@ coverage.json
 htmlcov/
 test-results.xml
 /backend/.reports/
-/backend/test-results.x
 
 # Node
 node_modules/

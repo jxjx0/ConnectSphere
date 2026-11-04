@@ -1,4 +1,5 @@
 from postgrest import APIError as PostgrestAPIError
+from httpx import HTTPError
 from services.auth_service import AuthError
 import config
 
@@ -48,6 +49,10 @@ def get_lead_coordinator_events(access_token: str):
             .execute()
         )
     except PostgrestAPIError as error:
-        raise AuthError(f"Database error: {error.message}", status_code=400) from error
+        if error.code in {"42501", "PGRST301"}:
+            raise AuthError("You do not have permission to view the Lead overview.", status_code=403) from error
+        raise AuthError("Unable to load the Lead overview. Please try again.", status_code=502) from error
+    except HTTPError as error:
+        raise AuthError("Unable to load the Lead overview. Please try again.", status_code=502) from error
 
     return response.data or []
