@@ -189,6 +189,25 @@ def test_get_safety_event_details_all_flags_triggered(monkeypatch):
     assert "LARGE_CROWD_PROTOCOL" in flag_types
 
 
+def test_get_safety_event_details_ignores_bookings_when_requests_have_no_id(monkeypatch):
+    """Bookings are matched by request id, so unidentifiable requests list no equipment."""
+    mock_database_clients(
+        monkeypatch,
+        {
+            "events": [PLANNING_EVENT],
+            "equipment_requests": [{"event_id": EVENT_ID, "status": "Approved"}],
+            "equipment_bookings": [
+                {"request_id": "req-1", "equipment": {"name": "Generator", "maintenance_status": "Under Repair"}},
+            ],
+        },
+    )
+
+    details = safety_review_service.get_safety_event_details(EVENT_ID, "token")
+
+    assert details["equipment_items"] == []
+    assert "EQUIPMENT_HAZARD" not in [f["type"] for f in details["safety_flags"]]
+
+
 def test_get_safety_event_details_inner_exceptions_logged(monkeypatch, caplog):
     """Triggers exception handlers in venue booking and equipment loading steps."""
     def get_table(table_name):

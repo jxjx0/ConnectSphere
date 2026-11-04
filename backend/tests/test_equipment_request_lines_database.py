@@ -153,9 +153,14 @@ def _approve(db, request_id):
 def test_old_equipment_gets_its_new_type_from_the_migration(database):
     # A fresh database tests the backfill without relying on module test order.
     import psycopg
+    # info.dsn omits the password, so connect from the configured URL instead.
+    fresh_url = psycopg.conninfo.make_conninfo(
+        os.environ["CANCELLATION_TEST_DATABASE_URL"], dbname="equipment_backfill_test"
+    )
+    database.execute("drop database if exists equipment_backfill_test")
     database.execute("create database equipment_backfill_test")
     try:
-        with psycopg.connect(psycopg.conninfo.make_conninfo(database.info.dsn, dbname="equipment_backfill_test"), autocommit=True) as fresh:
+        with psycopg.connect(fresh_url, autocommit=True) as fresh:
             fresh.execute(SCHEMA_SQL.read_text(encoding="utf-8"))
             fresh.execute("insert into public.equipment (name, type) values ('Old Projector', 'Visual'), (' Speaker ', 'Audio')")
             fresh.execute(MIGRATION.read_text(encoding="utf-8"))

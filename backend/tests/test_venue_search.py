@@ -338,6 +338,14 @@ def test_invalid_end_date_is_rejected(end_date):
         VenueSearchRequest(date="2026-11-07", end_date=end_date, start_time="22:00", end_time="02:00")
 
 
+# A JSON number or other non-text value is not a date, even if it looks like one.
+@pytest.mark.parametrize("field", ["date", "end_date"])
+def test_non_text_date_is_rejected(field):
+    payload = {"date": "2026-11-07", "start_time": "22:00", "end_time": "02:00", field: 20261108}
+    with pytest.raises(ValidationError, match="date must use YYYY-MM-DD"):
+        VenueSearchRequest(**payload)
+
+
 def test_end_date_alone_requires_complete_period():
     with pytest.raises(ValidationError):
         VenueSearchRequest(end_date="2026-11-08")
