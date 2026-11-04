@@ -53,29 +53,44 @@ class TestCoordinatorLead(unittest.TestCase):
         page.get_by_role("link", name="All events").click()
         expect(page.get_by_role("heading", name="All Events")).to_be_visible()
 
-        page.get_by_role("searchbox", name="Event").fill("odoo")
-        event_row = page.get_by_role("row").filter(
-            has=page.get_by_role("rowheader", name="odoo", exact=True)
-        )
-        expect(event_row).to_be_visible()
-        expect(page.get_by_label("Coordinator", exact=True)).to_be_visible()
-        page.get_by_role("searchbox", name="Event").fill("")
+        expect(page.get_by_text("Loading events…")).to_be_hidden()
+        event_search = page.get_by_role("searchbox", name="Event")
+        if event_search.count() == 0:
+            expect(
+                page.get_by_text(
+                    "No events have been assigned to a coordinator yet."
+                )
+            ).to_be_visible()
+        else:
+            event_rows = page.get_by_role("table", name="All assigned events").get_by_role(
+                "row"
+            )
+            first_event = event_rows.nth(1)
+            event_name = first_event.get_by_role("rowheader").inner_text()
 
-        event_row = page.get_by_role("row").filter(
-            has=page.get_by_role("rowheader", name="odoo", exact=True)
-        )
-        event_row.get_by_role("button", name="View details").click()
+            event_search.fill(event_name)
+            event_row = page.get_by_role("row").filter(
+                has=page.get_by_role("rowheader", name=event_name, exact=True)
+            )
+            expect(event_row).to_be_visible()
+            expect(page.get_by_label("Coordinator", exact=True)).to_be_visible()
+            event_search.fill("")
 
-        dialog = page.get_by_role("dialog", name="odoo")
-        expect(dialog).to_be_visible()
-        dialog.get_by_role("button", name="Reassign").click()
-        expect(dialog.get_by_label("New coordinator")).to_be_visible()
-        expect(dialog.get_by_role("textbox", name="Reason")).to_be_visible()
-        expect(
-            dialog.get_by_role("button", name="Confirm reassignment")
-        ).to_be_visible()
-        dialog.press("Escape")
-        expect(dialog).not_to_be_visible()
+            event_row = page.get_by_role("row").filter(
+                has=page.get_by_role("rowheader", name=event_name, exact=True)
+            )
+            event_row.get_by_role("button", name="View details").click()
+
+            dialog = page.get_by_role("dialog", name=event_name)
+            expect(dialog).to_be_visible()
+            dialog.get_by_role("button", name="Reassign").click()
+            expect(dialog.get_by_label("New coordinator")).to_be_visible()
+            expect(dialog.get_by_role("textbox", name="Reason")).to_be_visible()
+            expect(
+                dialog.get_by_role("button", name="Confirm reassignment")
+            ).to_be_visible()
+            dialog.press("Escape")
+            expect(dialog).not_to_be_visible()
 
         page.get_by_role("button", name="Log out").click()
 

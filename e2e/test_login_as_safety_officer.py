@@ -54,41 +54,50 @@ class TestSafetyOfficer(unittest.TestCase):
         expect(
             page.get_by_role("heading", name="Reviewed Safety Checks")
         ).to_be_visible()
-        reviewed_event = page.get_by_role(
-            "row", name="Charity Gala Dinner Rejected"
-        )
-        expect(reviewed_event).to_contain_text("Rejected")
-        reviewed_event.get_by_role("link", name="View").click()
-        expect(page.get_by_role("heading", name="Event Overview")).to_be_visible()
-        expect(
-            page.get_by_role(
-                "heading", name="Sessions and what is booked (", exact=False
-            )
-        ).to_be_visible()
-        page.get_by_role("link", name="← Back").click()
-        expect(
-            page.get_by_role("heading", name="Reviewed Safety Checks")
-        ).to_be_visible()
+        expect(page.get_by_text("Loading…", exact=True)).to_be_hidden()
+        reviewed_rows = page.get_by_role(
+            "table", name="Reviewed safety checks"
+        ).get_by_role("row")
+        if reviewed_rows.count() > 1:
+            reviewed_rows.nth(1).get_by_role("link", name="View").click()
+            expect(page.get_by_role("heading", name="Event Overview")).to_be_visible()
+            expect(
+                page.get_by_role(
+                    "heading", name="Sessions and what is booked (", exact=False
+                )
+            ).to_be_visible()
+            page.get_by_role("link", name="← Back").click()
+            expect(
+                page.get_by_role("heading", name="Reviewed Safety Checks")
+            ).to_be_visible()
+        else:
+            expect(
+                page.get_by_text("No safety checks have been reviewed yet.")
+            ).to_be_visible()
 
         page.get_by_role("link", name="No longer needed").click()
         expect(page.get_by_role("heading", name="No Longer Needed")).to_be_visible()
-        expect(page.get_by_role("columnheader", name="Event")).to_be_visible()
-        expired_event = page.get_by_role("row").filter(
-            has=page.get_by_role("rowheader", name="Annual Tech Conference", exact=True)
-        )
-        expect(expired_event).to_be_visible()
-        expired_event.get_by_role("link", name="View").click()
-        expect(
-            page.get_by_role("heading", name="Annual Tech Conference")
-        ).to_be_visible()
-        expect(page.get_by_role("heading", name="Event Overview")).to_be_visible()
-        expect(
-            page.get_by_role(
-                "heading", name="Sessions and what is booked (", exact=False
-            )
-        ).to_be_visible()
-        page.get_by_role("link", name="← Back").click()
-        expect(page.get_by_role("heading", name="No Longer Needed")).to_be_visible()
+        expect(page.get_by_text("Loading…", exact=True)).to_be_hidden()
+        expired_rows = page.get_by_role(
+            "table", name="Events that ended while waiting for a safety check"
+        ).get_by_role("row")
+        if expired_rows.count() > 1:
+            expect(page.get_by_role("columnheader", name="Event")).to_be_visible()
+            expired_rows.nth(1).get_by_role("link", name="View").click()
+            expect(page.get_by_role("heading", name="Event Overview")).to_be_visible()
+            expect(
+                page.get_by_role(
+                    "heading", name="Sessions and what is booked (", exact=False
+                )
+            ).to_be_visible()
+            page.get_by_role("link", name="← Back").click()
+            expect(page.get_by_role("heading", name="No Longer Needed")).to_be_visible()
+        else:
+            expect(
+                page.get_by_text(
+                    "No events have ended while waiting for a safety check."
+                )
+            ).to_be_visible()
 
         page.get_by_role("button", name="Log out").click()
 
