@@ -66,6 +66,14 @@ def _require_coordinator() -> Profile:
         )
     return profile
 
+def _require_coordinator_lead() -> Profile:
+    """Restrict assignment and supervision tasks to Coordinator Leads."""
+    profile = auth_service.get_profile(g.access_token, g.user_id)
+    if profile.role != Role.EVENT_COORDINATOR_LEAD:
+        raise AuthError("Only Lead Coordinators can manage event assignments.", status_code=403)
+    return profile
+
+
 def _require_safety_officer() -> Profile:
     """Require the authenticated profile to have the Safety Officer role."""
     profile = auth_service.get_profile(g.access_token, g.user_id)
@@ -679,6 +687,7 @@ def get_event_history(event_id):
 @require_auth
 def reassign_event(event_id):
     """Assign or reassign an event's coordinator, with an audit log entry."""
+    _require_coordinator_lead()
     data = request.get_json() or {}
     new_coordinator_id = data.get("new_coordinator_id")
     reason = data.get("reason", "").strip()
@@ -703,6 +712,7 @@ def reassign_event(event_id):
 @events_bp.get("/lead-overview")
 @require_auth
 def get_lead_overview():
+    _require_coordinator_lead()
     try:
         raw_events = overview_coordinator_events_service.get_lead_coordinator_events(
             access_token=g.access_token
@@ -717,7 +727,7 @@ def get_lead_overview():
 @require_auth
 def get_unassigned_queue():
     """Fetch unassigned events queue for Lead Coordinators."""
-    _require_coordinator()
+    _require_coordinator_lead()
     try:
         queue = event_assignment_service.get_unassigned_events_queue(
             access_token=g.access_token

@@ -192,7 +192,9 @@ def test_service_reports_a_database_error_on_create(database):
         equipment_service.create_equipment("token", EquipmentCreate(**VALID_EQUIPMENT))
 
     assert caught.value.status_code == 400
-    assert "bad row" in caught.value.message
+    assert "bad row" not in caught.value.message
+    assert caught.value.message == "Unable to create equipment. Please try again."
+    assert caught.value.__cause__ is database.from_.return_value.insert.return_value.execute.side_effect
 
 
 def test_service_reports_when_nothing_was_created(database):

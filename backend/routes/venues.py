@@ -115,7 +115,7 @@ def update_venue(venue_id):
     except ValidationError as error:
         return jsonify({"errors": _validation_messages(error)}), 400
 
-    _require_venue_staff()
+    _require_venue_staff("Only Venue Staff can update venues.")
     venue = venue_service.update_venue(
         g.access_token,
         venue_id,
@@ -130,7 +130,7 @@ def update_venue(venue_id):
 @venues_bp.get("/<venue_id>/history")
 @require_auth
 def get_venue_history(venue_id):
-    _require_venue_staff()
+    _require_venue_staff("Only Venue Staff can view venue history.")
     history = venue_service.get_venue_history(g.access_token, venue_id)
     return jsonify(
         {"history": [record.model_dump(mode="json") for record in history]}

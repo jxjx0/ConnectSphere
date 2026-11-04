@@ -31,9 +31,9 @@ def test_external_roles_may_self_register(role):
     assert request.role == Role(role)
 
 
-# The three internal roles are created by the team in Supabase, never through
+# The internal roles are created by the team in Supabase, never through
 # signup, so each one must be refused with our own message.
-@pytest.mark.parametrize("role", ["coordinator", "venue_staff", "tech_support"])
+@pytest.mark.parametrize("role", [role for role in Role if role not in {Role.ORGANISER, Role.ATTENDEE}])
 def test_internal_roles_may_not_self_register(role):
     with pytest.raises(ValidationError) as caught:
         SignupRequest(**{**VALID_SIGNUP, "role": role})
@@ -258,11 +258,8 @@ def test_signup_without_session_reports_failure_without_inserting_profile(client
 
 # The happy path: correct credentials give 200 and an access token.
 def test_login_returns_token_and_profile(client, monkeypatch, organiser_profile):
-    monkeypatch.setattr(
-        auth_service,
-        "login",
-        lambda request: {"access_token": "token-123", "profile": organiser_profile},
-    )
+    login = Mock(return_value={"access_token": "token-123", "profile": organiser_profile})
+    monkeypatch.setattr(auth_service, "login", login)
 
     response = client.post(
         "/login", json={"email": "ada@example.com", "password": "correct-horse"}
@@ -270,6 +267,10 @@ def test_login_returns_token_and_profile(client, monkeypatch, organiser_profile)
 
     assert response.status_code == 200
     assert response.get_json()["access_token"] == "token-123"
+    assert response.get_json()["profile"] == organiser_profile.model_dump(mode="json")
+    request = login.call_args.args[0]
+    assert request.email == "ada@example.com"
+    assert request.password == "correct-horse"
 
 
 # A wrong password gives 401, and the message stays vague on purpose: it must

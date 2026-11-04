@@ -268,7 +268,9 @@ def test_non_venue_staff_cannot_update_a_venue(client, monkeypatch, organiser_pr
     )
 
     assert response.status_code == 403
-    assert response.get_json()["error"] == "Only Venue Staff can create venues."
+    assert response.get_json()["error"] == "Only Venue Staff can update venues."
+
+    venue_service.update_venue.assert_not_called()
 
 
 def test_venue_staff_can_retrieve_venue_history(client, monkeypatch):
@@ -339,7 +341,9 @@ def test_non_venue_staff_cannot_retrieve_venue_history(
     )
 
     assert response.status_code == 403
-    assert response.get_json()["error"] == "Only Venue Staff can create venues."
+    assert response.get_json()["error"] == "Only Venue Staff can view venue history."
+
+    venue_service.get_venue_history.assert_not_called()
 
 
 def test_venue_history_without_a_bearer_token_is_rejected(client):

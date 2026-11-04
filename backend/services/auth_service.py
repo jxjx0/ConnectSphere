@@ -5,6 +5,7 @@ Supabase directly.
 """
 
 from supabase import AuthApiError
+from postgrest import APIError as PostgrestAPIError
 
 import config
 from models.profile import LoginRequest, Profile, SignupRequest
@@ -56,19 +57,22 @@ def signup(request: SignupRequest) -> dict:
     # row). If this fails the auth user already exists without a profile --
     # the team clears that up in the Supabase dashboard.
     user_client = config.get_user_client(access_token)
-    inserted = (
-        user_client.table("profiles")
-        .insert(
-            {
-                "id": result.user.id,
-                "full_name": request.full_name,
-                "role": request.role.value,
-                "contact_number": request.contact_number,
-                "organization": request.organization,
-            }
+    try:
+        inserted = (
+            user_client.table("profiles")
+            .insert(
+                {
+                    "id": result.user.id,
+                    "full_name": request.full_name,
+                    "role": request.role.value,
+                    "contact_number": request.contact_number,
+                    "organization": request.organization,
+                }
+            )
+            .execute()
         )
-        .execute()
-    )
+    except PostgrestAPIError as error:
+        raise AuthError("Unable to create your profile. Please contact support before signing up again.", status_code=502) from error
 
     return {
         "access_token": access_token,
