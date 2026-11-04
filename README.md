@@ -357,15 +357,73 @@ configure a branch protection rule or ruleset for `main` that requires pull
 requests and the **Backend Tests** status check to pass before merging.
 This is a GitHub repository setting, separate from the workflow file.
 
-### End to End Testing
+### End-to-end testing
 
-Utilize playwright to simulate a real user interaction with the application.
-To use playwright: simply type in your terminal
-turn on backend
-turn on frontend
-python -m playwright codegen --target python http://localhost:5173/ (or your the current running link)
+The browser tests in `e2e/` use Python Playwright to check that role-specific
+pages render and that common navigation, search, filters, forms, dialogs, and
+calendars are usable. These are primarily visual/navigation smoke tests, not
+full CRUD or database-persistence tests.
 
-Once done, copy the code from the playwright window (in run function, after page.goto(link)), you can put it in e2e folder, and make it a test.
+#### Run the tests
+
+Start the backend and frontend as described in [Running the app](#running-the-app),
+then, from the repository root, run:
+
+```bash
+python -m unittest discover -s e2e -p "test_login_as_*.py" -v
+```
+
+The tests default to `http://localhost:5173/`. To test a different frontend
+address, set `BASE_URL` before running them:
+
+**macOS / Linux**
+
+```bash
+BASE_URL=http://localhost:5173/ python -m unittest discover -s e2e -p "test_login_as_*.py" -v
+```
+
+**Windows PowerShell**
+
+```powershell
+$env:BASE_URL = "http://localhost:5173/"
+python -m unittest discover -s e2e -p "test_login_as_*.py" -v
+```
+
+#### What the tests cover
+
+| Test file | UI journey checked |
+|---|---|
+| `test_login_as_attendee.py` | Attendee sign-in and events landing page. |
+| `test_login_as_coordinator.py` | Coordinator event tabs and navigation to equipment and venue requests. |
+| `test_login_as_organiser.py` | Event request form, adding/removing a session, review screen, and client-side date validation. |
+| `test_login_as_venue_staff.py` | Venue overview, catalogue search, booking-request page, availability calendar, dismissible block dialog, and profile form navigation. |
+| `test_login_as_coordinator_lead.py` | Unassigned/all-events pages, event search, and the reassignment form. |
+| `test_login_as_safety_officer.py` | Safety review/history lists and event-detail navigation. |
+| `test_login_as_tech_support.py` | Equipment request history, catalogue search, equipment-profile form, and shared-booking calendar. |
+
+#### Data and side effects
+
+The tests sign in with test accounts and load existing application data, so
+they still make authentication and read-only API requests to the configured
+backend/database. They do not submit event requests, save drafts, make safety
+decisions, reassign coordinators, review equipment requests, save equipment
+profiles, allocate equipment, create bookings, or create venue blocks. Form
+and dialog checks stop before submission.
+
+The tests expect the demo accounts and sample records used by the flows to
+exist in the configured environment. Run them only against a development or
+test environment, never production. `test_example.py` is a unittest/Playwright
+scaffold and is not included in the role-flow command above.
+
+To record browser interactions while exploring the UI, start the app and run:
+
+```bash
+python -m playwright codegen --target python http://localhost:5173/
+```
+
+Treat generated code as a starting point: keep stable role-based selectors,
+add assertions for the intended page state, and avoid submitting actions that
+write to the database when the test is meant to be read-only.
 ---
 
 ## API endpoints
