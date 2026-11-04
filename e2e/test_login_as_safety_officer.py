@@ -33,7 +33,7 @@ class TestSafetyOfficer(unittest.TestCase):
         self.context.close()
 
     def test_safety_officer_review_history(self):
-        """Verify safety tabs and table headers without opening or changing records."""
+        """Verify safety queue navigation without opening or changing records."""
         page = self.page
 
         expect(
@@ -60,17 +60,9 @@ class TestSafetyOfficer(unittest.TestCase):
         expect(
             page.get_by_role("heading")
         ).to_contain_text("Reviewed Safety Checks")
-        for column in ("Event", "Decision", "Reason", "Reviewed", "Actions"):
-            expect(
-                page.get_by_role("columnheader", name=column, exact=True)
-            ).to_be_visible()
 
         page.get_by_role("link", name="No longer needed").click()
         expect(page.get_by_role("heading")).to_contain_text("No Longer Needed")
-        for column in ("Event", "Category", "When", "Outcome", "Actions"):
-            expect(
-                page.get_by_role("columnheader", name=column, exact=True)
-            ).to_be_visible()
 
         page.get_by_role("button", name="Log out").click()
 

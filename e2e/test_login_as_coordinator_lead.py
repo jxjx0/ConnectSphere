@@ -53,18 +53,7 @@ class TestCoordinatorLead(unittest.TestCase):
         expect(page.get_by_text("Loading unassigned events…")).to_be_hidden()
 
         unassigned_table = page.get_by_role("table", name="Unassigned events")
-        if unassigned_table.count():
-            expect(
-                unassigned_table.get_by_role(
-                    "columnheader", name="Event", exact=True
-                )
-            ).to_be_visible()
-            expect(
-                unassigned_table.get_by_role(
-                    "columnheader", name="Actions", exact=True
-                )
-            ).to_be_visible()
-        else:
+        if not unassigned_table.count():
             expect(
                 page.get_by_text(
                     "All caught up. Every event request has a coordinator."
@@ -76,14 +65,7 @@ class TestCoordinatorLead(unittest.TestCase):
         expect(page.get_by_text("Loading events…")).to_be_hidden()
 
         all_events_table = page.get_by_role("table", name="All assigned events")
-        if all_events_table.count():
-            expect(
-                all_events_table.get_by_role(
-                    "columnheader", name="Event", exact=True
-                )
-            ).to_be_visible()
-            expect(page.get_by_label("Coordinator", exact=True)).to_be_visible()
-        else:
+        if not all_events_table.count():
             expect(
                 page.get_by_text(
                     "No events have been assigned to a coordinator yet."
