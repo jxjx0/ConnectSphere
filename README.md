@@ -96,7 +96,7 @@ name, directly inside the `backend` folder. It is not in the repo.
 | Variable | What it's for |
 |---|---|
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Connecting to Supabase. Required — the backend won't start without them. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Admin key used only by the notification service. Skips row-level security, so treat it like a password. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Backend-only admin key for operations that require elevated access, including coordinator event queues and notifications. It bypasses row-level security, so treat it like a password. |
 | `SENDGRID_API_KEY` | Sending notification emails through SendGrid. |
 | `SENDGRID_FROM_EMAIL` | The sender address: `connectspheret7@gmail.com`. |
 | `FRONTEND_ORIGIN` | Where the frontend runs, for CORS. |
@@ -397,8 +397,8 @@ python -m unittest discover -s e2e -p "test_login_as_*.py" -v
 | `test_login_as_coordinator.py` | Coordinator event tabs and navigation to equipment and venue requests. |
 | `test_login_as_organiser.py` | Event request form, adding/removing a session, review screen, and client-side date validation. |
 | `test_login_as_venue_staff.py` | Venue overview, catalogue search, booking-request page, availability calendar, dismissible block dialog, and profile form navigation. |
-| `test_login_as_coordinator_lead.py` | Unassigned/all-events pages, event search, and the reassignment form. |
-| `test_login_as_safety_officer.py` | Safety review/history lists and event-detail navigation. |
+| `test_login_as_coordinator_lead.py` | Unassigned and all-events page navigation and headings. |
+| `test_login_as_safety_officer.py` | Safety queue, reviewed, and no-longer-needed page navigation and headings. |
 | `test_login_as_tech_support.py` | Equipment request history, catalogue search, equipment-profile form, and shared-booking calendar. |
 
 #### Data and side effects
@@ -414,6 +414,25 @@ The tests expect the demo accounts and sample records used by the flows to
 exist in the configured environment. Run them only against a development or
 test environment, never production. `test_example.py` is a unittest/Playwright
 scaffold and is not included in the role-flow command above.
+
+#### GitHub Actions secrets
+
+The E2E workflow needs these repository Actions secrets, exposed to its
+"Start servers and run e2e tests" step:
+
+| Secret | Purpose |
+|---|---|
+| `SUPABASE_URL` | Supabase project URL. |
+| `SUPABASE_ANON_KEY` | Used by backend authentication and user-scoped requests. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Used by backend admin operations exercised by role pages, including coordinator-lead event queues. |
+
+Add them under **Settings → Secrets and variables → Actions**. The workflow
+must map each secret to an environment variable with the same name; adding a
+GitHub secret alone does not make it available to the backend. The service-role
+key bypasses row-level security: never expose it to frontend code, commit it,
+or print it in logs. GitHub does not provide repository secrets to workflows
+for pull requests from forks, so those E2E runs cannot access Supabase unless
+the workflow uses a separately approved test setup.
 
 To record browser interactions while exploring the UI, start the app and run:
 
