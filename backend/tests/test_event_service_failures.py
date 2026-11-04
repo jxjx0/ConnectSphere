@@ -67,6 +67,22 @@ def test_activity_history_without_people_keeps_logs_without_profile_query(databa
     assert database.calls_to("profiles", "select") == []
 
 
+@pytest.mark.parametrize("table", ["event_activity_logs", "profiles"])
+@pytest.mark.parametrize("code,status,message", [
+    ("42501", 403, "You do not have permission to view this event's history."),
+    ("XX000", 502, "Unable to load this event's history."),
+])
+def test_activity_history_read_failure_hides_database_details(database, table, code, status, message):
+    database.responses[("event_activity_logs", "select")] = [{"id": "log-1", "changed_by_id": "lead"}]
+    error = database_error(code)
+    database.responses[(table, "select")] = error
+    with pytest.raises(AuthError) as caught:
+        events.get_event_activity_logs("event-1", "token")
+    assert caught.value.status_code == status
+    assert caught.value.message == message
+    assert caught.value.__cause__ is error
+
+
 @pytest.mark.parametrize("code,status,message", [
     ("42703", 503, "schema is missing"), ("PGRST204", 503, "schema is missing"),
     ("PGRST205", 503, "schema is missing"), ("23502", 400, "validation rule"),

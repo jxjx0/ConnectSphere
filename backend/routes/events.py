@@ -664,23 +664,19 @@ def delete_draft(draft_id):
 @require_auth
 def get_coordinators():
     """Fetch all staff members with role='coordinator'."""
-    try:
-        coordinators = auth_service.get_coordinators(access_token=g.access_token)
-        return jsonify({"coordinators": coordinators}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    _require_coordinator_lead()
+    coordinators = auth_service.get_coordinators(access_token=g.access_token)
+    return jsonify({"coordinators": coordinators}), 200
 
 @events_bp.get("/review/<event_id>/history")
 @require_auth
 def get_event_history(event_id):
     """Fetch activity history / audit trail for an event."""
-    try:
-        logs = event_service.get_event_activity_logs(
-            event_id, access_token=g.access_token
-        )
-        return jsonify({"logs": logs}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    _require_coordinator_lead()
+    logs = event_service.get_event_activity_logs(
+        event_id, access_token=g.access_token
+    )
+    return jsonify({"logs": logs}), 200
 
 
 @events_bp.post("/review/<event_id>/reassign")

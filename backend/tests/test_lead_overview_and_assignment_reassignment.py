@@ -314,10 +314,10 @@ def test_route_get_coordinators_success(client, monkeypatch):
 
 def test_route_get_coordinators_error(client, monkeypatch):
     authenticate_as(monkeypatch, LEAD_COORDINATOR)
-    def _raise(*args, **kwargs): raise Exception("Auth failed")
-    monkeypatch.setattr(auth_service, "get_coordinators", _raise)
+    monkeypatch.setattr(auth_service, "get_coordinators", Mock(side_effect=AuthError("Unable to load coordinators. Please try again.", status_code=502)))
     response = client.get("/events/coordinators", headers=LEAD_HEADERS)
-    assert response.status_code == 400
+    assert response.status_code == 502
+    assert response.get_json() == {"error": "Unable to load coordinators. Please try again."}
 
 
 def test_route_get_event_history_success(client, monkeypatch):
@@ -334,10 +334,10 @@ def test_route_get_event_history_success(client, monkeypatch):
 
 def test_route_get_event_history_error(client, monkeypatch):
     authenticate_as(monkeypatch, LEAD_COORDINATOR)
-    def _raise(*args, **kwargs): raise Exception("Log error")
-    monkeypatch.setattr(event_service, "get_event_activity_logs", _raise)
+    monkeypatch.setattr(event_service, "get_event_activity_logs", Mock(side_effect=AuthError("Unable to load this event's history.", status_code=502)))
     response = client.get(f"/events/review/{EVENT_ID}/history", headers=LEAD_HEADERS)
-    assert response.status_code == 400
+    assert response.status_code == 502
+    assert response.get_json() == {"error": "Unable to load this event's history."}
 
 
 def test_route_reassign_event_success(client, monkeypatch):
@@ -470,6 +470,8 @@ LEAD_ENDPOINTS = [
     ("POST", f"/events/review/{EVENT_ID}/reassign"),
     ("GET", "/events/lead-overview"),
     ("GET", "/events/unassigned-queue"),
+    ("GET", "/events/coordinators"),
+    ("GET", f"/events/review/{EVENT_ID}/history"),
 ]
 
 
@@ -481,6 +483,8 @@ def test_lead_endpoints_deny_other_roles_without_reading_or_writing(client, monk
         (event_assignment_service, "assign_or_reassign_event"),
         (overview_coordinator_events_service, "get_lead_coordinator_events"),
         (event_assignment_service, "get_unassigned_events_queue"),
+        (auth_service, "get_coordinators"),
+        (event_service, "get_event_activity_logs"),
     ]
     mocks = []
     for module, name in services:

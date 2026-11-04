@@ -155,6 +155,17 @@ def test_coordinator_choices_are_scoped_by_role(auth_clients, rows):
     assert database.calls[0].filters == [("eq", "role", "coordinator")]
 
 
+def test_coordinator_choices_read_failure_hides_database_details(auth_clients):
+    _, database, _ = auth_clients
+    error = APIError({"code": "42P01", "message": "relation profiles does not exist"})
+    database.responses[("profiles", "select")] = error
+    with pytest.raises(AuthError) as caught:
+        auth_service.get_coordinators("user-token")
+    assert caught.value.status_code == 502
+    assert caught.value.message == "Unable to load coordinators. Please try again."
+    assert caught.value.__cause__ is error
+
+
 def test_login_without_a_profile_does_not_return_a_usable_session(auth_clients):
     anonymous, database, user_client = auth_clients
     anonymous.auth.sign_in_with_password.return_value = SimpleNamespace(

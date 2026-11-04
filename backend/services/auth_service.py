@@ -134,10 +134,13 @@ def get_profile(access_token: str, user_id: str) -> Profile:
 def get_coordinators(access_token: str):
     """Fetch all staff members with role='coordinator'."""
     client = config.get_user_client(access_token)
-    response = (
-        client.table("profiles")
-        .select("id, full_name")  
-        .eq("role", "coordinator")
-        .execute()
-    )
+    try:
+        response = (
+            client.table("profiles")
+            .select("id, full_name")
+            .eq("role", "coordinator")
+            .execute()
+        )
+    except PostgrestAPIError as error:
+        raise AuthError("Unable to load coordinators. Please try again.", status_code=502) from error
     return response.data or []
