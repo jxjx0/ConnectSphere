@@ -80,10 +80,11 @@ jobs:
           python -m pytest
           --cov
           --cov-config=.coveragerc
+          --cov-branch
           --cov-report=term-missing
-          --cov-report=xml:coverage.xml
-          --cov-report=html:htmlcov
-          --junitxml=test-results.xml
+          --cov-report=xml:.reports/coverage.xml
+          --cov-report=html:.reports/htmlcov
+          --junitxml=.reports/test-results.xml
 
       - name: Upload backend test results
         id: test_results_artifact
@@ -91,7 +92,8 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: backend-test-results
-          path: backend/test-results.xml
+          path: backend/.reports/test-results.xml
+          include-hidden-files: true
           retention-days: 14
 
       - name: Upload backend coverage report
@@ -100,9 +102,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: backend-coverage-report
+          include-hidden-files: true
           path: |
-            backend/coverage.xml
-            backend/htmlcov/
+            backend/.reports/coverage.xml
+            backend/.reports/htmlcov/
           retention-days: 14
 
       - name: Summarize backend test results

@@ -321,11 +321,18 @@ def test_notify_keeps_row_when_email_fails(monkeypatch, caplog):
 
 
 def test_notify_keeps_row_when_user_has_no_email(monkeypatch, sent_emails, caplog):
-    use_admin_client(monkeypatch, FakeAdminClient(email=None))
+    database = FakeAdminClient(email=None)
+    use_admin_client(monkeypatch, database)
 
     notification = call_notify()
 
     assert notification is not None
+    assert notification.id == NOTIFICATION_RECORD["id"]
+    assert notification.user_id == USER_ID
+    assert database.inserted == [{
+        "user_id": USER_ID, "event_id": EVENT_ID, "type": "event_approved",
+        "title": "Your event was approved", "body": "Your event request has been approved.",
+    }]
     assert sent_emails == []
     assert "email failed" in caplog.text
 

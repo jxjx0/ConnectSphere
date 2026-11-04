@@ -49,6 +49,23 @@ def test_expired_requests_serialize_and_are_not_reported_as_pending():
     assert not result.has_pending_change_request
     assert not result.has_pending_cancellation_request
 
+    # Exercise the actual badge builder, including resetting stale flags.
+    pending = Event(id="event-2", organiser_id="organiser-2", name="Pending", status="planning")
+    result = result.model_copy(update={"has_pending_change_request": True, "has_pending_cancellation_request": True})
+    database.responses[("event_change_requests", "select")] = [{"event_id": pending.id}]
+    database.responses[("event_cancellation_requests", "select")] = [{"event_id": pending.id}]
+    expired_result, pending_result = event_service._with_open_requests(database.client, [result, pending])
+    assert not expired_result.has_pending_change_request
+    assert not expired_result.has_pending_cancellation_request
+    assert pending_result.has_pending_change_request
+    assert pending_result.has_pending_cancellation_request
+    assert not expired_result.has_open_clarification
+    assert not pending_result.has_open_clarification
+    for table in ("event_clarifications", "event_change_requests", "event_cancellation_requests"):
+        assert database.calls_to(table, "select")[-1].filters == [
+            ("in_", "event_id", [result.id, pending.id]), ("eq", "status", "pending"),
+        ]
+
 
 @pytest.mark.parametrize("decision", ["approve", "reject"])
 def test_review_of_expired_change_returns_conflict(monkeypatch, decision):

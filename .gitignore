@@ -1,13 +1,20 @@
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
 .env
 venv/
+.venv/
+
+# Python test artifacts (including reports from older commands)
 .pytest_cache/
 .coverage
+.coverage.*
 coverage.xml
+coverage.json
 htmlcov/
 test-results.xml
+/backend/.reports/
+/backend/test-results.x
 
 # Node
 node_modules/

@@ -10,6 +10,7 @@ class FakeQuery:
         self.operation = "select"
         self.payload = None
         self.filters = []
+        self.filter_kwargs = []
 
     def select(self, *args):
         self.operation = "select"
@@ -30,6 +31,7 @@ class FakeQuery:
     def _filter(name):
         def apply(self, *args, **kwargs):
             self.filters.append((name, *args))
+            self.filter_kwargs.append((name, kwargs))
             return self
         return apply
 

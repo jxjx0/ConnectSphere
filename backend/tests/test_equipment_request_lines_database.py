@@ -57,10 +57,6 @@ def database():
         autocommit=True,
     )
     connection.execute(SCHEMA_SQL.read_text(encoding="utf-8"))
-    connection.execute(
-        "insert into public.equipment (name, type) values "
-        "('Old Projector', 'Visual'), (' Speaker ', 'Audio')"
-    )
     connection.execute(MIGRATION.read_text(encoding="utf-8"))
     connection.execute(OTHER_LINES_MIGRATION.read_text(encoding="utf-8"))
     connection.execute(REJECTION_MIGRATION.read_text(encoding="utf-8"))
@@ -115,11 +111,11 @@ def _item(db, name, kind=None, status="Functional"):
     ).fetchone()[0]
 
 
-def _submit(db, lines):
+def _submit(db, lines, session_id=SESSION_ID):
     _sign_in(db, COORDINATOR_ID)
     return db.execute(
         "select public.submit_equipment_request_lines(%s, %s, %s::jsonb)",
-        (EVENT_ID, SESSION_ID, json.dumps(lines)),
+        (EVENT_ID, session_id, json.dumps(lines)),
     ).fetchone()[0]
 
 
@@ -155,11 +151,19 @@ def _approve(db, request_id):
 
 
 def test_old_equipment_gets_its_new_type_from_the_migration(database):
-    # Added before the migration in the fixture. This test runs first in this
-    # file, before the db fixture clears the table.
-    kinds = dict(database.execute("select name, type from public.equipment").fetchall())
-    # The type is tidied, but the migration leaves every name as it was.
-    assert kinds == {"Old Projector": "Projector", " Speaker ": "Speaker"}
+    # A fresh database tests the backfill without relying on module test order.
+    import psycopg
+    database.execute("create database equipment_backfill_test")
+    try:
+        with psycopg.connect(psycopg.conninfo.make_conninfo(database.info.dsn, dbname="equipment_backfill_test"), autocommit=True) as fresh:
+            fresh.execute(SCHEMA_SQL.read_text(encoding="utf-8"))
+            fresh.execute("insert into public.equipment (name, type) values ('Old Projector', 'Visual'), (' Speaker ', 'Audio')")
+            fresh.execute(MIGRATION.read_text(encoding="utf-8"))
+            kinds = dict(fresh.execute("select name, type from public.equipment").fetchall())
+        # Type is tidied; names retain their original values.
+        assert kinds == {"Old Projector": "Projector", " Speaker ": "Speaker"}
+    finally:
+        database.execute("drop database equipment_backfill_test")
 
 
 def test_an_item_without_a_type_counts_as_its_name(db):
@@ -271,8 +275,15 @@ def test_a_line_from_another_request_cannot_be_used(db):
     smoke = _item(db, "Smoke Machine")
     request_id = _submit(db, [{"item_name": "Fog machine", "quantity": 1}])
 
+    other_session_id = "66666666-6666-6666-6666-666666666666"
+    db.execute("insert into public.event_sessions (id, event_id, name, start_time, end_time) values (%s, %s, 'Other session', %s, %s)", (other_session_id, EVENT_ID, START, END))
+    other_request_id = _submit(db, [{"item_name": "Projector", "quantity": 1}], session_id=other_session_id)
+    other_line_id = _line_id(db, other_request_id, "Projector")
     with pytest.raises(Exception, match="is not part of this request"):
-        _book_for_line(db, smoke, request_id, "99999999-9999-9999-9999-999999999999")
+        _book_for_line(db, smoke, request_id, other_line_id)
+    assert db.execute("select count(*) from public.equipment_bookings").fetchone() == (0,)
+    assert db.execute("select count(*) from public.equipment_request_lines where request_id in (%s, %s)", (request_id, other_request_id)).fetchone() == (2,)
+    assert db.execute("select distinct status from public.equipment_requests").fetchall() == [("Pending Technical Approval",)]
 
 
 def test_approval_waits_until_every_line_is_full(db):

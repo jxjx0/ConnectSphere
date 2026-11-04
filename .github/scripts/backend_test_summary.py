@@ -48,8 +48,9 @@ def build_summary(backend: Path, outcome: str, test_url: str, coverage_url: str)
         "skipped": "Not run",
     }.get(outcome, "Unknown")
 
+    reports = backend / ".reports"
     try:
-        passed, failed, errors, skipped = read_test_counts(backend / "test-results.xml")
+        passed, failed, errors, skipped = read_test_counts(reports / "test-results.xml")
         if failed or errors:
             status = "Failed"
         tests_text = f"- Tests: {passed} passed, {failed} failed, {errors} errors, {skipped} skipped"
@@ -60,9 +61,9 @@ def build_summary(backend: Path, outcome: str, test_url: str, coverage_url: str)
 
     lines = ["## Backend Test Summary", "", f"- Test status: {status}", tests_text]
     try:
-        covered, total = read_coverage_counts(backend / "coverage.xml")
+        covered, total = read_coverage_counts(reports / "coverage.xml")
         lines.extend([
-            f"- Coverage: {100 * covered / total:.2f}%",
+            f"- Python line coverage: {100 * covered / total:.2f}%",
             f"- Covered lines / total executable lines: {covered} / {total}",
         ])
         if status == "Failed":

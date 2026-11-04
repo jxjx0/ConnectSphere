@@ -1,4 +1,5 @@
 [run]
+data_file = .reports/.coverage
 source = .
 omit =
     tests/*
@@ -9,3 +10,12 @@ omit =
 [report]
 # Include untouched modules in directories without __init__.py.
 include_namespace_packages = True
+
+[html]
+directory = .reports/htmlcov
+
+[xml]
+output = .reports/coverage.xml
+
+[json]
+output = .reports/coverage.json
