@@ -1,17 +1,19 @@
 import os
 import unittest
-#copied from labs 9
-from playwright.sync_api import expect, sync_playwright
+
+from playwright.sync_api import sync_playwright
 
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:5173/")
 
+
 class TestSample(unittest.TestCase):
-    #Setup and teardown methods for the test class
+    """Playwright runner scaffold; this is not a product-flow or visual test."""
+
     @classmethod
     def setUpClass(cls):
         cls.pw = sync_playwright().start()
         cls.browser = cls.pw.chromium.launch(headless=True)
-        
+
     @classmethod
     def tearDownClass(cls):
         cls.browser.close()
@@ -26,8 +28,8 @@ class TestSample(unittest.TestCase):
         self.page.close()
         self.context.close()
 
-    #real test (this one is for passing test)(put in pklaywright test)
     def test_pass(self):
+        """Smoke-check unittest discovery without navigating or changing app data."""
         return self.assertTrue(True)
 
 if __name__ == "__main__":

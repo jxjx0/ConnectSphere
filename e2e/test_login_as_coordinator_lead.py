@@ -9,6 +9,8 @@ LEAD_PASSWORD = "password"
 
 
 class TestCoordinatorLead(unittest.TestCase):
+    """Visual checks for lead queues, event search, and the reassignment form."""
+
     @classmethod
     def setUpClass(cls):
         cls.pw = sync_playwright().start()
@@ -29,6 +31,7 @@ class TestCoordinatorLead(unittest.TestCase):
         self.context.close()
 
     def test_coordinator_lead_event_overview(self):
+        """Inspect lead pages and open reassignment UI without confirming a reassignment."""
         page = self.page
 
         expect(

@@ -11,6 +11,8 @@ SAFETY_OFFICER_PASSWORD = "password"
 
 
 class TestSafetyOfficer(unittest.TestCase):
+    """Read-only visual checks for safety queues and event-detail pages."""
+
     @classmethod
     def setUpClass(cls):
         cls.pw = sync_playwright().start()
@@ -31,6 +33,7 @@ class TestSafetyOfficer(unittest.TestCase):
         self.context.close()
 
     def test_safety_officer_review_history(self):
+        """Verify review/history navigation and event details without recording a decision."""
         page = self.page
 
         page.locator("#main-content").get_by_role(

@@ -1,11 +1,13 @@
 import os
 import unittest
-#copied from labs 9
+
 from playwright.sync_api import expect, sync_playwright
 
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:5173/")
 
 class TestSample(unittest.TestCase):
+    """Visual smoke test for attendee login and the attendee events landing page."""
+
     #Setup and teardown methods for the test class
     @classmethod
     def setUpClass(cls):
@@ -27,21 +29,21 @@ class TestSample(unittest.TestCase):
         self.context.close()
 
     def test_login_attendee(self):
-            self.page.locator("#main-content").get_by_role("link", name="Log in").click()
-            self.page.get_by_role("textbox", name="Email address").click()
-            self.page.get_by_role("textbox", name="Email address").fill("maggie3103+attendee@gmail.com")
-            self.page.get_by_role("textbox", name="Email address").dblclick()
-            self.page.get_by_role("textbox", name="Email address").click()
-            self.page.get_by_role("textbox", name="Email address").fill("maggieme3103+attendee@gmail.com")
-            self.page.get_by_role("textbox", name="Password").click()
-            self.page.get_by_role("textbox", name="Password").fill("pa")
-            self.page.get_by_role("textbox", name="Email address").click()
-            self.page.get_by_role("textbox", name="Email address").fill("maggiemee3103+attendee@gmail.com")
-            self.page.get_by_role("textbox", name="Password").click()
-            self.page.get_by_role("textbox", name="Password").fill("password")
-            self.page.get_by_role("textbox", name="Password").press("Enter")
-            self.page.get_by_role("heading", name="Sign up for Events here!").click()
-            expect(self.page.get_by_role("heading", name="Sign up for Events here!")).to_be_visible()
+        """Verify attendee authentication and the events landing-page heading.
+
+        This checks rendered navigation only; it does not register for an event.
+        """
+        self.page.locator("#main-content").get_by_role(
+            "link", name="Log in"
+        ).click()
+        self.page.get_by_role("textbox", name="Email address").fill(
+            "maggiemee3103+attendee@gmail.com"
+        )
+        self.page.get_by_role("textbox", name="Password").fill("password")
+        self.page.get_by_role("textbox", name="Password").press("Enter")
+        expect(
+            self.page.get_by_role("heading", name="Sign up for Events here!")
+        ).to_be_visible()
 
 if __name__ == "__main__":
     unittest.main()

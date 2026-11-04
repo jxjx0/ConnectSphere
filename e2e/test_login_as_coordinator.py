@@ -7,6 +7,8 @@ BASE_URL = os.environ.get("BASE_URL", "http://localhost:5173/")
 
 
 class TestCoordinator(unittest.TestCase):
+    """Visual navigation checks for coordinator event and request pages."""
+
     @classmethod
     def setUpClass(cls):
         cls.pw = sync_playwright().start()
@@ -26,6 +28,7 @@ class TestCoordinator(unittest.TestCase):
         self.context.close()
 
     def test_coordinator_view_tabs(self):
+        """Check event tabs and equipment/venue request views without changing records."""
         expect(
             self.page.get_by_role(
                 "heading", name="Bring people together. Make"

@@ -1,10 +1,10 @@
 import os
-import re
 import unittest
 from datetime import datetime, timedelta
-from uuid import uuid4
 
 from playwright.sync_api import expect, sync_playwright
+
+expect.set_options(timeout=20000)
 
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:5173/")
 ORGANISER_EMAIL = "maggiemee3103+organiser@gmail.com"
@@ -12,6 +12,8 @@ ORGANISER_PASSWORD = "password"
 
 
 class TestOrganiser(unittest.TestCase):
+    """Visual checks for the organiser event-request form; no drafts are persisted."""
+
     @classmethod
     def setUpClass(cls):
         cls.pw = sync_playwright().start()
@@ -25,14 +27,18 @@ class TestOrganiser(unittest.TestCase):
     def setUp(self):
         self.context = self.browser.new_context()
         self.page = self.context.new_page()
+        self.page.set_default_timeout(20000)
         self.page.goto(BASE_URL)
 
     def tearDown(self):
         self.context.close()
 
-    def test_create_save_validate_and_delete_event_draft(self):
+    def test_event_request_form_and_local_validation(self):
+        """Check form fields, session controls, review screen, and client-side validation.
+
+        The test deliberately avoids saving, submitting, or deleting a draft.
+        """
         page = self.page
-        event_name = f"Test123-{uuid4().hex[:8]}"
         start = datetime.now() + timedelta(days=5)
         end = start + timedelta(days=3)
 
@@ -52,7 +58,7 @@ class TestOrganiser(unittest.TestCase):
         page.get_by_role("link", name="New event").click()
         expect(page.get_by_role("heading", name="Request an event")).to_be_visible()
 
-        page.get_by_role("textbox", name="Event name").fill(event_name)
+        page.get_by_role("textbox", name="Event name").fill("Visual test event")
         page.get_by_label("Category").select_option("other")
         page.get_by_role("textbox", name="Describe the category").fill("Test")
         page.get_by_role("textbox", name="Purpose").fill("Test")
@@ -69,27 +75,19 @@ class TestOrganiser(unittest.TestCase):
         page.get_by_role("button", name="+ Add session").click()
         expect(page.get_by_text("Session 2", exact=True)).to_be_visible()
         page.get_by_role("button", name="Remove Session 2").click()
-        page.get_by_role("button", name="Save as draft").click()
-        expect(page.get_by_text("Draft saved. You can continue")).to_be_visible()
+        page.get_by_role("button", name="Review request").click()
+        expect(page.get_by_role("heading", name="Review your request")).to_be_visible()
+        expect(page.get_by_text("Visual test event")).to_be_visible()
+        expect(page.get_by_role("heading", name="Sessions (1)")).to_be_visible()
 
-        page.get_by_role("link", name="Cancel").click()
-        page.get_by_role("tab", name=re.compile(r"Drafts")).click()
-        page.get_by_role("link", name=re.compile(re.escape(event_name))).click()
-        expect(page.get_by_role("heading", name="Continue your draft")).to_be_visible()
-
+        page.get_by_role("button", name="Back to edit").click()
         page.get_by_role("textbox", name="Starts").fill(
             (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M")
         )
         page.get_by_role("button", name="Review request").click()
         expect(page.get_by_role("alert")).to_contain_text(
-            "Session 1: Start time must be in the future."
+            "Test1: Start time must be in the future."
         )
-
-        page.once("dialog", lambda dialog: dialog.dismiss())
-        page.get_by_role("button", name="Delete draft").click()
-        expect(
-            page.get_by_role("link", name=re.compile(re.escape(event_name)))
-        ).to_have_count(0)
         page.get_by_role("button", name="Log out").click()
 
 

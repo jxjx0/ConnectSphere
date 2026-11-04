@@ -10,6 +10,8 @@ VENUE_STAFF_PASSWORD = "password"
 
 
 class TestVenueStaff(unittest.TestCase):
+    """Visual checks for venue-staff navigation, catalogue, calendar, and profile."""
+
     @classmethod
     def setUpClass(cls):
         cls.pw = sync_playwright().start()
@@ -29,6 +31,7 @@ class TestVenueStaff(unittest.TestCase):
         self.context.close()
 
     def test_venue_staff_workspace(self):
+        """Verify venue pages and dismiss the block dialog without creating a block."""
         page = self.page
 
         expect(
