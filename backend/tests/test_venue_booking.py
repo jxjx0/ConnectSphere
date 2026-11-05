@@ -59,7 +59,31 @@ def database(monkeypatch):
 
     database.client.rpc = rpc
     monkeypatch.setattr(config, "get_user_client", lambda token: database.client)
+    database.notified = []
+    monkeypatch.setattr(venue_booking_service, "notify_role", lambda *args: database.notified.append(args))
     return database
+
+
+def test_venue_staff_are_told_about_a_new_request(database):
+    database.responses[("venues", "select")] = [{**VENUE, "name": "Grand Hall"}]
+
+    venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
+
+    ((role, notification_type, _title, body, event_id),) = database.notified
+    assert role == "venue_staff"
+    assert notification_type == "venue_booking_requested"
+    assert "Grand Hall" in body
+    assert "22 Oct 2026, 10:00" in body
+    assert event_id == "evt-1"
+
+
+def test_venue_staff_are_not_told_about_a_refused_request(database):
+    database.responses[("venue_bookings", "insert")] = []
+
+    with pytest.raises(AuthError):
+        venue_booking_service.create_venue_booking("token", "v-1", booking_request(), "coord-1")
+
+    assert database.notified == []
 
 
 def test_effective_period_uses_the_venue_buffers_not_the_request(database):

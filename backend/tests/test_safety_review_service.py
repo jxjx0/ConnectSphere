@@ -213,6 +213,31 @@ def test_coordinator_is_told_the_outcome(database, notifications, decision, reas
         assert reason in notification["body"]
 
 
+def test_organiser_is_told_when_safety_approval_confirms_the_event(database, notifications):
+    database.responses[("events", "select")] = [{**AWAITING_EVENT, "organiser_id": "org-1"}]
+
+    decide("approved")
+
+    (coordinator_notification, organiser_notification) = notifications
+    assert coordinator_notification["user_id"] == "coord-1"
+    assert organiser_notification["user_id"] == "org-1"
+    assert organiser_notification["notification_type"] == "event_confirmed"
+    assert organiser_notification["event_id"] == EVENT_ID
+    assert "Safety Summit" in organiser_notification["body"]
+
+
+@pytest.mark.parametrize("decision,reason", [
+    ("changes_requested", "Add a second exit"),
+    ("rejected", "Unsafe crowd flow"),
+])
+def test_organiser_is_not_told_when_the_event_goes_back_to_planning(database, notifications, decision, reason):
+    database.responses[("events", "select")] = [{**AWAITING_EVENT, "organiser_id": "org-1"}]
+
+    decide(decision, reason)
+
+    assert [notification["user_id"] for notification in notifications] == ["coord-1"]
+
+
 def test_events_without_a_coordinator_are_still_decided(database, notifications):
     database.responses[("events", "select")] = [{**AWAITING_EVENT, "coordinator_id": None}]
 
