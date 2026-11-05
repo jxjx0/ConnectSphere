@@ -218,6 +218,33 @@ def test_unrelated_or_unchanged_updates_do_not_run_impact(database,explicit):
     assert not any(call.startswith("get_venue_") for call in database.calls)
 
 
+def test_every_booking_of_an_event_is_checked_against_holds_read_once(database, monkeypatch):
+    database.booking("10:00","12:00"); database.booking("14:00","16:00")
+    database.hold("08:00","09:45"); database.hold("13:00","13:45")
+    hold_reads = []
+    rpc = database.rpc
+    def recording_rpc(name, params):
+        if name == "get_venue_reservations" and params["p_holds_only"]:
+            hold_reads.append(params["p_exclude_event_id"])
+        return rpc(name, params)
+    monkeypatch.setattr(database, "rpc", recording_rpc)
+    result = save(database,30)
+    assert result.buffer_impact["status"] == "verified"
+    assert len(result.buffer_impact["affected_bookings"]) == 2
+    assert hold_reads == [EVENT]
+
+
+def test_venue_without_saved_buffers_still_updates_without_claiming_impact(database):
+    database.booking(); database.block("09:15","09:45")
+    database.venue["setup_time_minutes"] = None
+    result = save(database,30)
+    assert database.venue["setup_time_minutes"] == result.setup_time_minutes == 30
+    assert result.buffer_impact == {"status":"unavailable","affected_bookings":None}
+    assert not any(call.startswith("get_venue_") for call in database.calls)
+    assert database.bookings[0]["status"] == "APPROVED"
+    database.notify.assert_not_called()
+
+
 @pytest.mark.parametrize("failure",["old_read","get_venue_block_bookings","get_venue_reservations","get_venue_operational_blocks"])
 def test_read_failure_reports_saved_venue_without_claiming_impact_success(database,failure):
     database.booking(); database.fail=failure

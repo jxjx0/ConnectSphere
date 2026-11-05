@@ -66,6 +66,14 @@ def _require_coordinator() -> Profile:
         )
     return profile
 
+def _require_coordinator_lead() -> Profile:
+    """Restrict assignment and supervision tasks to Coordinator Leads."""
+    profile = auth_service.get_profile(g.access_token, g.user_id)
+    if profile.role != Role.EVENT_COORDINATOR_LEAD:
+        raise AuthError("Only Lead Coordinators can manage event assignments.", status_code=403)
+    return profile
+
+
 def _require_safety_officer() -> Profile:
     """Require the authenticated profile to have the Safety Officer role."""
     profile = auth_service.get_profile(g.access_token, g.user_id)
@@ -656,29 +664,26 @@ def delete_draft(draft_id):
 @require_auth
 def get_coordinators():
     """Fetch all staff members with role='coordinator'."""
-    try:
-        coordinators = auth_service.get_coordinators(access_token=g.access_token)
-        return jsonify({"coordinators": coordinators}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    _require_coordinator_lead()
+    coordinators = auth_service.get_coordinators(access_token=g.access_token)
+    return jsonify({"coordinators": coordinators}), 200
 
 @events_bp.get("/review/<event_id>/history")
 @require_auth
 def get_event_history(event_id):
     """Fetch activity history / audit trail for an event."""
-    try:
-        logs = event_service.get_event_activity_logs(
-            event_id, access_token=g.access_token
-        )
-        return jsonify({"logs": logs}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    _require_coordinator_lead()
+    logs = event_service.get_event_activity_logs(
+        event_id, access_token=g.access_token
+    )
+    return jsonify({"logs": logs}), 200
 
 
 @events_bp.post("/review/<event_id>/reassign")
 @require_auth
 def reassign_event(event_id):
     """Assign or reassign an event's coordinator, with an audit log entry."""
+    _require_coordinator_lead()
     data = request.get_json() or {}
     new_coordinator_id = data.get("new_coordinator_id")
     reason = data.get("reason", "").strip()
@@ -686,45 +691,35 @@ def reassign_event(event_id):
     if not new_coordinator_id:
         return jsonify({"error": "Please select a coordinator to reassign to."}), 400
 
-    try:
-        updated_event = event_assignment_service.assign_or_reassign_event(
-            event_id=event_id,
-            new_coordinator_id=new_coordinator_id,
-            changed_by_id=g.user_id,
-            reason=reason or None,
-        )
-        return jsonify({"event": updated_event}), 200
-    except AuthError:
-        raise
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    updated_event = event_assignment_service.assign_or_reassign_event(
+        event_id=event_id,
+        new_coordinator_id=new_coordinator_id,
+        changed_by_id=g.user_id,
+        reason=reason or None,
+    )
+    return jsonify({"event": updated_event}), 200
     
 
 @events_bp.get("/lead-overview")
 @require_auth
 def get_lead_overview():
-    try:
-        raw_events = overview_coordinator_events_service.get_lead_coordinator_events(
-            access_token=g.access_token
-        )
-        formatted_events = Event.format_lead_overview(raw_events)
-        return jsonify(formatted_events), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    _require_coordinator_lead()
+    raw_events = overview_coordinator_events_service.get_lead_coordinator_events(
+        access_token=g.access_token
+    )
+    formatted_events = Event.format_lead_overview(raw_events)
+    return jsonify(formatted_events), 200
     
 
 @events_bp.get("/unassigned-queue")
 @require_auth
 def get_unassigned_queue():
     """Fetch unassigned events queue for Lead Coordinators."""
-    _require_coordinator()
-    try:
-        queue = event_assignment_service.get_unassigned_events_queue(
-            access_token=g.access_token
-        )
-        return jsonify(queue), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    _require_coordinator_lead()
+    queue = event_assignment_service.get_unassigned_events_queue(
+        access_token=g.access_token
+    )
+    return jsonify(queue), 200
 
 
 # --- Safety Review Routes -----------------------------------------------------

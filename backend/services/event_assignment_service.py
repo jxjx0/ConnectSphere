@@ -1,4 +1,8 @@
 import logging
+
+from httpx import HTTPError
+from postgrest import APIError as PostgrestAPIError
+
 import config
 from services.auth_service import AuthError
 from services.notification_service import notify
@@ -35,9 +39,12 @@ def get_unassigned_events_queue(access_token: str = None):
             .execute()
         )
         return response.data or []
-    except Exception as e:
-        logger.error("Failed to fetch unassigned queue: %s", str(e))
-        raise AuthError(f"Database error fetching queue: {str(e)}", status_code=400)
+    except PostgrestAPIError as error:
+        if error.code in {"42501", "PGRST301"}:
+            raise AuthError("You do not have permission to view unassigned events.", status_code=403) from error
+        raise AuthError("Unable to load unassigned events. Please try again.", status_code=502) from error
+    except HTTPError as error:
+        raise AuthError("Unable to load unassigned events. Please try again.", status_code=502) from error
 
 
 def assign_or_reassign_event(
@@ -52,40 +59,50 @@ def assign_or_reassign_event(
     """
     supabase = config.get_admin_client()
 
-    # 1. Fetch event
-    event_res = supabase.from_("events").select("*").eq("id", event_id).execute()
-    if not event_res.data:
-        raise AuthError("Event not found.", status_code=404)
+    try:
+        # 1. Fetch event
+        event_res = supabase.from_("events").select("*").eq("id", event_id).execute()
+        if not event_res.data:
+            raise AuthError("Event not found.", status_code=404)
 
-    event = event_res.data[0]
-    if event.get("status") in ["completed", "rejected"]:
-        raise AuthError("Cannot assign or reassign an event that is completed or rejected.", status_code=400)
+        event = event_res.data[0]
+        if event.get("status") in ["completed", "rejected"]:
+            raise AuthError("Cannot assign or reassign an event that is completed or rejected.", status_code=400)
 
-    previous_coordinator_id = event.get("coordinator_id")
-    is_reassignment = previous_coordinator_id is not None
-    action_type = "REASSIGNMENT" if is_reassignment else "ASSIGNMENT"
+        previous_coordinator_id = event.get("coordinator_id")
+        is_reassignment = previous_coordinator_id is not None
+        action_type = "REASSIGNMENT" if is_reassignment else "ASSIGNMENT"
 
-    # 2. Update coordinator_id on event
-    update_res = (
-        supabase.from_("events")
-        .update({"coordinator_id": new_coordinator_id})
-        .eq("id", event_id)
-        .execute()
-    )
+        # 2. Update coordinator_id on event
+        update_res = (
+            supabase.from_("events")
+            .update({"coordinator_id": new_coordinator_id})
+            .eq("id", event_id)
+            .execute()
+        )
 
-    if not update_res.data:
-        raise AuthError("Failed to update event coordinator.", status_code=500)
+        if not update_res.data:
+            raise AuthError("Failed to update event coordinator.", status_code=500)
 
-    # 3. Log to event_activity_logs with exact matching column schema
-    log_entry = {
-        "event_id": event_id,
-        "previous_coordinator_id": previous_coordinator_id,
-        "new_coordinator_id": new_coordinator_id,
-        "changed_by_id": changed_by_id,
-        "action_type": action_type,
-        "reason": reason or ("Manual reassignment" if is_reassignment else "Initial queue assignment"),
-    }
-    supabase.from_("event_activity_logs").insert(log_entry).execute()
+        # 3. Log to event_activity_logs with exact matching column schema
+        log_entry = {
+            "event_id": event_id,
+            "previous_coordinator_id": previous_coordinator_id,
+            "new_coordinator_id": new_coordinator_id,
+            "changed_by_id": changed_by_id,
+            "action_type": action_type,
+            "reason": reason or ("Manual reassignment" if is_reassignment else "Initial queue assignment"),
+        }
+        supabase.from_("event_activity_logs").insert(log_entry).execute()
+    except PostgrestAPIError as error:
+        logger.exception("Unable to save the event assignment")
+        if error.code in {"42501", "PGRST301"}:
+            raise AuthError("You do not have permission to assign this event.", status_code=403) from error
+        if error.code in {"22P02", "23502", "23503", "23514"}:
+            raise AuthError("Check the event assignment details and selected coordinator.", status_code=400) from error
+        raise AuthError("Unable to save the event assignment. Please try again.", status_code=502) from error
+    except HTTPError as error:
+        raise AuthError("Unable to save the event assignment. Please try again.", status_code=502) from error
 
     # 4. Trigger Email & In-App Notifications using notify()
     event_name = event.get("name", "an event")

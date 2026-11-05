@@ -92,7 +92,7 @@ def test_equipment_not_in_working_order_is_flagged(monkeypatch, maintenance_stat
     fake_database(monkeypatch, {
         "events": [PLANNING_EVENT],
         "equipment_requests": [{"id": "request-1", "status": "Approved"}],
-        "equipment_request_items": [{
+        "equipment_bookings": [{
             "quantity": 1,
             "equipment": {"name": "Microphone", "type": "Audio", "maintenance_status": maintenance_status},
         }],
@@ -109,7 +109,7 @@ def test_functional_equipment_is_not_flagged(monkeypatch):
     fake_database(monkeypatch, {
         "events": [PLANNING_EVENT],
         "equipment_requests": [{"id": "request-1", "status": "Approved"}],
-        "equipment_request_items": [{
+        "equipment_bookings": [{
             "quantity": 1,
             "equipment": {"name": "Microphone", "type": "Audio", "maintenance_status": "Functional"},
         }],
@@ -124,13 +124,30 @@ def test_only_approved_equipment_requests_are_shown(monkeypatch):
     filters, _ = fake_database(monkeypatch, {
         "events": [PLANNING_EVENT],
         "equipment_requests": [{"id": "request-1", "status": "Rejected"}],
-        "equipment_request_items": [{"quantity": 1, "equipment": {"name": "Projector"}}],
+        "equipment_bookings": [{"quantity": 1, "equipment": {"name": "Projector"}}],
     })
 
     details = safety_review_service.get_safety_event_details(EVENT_ID, "token")
 
     assert ("equipment_requests", "status", "Approved") in filters
     assert details["equipment_items"] == []
+
+
+def test_allocated_equipment_is_shown_one_item_per_booking(monkeypatch):
+    fake_database(monkeypatch, {
+        "events": [PLANNING_EVENT],
+        "equipment_requests": [{"id": "request-1", "status": "Approved", "session_id": "session-1"}],
+        "equipment_bookings": [
+            {"request_id": "request-1", "equipment": {"name": "Projector", "type": "Projector", "maintenance_status": "Functional"}},
+            {"request_id": "request-1", "equipment": {"name": "Wireless Microphone", "type": "Wireless Microphone", "maintenance_status": "Functional"}},
+        ],
+    })
+
+    details = safety_review_service.get_safety_event_details(EVENT_ID, "token")
+
+    assert [item["equipment"]["name"] for item in details["equipment_items"]] == ["Projector", "Wireless Microphone"]
+    assert all(item["quantity"] == 1 for item in details["equipment_items"])
+    assert all(item["session_id"] == "session-1" for item in details["equipment_items"])
 
 
 @pytest.mark.parametrize(
@@ -203,7 +220,7 @@ def test_request_is_refused_while_any_venue_booking_is_not_approved(monkeypatch,
 
 
 def test_every_approved_venue_booking_is_sent(monkeypatch):
-    _, updates = fake_database(monkeypatch, {
+    filters, updates = fake_database(monkeypatch, {
         "events": [PLANNING_EVENT],
         "venue_bookings": [{"status": "APPROVED"}, {"status": "approved"}],
     })
@@ -212,10 +229,14 @@ def test_every_approved_venue_booking_is_sent(monkeypatch):
 
     assert [table for table, _ in updates] == ["events"]
 
+    assert updates[0][1]["status"] == "awaiting_safety_check"
+    assert filters.count(("events", "id", EVENT_ID)) == 2
+    assert datetime.fromisoformat(updates[0][1]["updated_at"]).utcoffset() == timedelta(0)
+
 
 @pytest.mark.parametrize("settled_status", ["CANCELLED", "REJECTED", "REJECTED_BY_SAFETY"])
 def test_settled_venue_bookings_do_not_block_a_replanned_event(monkeypatch, settled_status):
-    _, updates = fake_database(monkeypatch, {
+    filters, updates = fake_database(monkeypatch, {
         "events": [PLANNING_EVENT],
         "venue_bookings": [{"status": settled_status}, {"status": "APPROVED"}],
     })
@@ -223,6 +244,10 @@ def test_settled_venue_bookings_do_not_block_a_replanned_event(monkeypatch, sett
     safety_review_service.request_safety_check(EVENT_ID, "token")
 
     assert [table for table, _ in updates] == ["events"]
+
+    assert updates[0][1]["status"] == "awaiting_safety_check"
+    assert filters.count(("events", "id", EVENT_ID)) == 2
+    assert datetime.fromisoformat(updates[0][1]["updated_at"]).utcoffset() == timedelta(0)
 
 
 @pytest.mark.parametrize("settled_status", ["CANCELLED", "REJECTED", "REJECTED_BY_SAFETY"])
@@ -350,7 +375,7 @@ def test_request_is_refused_until_every_session_has_an_approved_venue(monkeypatc
 
 
 def test_request_is_accepted_once_every_session_has_an_approved_venue(monkeypatch):
-    _, updates = fake_database(monkeypatch, {
+    filters, updates = fake_database(monkeypatch, {
         "events": [PLANNING_EVENT],
         "venue_bookings": [
             {"status": "APPROVED", "session_id": "ses-main"},
@@ -362,6 +387,11 @@ def test_request_is_accepted_once_every_session_has_an_approved_venue(monkeypatc
     safety_review_service.request_safety_check(EVENT_ID, "token")
 
     assert updates
+    assert [table for table, _ in updates] == ["events"]
+
+    assert updates[0][1]["status"] == "awaiting_safety_check"
+    assert filters.count(("events", "id", EVENT_ID)) == 2
+    assert datetime.fromisoformat(updates[0][1]["updated_at"]).utcoffset() == timedelta(0)
 
 
 def test_each_venue_is_checked_against_its_own_sessions_attendance(monkeypatch):
@@ -471,7 +501,7 @@ def test_venue_bookings_affected_by_a_session_change_block_the_safety_check(monk
 
 def test_sessions_without_equipment_needs_do_not_need_a_request(monkeypatch):
     """Breakout A lists no equipment, so only Main programme needs a request."""
-    _, updates = fake_database(monkeypatch, {
+    filters, updates = fake_database(monkeypatch, {
         "events": [PLANNING_EVENT],
         "venue_bookings": BOTH_VENUES,
         "event_sessions": SESSIONS_NEEDING_EQUIPMENT,
@@ -481,3 +511,8 @@ def test_sessions_without_equipment_needs_do_not_need_a_request(monkeypatch):
     safety_review_service.request_safety_check(EVENT_ID, "token")
 
     assert updates
+    assert [table for table, _ in updates] == ["events"]
+
+    assert updates[0][1]["status"] == "awaiting_safety_check"
+    assert filters.count(("events", "id", EVENT_ID)) == 2
+    assert datetime.fromisoformat(updates[0][1]["updated_at"]).utcoffset() == timedelta(0)

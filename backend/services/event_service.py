@@ -38,14 +38,17 @@ def get_event_activity_logs(event_id: str, access_token: str):
     """Fetch audit history logs for an event and attach coordinator names."""
     client = config.get_user_client(access_token)
 
-    logs = (
-        client.table("event_activity_logs")
-        .select("*")
-        .eq("event_id", event_id)
-        .order("created_at", desc=True)
-        .execute()
-        .data
-    )
+    try:
+        logs = (
+            client.table("event_activity_logs")
+            .select("*")
+            .eq("event_id", event_id)
+            .order("created_at", desc=True)
+            .execute()
+            .data
+        )
+    except PostgrestAPIError as error:
+        raise _review_read_error(error, "this event's history") from error
     if not logs:
         return []
 
@@ -61,13 +64,16 @@ def get_event_activity_logs(event_id: str, access_token: str):
 
     profiles_map = {}
     if profile_ids:
-        prof_data = (
-            client.table("profiles")
-            .select("id, full_name")
-            .in_("id", list(profile_ids))
-            .execute()
-            .data
-        )
+        try:
+            prof_data = (
+                client.table("profiles")
+                .select("id, full_name")
+                .in_("id", list(profile_ids))
+                .execute()
+                .data
+            )
+        except PostgrestAPIError as error:
+            raise _review_read_error(error, "this event's history") from error
         profiles_map = {p["id"]: p for p in prof_data}
 
     for log in logs:

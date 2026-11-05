@@ -1,39 +1,44 @@
-workspace "ConnectSphere - System Context" "C4 Level 1 (v1): who uses the ConnectSphere Event Planning and Venue Booking System, and what it depends on." {
+workspace "ConnectSphere - System Context" "C4 Level 1 (v2): who uses the ConnectSphere Event Planning and Venue Booking System, and what it depends on." {
 
     model {
         # ---------------------------------------------------------------
-        # People (briefing Sec 3 — every user has an authenticated account)
+        # People — every user has an authenticated account.
+        # Organisers and attendees self-register; the rest are internal.
         # ---------------------------------------------------------------
-        organiser = person "Event Organiser" "External client representative who submits an event request, supplies requirements, and requests changes." "External User"
-        attendee = person "Attendee" "External participant who signs up, registers for an event, and views confirmed event information." "External User"
-        coordinator = person "Event Coordinator" "Internal staff member assigned to an event; reviews requests, searches venues, submits booking requests, records equipment needs, and confirms the event." "Internal User"
+        organiser = person "Event Organiser" "External client representative who submits event requests, answers clarifications, and requests changes or cancellation." "External User"
+        attendee = person "Attendee" "External participant who signs up, browses published events, and registers or withdraws." "External User"
+        coordinator = person "Event Coordinator" "Internal staff member assigned to an event; reviews the request, books venues and equipment for each session, and confirms the event." "Internal User"
+        coordinatorLead = person "Event Coordinator Lead" "Internal staff member who oversees all coordinators' workload, assigns unassigned events, and reassigns coordinators." "Internal User"
         venueStaff = person "Venue Staff" "Internal staff member who maintains the venue catalogue and availability, and approves or rejects venue booking requests." "Internal User"
-        techStaff = person "Technical Support Staff" "Internal staff member who reviews equipment requests, checks availability, and reserves equipment for an event." "Internal User"
+        techStaff = person "Technical Support Staff" "Internal staff member who maintains equipment, reviews equipment requests, and allocates units to events." "Internal User"
+        safetyOfficer = person "Safety Officer" "Internal staff member who approves, rejects, or requests changes on events before they are confirmed." "Internal User"
 
         # ---------------------------------------------------------------
         # The system we are building — one software system
         # ---------------------------------------------------------------
-        connectSphere = softwareSystem "ConnectSphere Event Planning System" "Manages the event request lifecycle, automatic event assignment, venue bookings, equipment reservations, attendee registration, and notifications."
+        connectSphere = softwareSystem "ConnectSphere Event Planning System" "Manages the event request lifecycle, coordinator assignment, venue bookings, equipment allocation, safety review, attendee registration, and notifications."
 
         # ---------------------------------------------------------------
         # Things we neither build, own nor operate
         # ---------------------------------------------------------------
-        emailService = softwareSystem "Email Delivery Service" "Third-party provider that delivers notification and reminder emails to users' inboxes." "External System"
+        emailService = softwareSystem "SendGrid" "Third-party email delivery service that delivers notification emails to users' inboxes." "External System"
 
         # ---------------------------------------------------------------
         # Relationships
         # ---------------------------------------------------------------
         organiser -> connectSphere "Drafts and submits event requests, tracks their status, and requests changes or cancellation"
-        attendee -> connectSphere "Signs up, browses events open for registration, registers, and withdraws"
-        coordinator -> connectSphere "Reviews assigned requests, searches venues, submits booking requests, records equipment needs, and confirms events"
-        venueStaff -> connectSphere "Maintains the venue catalogue and availability, and decides on venue booking requests"
-        techStaff -> connectSphere "Reviews equipment requests, checks availability, and reserves equipment for events"
+        attendee -> connectSphere "Signs up, browses published events, registers, and withdraws"
+        coordinator -> connectSphere "Reviews assigned requests, books venues and equipment, and confirms events"
+        coordinatorLead -> connectSphere "Monitors coordinator workload, and assigns or reassigns events"
+        venueStaff -> connectSphere "Maintains venues and availability, and decides on venue booking requests"
+        techStaff -> connectSphere "Maintains equipment, reviews equipment requests, and allocates units"
+        safetyOfficer -> connectSphere "Reviews events awaiting a safety check"
 
-        connectSphere -> emailService "Sends notification and reminder messages for delivery to users"
+        connectSphere -> emailService "Sends notification emails through"
     }
 
     views {
-        systemContext connectSphere "SystemContext" "The five user groups of ConnectSphere and its one external dependency." {
+        systemContext connectSphere "SystemContext" "The seven user groups of ConnectSphere and its external email dependency." {
             include *
             autoLayout lr
         }
