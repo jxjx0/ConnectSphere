@@ -1,0 +1,71 @@
+import os
+import unittest
+
+from playwright.sync_api import expect, sync_playwright
+
+expect.set_options(timeout=20000)
+
+BASE_URL = os.environ.get("BASE_URL", "http://localhost:5173/")
+SAFETY_OFFICER_EMAIL = "maggiemee3103+safetyofficer@gmail.com"
+SAFETY_OFFICER_PASSWORD = "password"
+
+
+class TestSafetyOfficer(unittest.TestCase):
+    """Read-only visual checks for safety queue and history pages."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.pw = sync_playwright().start()
+        cls.browser = cls.pw.chromium.launch(headless=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.browser.close()
+        cls.pw.stop()
+
+    def setUp(self):
+        self.context = self.browser.new_context()
+        self.page = self.context.new_page()
+        self.page.set_default_timeout(20000)
+        self.page.goto(BASE_URL)
+
+    def tearDown(self):
+        self.context.close()
+
+    def test_safety_officer_review_history(self):
+        """Verify safety queue navigation without opening or changing records."""
+        page = self.page
+
+        expect(
+            page.get_by_role("heading", name="Bring people together. Make")
+        ).to_be_visible()
+        page.locator("#main-content").get_by_role(
+            "link", name="Log in"
+        ).click()
+        page.get_by_role("textbox", name="Email address").fill(SAFETY_OFFICER_EMAIL)
+        page.get_by_role("textbox", name="Password").fill(SAFETY_OFFICER_PASSWORD)
+        page.get_by_role("button", name="Log in").click()
+
+        expect(
+            page.get_by_role("heading", name="Safety Checks to Review")
+        ).to_be_visible()
+        expect(page.get_by_role("heading")).to_contain_text(
+            "Safety Checks to Review"
+        )
+        expect(page.get_by_role("link", name="To review")).to_be_visible()
+        expect(page.get_by_role("link", name="Reviewed")).to_be_visible()
+        expect(page.get_by_role("link", name="No longer needed")).to_be_visible()
+
+        page.get_by_role("link", name="Reviewed").click()
+        expect(
+            page.get_by_role("heading")
+        ).to_contain_text("Reviewed Safety Checks")
+
+        page.get_by_role("link", name="No longer needed").click()
+        expect(page.get_by_role("heading")).to_contain_text("No Longer Needed")
+
+        page.get_by_role("button", name="Log out").click()
+
+
+if __name__ == "__main__":
+    unittest.main()
