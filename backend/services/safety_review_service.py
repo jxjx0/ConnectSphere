@@ -540,7 +540,7 @@ def submit_safety_decision(
 
         event_res = (
             client.table("events")
-            .select("id, name, status, coordinator_id")
+            .select("id, name, status, coordinator_id, organiser_id")
             .eq("id", event_id)
             .execute()
         )
@@ -579,9 +579,9 @@ def submit_safety_decision(
             .execute()
         )
 
+        event_name = event.get("name") or "your event"
         coordinator_id = event.get("coordinator_id")
         if coordinator_id:
-            event_name = event.get("name") or "your event"
             notification_type, title, body = {
                 "approved": (
                     "safety_review_approved",
@@ -608,6 +608,17 @@ def submit_safety_decision(
                 notification_type=notification_type,
                 title=title,
                 body=body,
+                event_id=event_id,
+            )
+
+        # Safety approval is what confirms the event, so the Organiser hears it here.
+        organiser_id = event.get("organiser_id")
+        if decision == "approved" and organiser_id:
+            notify(
+                user_id=organiser_id,
+                notification_type="event_confirmed",
+                title="Event Confirmed",
+                body=f"Your event '{event_name}' is confirmed. You can now set up attendee registration.",
                 event_id=event_id,
             )
         return updated_res.data[0]

@@ -210,6 +210,7 @@ def test_request_without_editable_buffers_persists_current_venue_occupancy(datab
     tables["venue_bookings"].insert.return_value.execute.return_value.data = [{"booking_id": "booking"}]
     tables["venue_blocks"].select.return_value.eq.return_value.lt.return_value.gt.return_value.execute.return_value.data = []
     database.table.side_effect = tables.__getitem__
+    monkeypatch.setattr(bookings, "notify_role", Mock())
     bookings.create_venue_booking("token", VENUE, request, COORD)
     payload = tables["venue_bookings"].insert.call_args.args[0]
     assert payload["setup_buffer_minutes"] == 30

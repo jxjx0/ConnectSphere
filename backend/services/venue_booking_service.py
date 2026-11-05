@@ -39,7 +39,7 @@ def get_event_booking_context(access_token, event_id):
 
 
 def _venue_configuration(client, venue_id):
-    venues = (client.table("venues").select("setup_time_minutes, turnaround_time_minutes, operating_hours")
+    venues = (client.table("venues").select("name, setup_time_minutes, turnaround_time_minutes, operating_hours")
               .eq("id", venue_id).execute().data)
     if not venues:
         raise AuthError("Venue was not found.", status_code=404)
@@ -465,6 +465,14 @@ def create_venue_booking(
     if not result.data:
         raise AuthError("Venue booking request was not created.", status_code=502)
 
+    notify_role(
+        Role.VENUE_STAFF.value,
+        "venue_booking_requested",
+        "New Venue Booking Request",
+        f"A booking request for '{venue_info.get('name') or 'a venue'}' on "
+        f"{_local_label(request.start_at)} is waiting for your review.",
+        request.event_id,
+    )
     return result.data[0]
 
 
