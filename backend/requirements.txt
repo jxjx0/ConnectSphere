@@ -7,4 +7,4 @@ pytest==9.1.1
 pytest-cov==7.1.0
 sendgrid==6.12.5
 playwright==1.64.0
-psycopg[binary]==3.2.9
+psycopg[binary]==3.2.13
