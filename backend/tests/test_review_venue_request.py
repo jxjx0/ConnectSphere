@@ -228,6 +228,18 @@ def test_rejection_records_the_reason_and_notifies(database, notifications):
     assert "Under renovation" in kwargs["body"]
 
 
+def test_rejection_without_a_coordinator_is_saved_without_notifying(database, notifications):
+    booking = pending_booking(coordinator_id=None)
+    database.responses[("venue_bookings", "select")] = [booking]
+    database.responses[("venue_bookings", "update")] = lambda query: [{**booking, **query.payload}]
+
+    rejected = review("REJECTED", "Under renovation")
+
+    assert rejected["status"] == "REJECTED"
+    assert rejected["reviewed_by"] == "staff-1"
+    assert notifications == []
+
+
 def test_approval_recalculates_current_buffers_before_checking_hours(database):
     booking = pending_booking()
     booking["venues"] = {**booking["venues"], "setup_time_minutes": 150}

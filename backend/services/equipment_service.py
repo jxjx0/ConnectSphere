@@ -18,7 +18,7 @@ def create_equipment(access_token: str, equipment_data: EquipmentCreate):
         }).execute()
 
     except PostgrestAPIError as error:
-        raise AuthError(f"Database error: {error.message}", status_code=400) from error
+        raise AuthError("Unable to create equipment. Please try again.", status_code=400) from error
 
     if not response.data:
         raise AuthError("Failed to create equipment.", status_code=502)

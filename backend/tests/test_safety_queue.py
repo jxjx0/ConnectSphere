@@ -1,6 +1,10 @@
 """Comprehensive unit tests targeting 100% coverage for services/safety_review_service.py."""
 
 from types import SimpleNamespace
+from datetime import datetime, timezone
+from unittest.mock import Mock
+
+from fake_supabase import FakeDatabase
 import pytest
 from postgrest import APIError as PostgrestAPIError
 
@@ -120,9 +124,14 @@ def test_get_client_fallback_raises_autherror(monkeypatch):
 # ============================================================================
 
 def test_get_safety_review_queue_success(monkeypatch):
-    mock_database_clients(monkeypatch, {"events": [PLANNING_EVENT]})
+    waiting = {**PLANNING_EVENT, "status": "awaiting_safety_check", "updated_at": "2026-10-31T08:00:00Z"}
+    database = FakeDatabase({("events", "select"): [waiting]})
+    monkeypatch.setattr(safety_review_service, "_get_client", lambda token: database.client)
     queue = safety_review_service.get_safety_review_queue("token")
     assert len(queue) == 1
+    assert queue == [waiting]
+    assert database.calls[0].filters == [("eq", "status", "awaiting_safety_check"), ("order", "updated_at")]
+    assert ("order", {"desc": False}) in database.calls[0].filter_kwargs
 
 
 def test_get_safety_review_queue_postgrest_error(monkeypatch):
@@ -180,7 +189,26 @@ def test_get_safety_event_details_all_flags_triggered(monkeypatch):
     assert "LARGE_CROWD_PROTOCOL" in flag_types
 
 
-def test_get_safety_event_details_inner_exceptions_logged(monkeypatch):
+def test_get_safety_event_details_ignores_bookings_when_requests_have_no_id(monkeypatch):
+    """Bookings are matched by request id, so unidentifiable requests list no equipment."""
+    mock_database_clients(
+        monkeypatch,
+        {
+            "events": [PLANNING_EVENT],
+            "equipment_requests": [{"event_id": EVENT_ID, "status": "Approved"}],
+            "equipment_bookings": [
+                {"request_id": "req-1", "equipment": {"name": "Generator", "maintenance_status": "Under Repair"}},
+            ],
+        },
+    )
+
+    details = safety_review_service.get_safety_event_details(EVENT_ID, "token")
+
+    assert details["equipment_items"] == []
+    assert "EQUIPMENT_HAZARD" not in [f["type"] for f in details["safety_flags"]]
+
+
+def test_get_safety_event_details_inner_exceptions_logged(monkeypatch, caplog):
     """Triggers exception handlers in venue booking and equipment loading steps."""
     def get_table(table_name):
         if table_name in ("venue_bookings", "equipment_requests"):
@@ -194,6 +222,9 @@ def test_get_safety_event_details_inner_exceptions_logged(monkeypatch):
     assert details["event"]["id"] == EVENT_ID
     assert details["venue_bookings"] == []
     assert details["equipment_items"] == []
+    assert f"Could not load venue bookings for event {EVENT_ID}" in caplog.text
+    assert f"Could not load equipment items for event {EVENT_ID}" in caplog.text
+    assert "Unexpected DB failure" in caplog.text
 
 
 def test_get_safety_event_details_not_found(monkeypatch):
@@ -222,16 +253,27 @@ def test_get_safety_event_details_generic_error(monkeypatch):
 # ============================================================================
 
 def test_request_safety_check_success(monkeypatch):
-    mock_database_clients(
-        monkeypatch,
-        {
-            "events": [PLANNING_EVENT],
-            "venue_bookings": [APPROVED_VENUE_BOOKING],
-            "equipment_requests": [APPROVED_EQUIPMENT_REQUEST],
-        },
-    )
+    database = FakeDatabase({
+        ("events", "select"): [PLANNING_EVENT],
+        ("venue_bookings", "select"): [APPROVED_VENUE_BOOKING],
+        ("equipment_requests", "select"): [APPROVED_EQUIPMENT_REQUEST],
+        ("rpc:event_has_open_requests", "rpc"): False,
+        ("events", "update"): [{**PLANNING_EVENT, "status": "awaiting_safety_check"}],
+    })
+    resolve = Mock(return_value=database.client)
+    monkeypatch.setattr(safety_review_service, "_get_client", resolve)
+    before = datetime.now(timezone.utc)
     res = safety_review_service.request_safety_check(EVENT_ID, "token")
     assert res["message"] == "Safety review requested successfully"
+    assert res["data"] == [{**PLANNING_EVENT, "status": "awaiting_safety_check"}]
+    resolve.assert_called_once_with("token")
+    saved = database.calls_to("events", "update")
+    assert len(saved) == 1
+    assert saved[0].filters == [("eq", "id", EVENT_ID)]
+    assert saved[0].payload["status"] == "awaiting_safety_check"
+    stamp = datetime.fromisoformat(saved[0].payload["updated_at"])
+    assert before <= stamp <= datetime.now(timezone.utc)
+    assert stamp.utcoffset().total_seconds() == 0
 
 
 def test_request_safety_check_already_requested(monkeypatch):
@@ -243,21 +285,24 @@ def test_request_safety_check_already_requested(monkeypatch):
     assert exc.value.status_code == 409
 
 
-def test_request_safety_check_with_blockers(monkeypatch):
-    """Triggers _safety_check_blockers for non-planning status and pending equipment."""
-    non_planning_event = {**PLANNING_EVENT, "status": "under_review"}
-    mock_database_clients(
-        monkeypatch,
-        {
-            "events": [non_planning_event],
-            "venue_bookings": [{"event_id": EVENT_ID, "status": "PENDING"}],
-            "equipment_requests": [{"event_id": EVENT_ID, "status": "Pending Technical Approval"}],
-        },
-    )
-
+@pytest.mark.parametrize("event_status,venue_status,equipment_status,expected", [
+    ("under_review", "APPROVED", "Approved", "the event must be in Planning"),
+    ("planning", "PENDING_VENUE_APPROVAL", "Approved", "it needs an approved venue booking"),
+    ("planning", "APPROVED", "Pending Technical Approval", "pending equipment requests must be reviewed first"),
+])
+def test_request_safety_check_with_blockers(monkeypatch, event_status, venue_status, equipment_status, expected):
+    database = FakeDatabase({
+        ("events", "select"): [{**PLANNING_EVENT, "status": event_status}],
+        ("venue_bookings", "select"): [{**APPROVED_VENUE_BOOKING, "status": venue_status}],
+        ("equipment_requests", "select"): [{**APPROVED_EQUIPMENT_REQUEST, "status": equipment_status}],
+        ("rpc:event_has_open_requests", "rpc"): False,
+    })
+    monkeypatch.setattr(safety_review_service, "_get_client", lambda token: database.client)
     with pytest.raises(AuthError) as exc:
         safety_review_service.request_safety_check(EVENT_ID, "token")
     assert exc.value.status_code == 409
+    assert exc.value.message == f"This event is not ready for a safety check: {expected}."
+    assert database.calls_to("events", "update") == []
 
 
 def test_request_safety_check_not_found(monkeypatch):

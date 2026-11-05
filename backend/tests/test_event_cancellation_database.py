@@ -37,10 +37,16 @@ def postgres_connection():
     if not database_url:
         pytest.skip("CANCELLATION_TEST_DATABASE_URL is not configured")
     psycopg = pytest.importorskip("psycopg")
-    connection = psycopg.connect(database_url, autocommit=True)
-
-    connection.execute("create role authenticated")
-    connection.execute("create role anon")
+    with psycopg.connect(database_url, autocommit=True) as admin:
+        admin.execute("drop database if exists event_cancellation_test")
+        admin.execute("create database event_cancellation_test")
+        for role in ("authenticated", "anon"):
+            if not admin.execute("select 1 from pg_roles where rolname = %s", (role,)).fetchone():
+                admin.execute(f"create role {role}")
+    connection = psycopg.connect(
+        psycopg.conninfo.make_conninfo(database_url, dbname="event_cancellation_test"),
+        autocommit=True,
+    )
     for sql_file in (
         SCHEMA_SQL,
         REQUEST_MIGRATION,
@@ -52,6 +58,8 @@ def postgres_connection():
 
     yield connection
     connection.close()
+    with psycopg.connect(database_url, autocommit=True) as admin:
+        admin.execute("drop database event_cancellation_test")
 
 
 @pytest.fixture

@@ -398,6 +398,31 @@ def test_service_notifies_coordinator_when_equipment_is_allocated(
     )
 
 
+def test_allocation_notice_without_a_session_names_only_the_event(
+    booking_database, monkeypatch
+):
+    client, _ = booking_database
+    _booked(client)
+    admin = Mock()
+    monkeypatch.setattr(config, "get_admin_client", lambda: admin)
+    _allocation_lookups(admin, {
+        "equipment_requests": {"coordinator_id": "coordinator-1", "event_id": "event-1"},
+        "equipment": {"name": "Projector"},
+        "events": {"name": "Data Science Bootcamp"},
+        "event_sessions": AssertionError("No session to look up"),
+    })
+    notify = Mock()
+    monkeypatch.setattr(notification_service, "notify", notify)
+
+    equipment_booking_service.create_equipment_booking(
+        "tech-token", EquipmentBookingCreate(**VALID_BOOKING)
+    )
+
+    assert notify.call_args.kwargs["body"] == (
+        "Projector has been allocated to 'Data Science Bootcamp'."
+    )
+
+
 def test_allocation_is_kept_when_its_notification_details_cannot_load(
     booking_database, monkeypatch
 ):

@@ -16,7 +16,7 @@ from models.event import (
     EventSubmitRequest,
 )
 from models.profile import Profile, Role
-from services import auth_service, event_service
+from services import auth_service, event_service, notification_service, safety_review_service
 from services.auth_service import AuthError
 from fake_supabase import FakeDatabase
 
@@ -284,6 +284,8 @@ def test_service_sets_the_organiser_and_status_itself(monkeypatch):
 
     inserted = database.calls_to("events", "insert")[0].payload
     assert inserted["organiser_id"] == ORGANISER_PROFILE.id
+    assert inserted["status"] == "draft"
+    assert "coordinator_id" not in inserted
     assert "sessions" not in inserted
 
 
@@ -347,6 +349,7 @@ def test_a_failed_submission_removes_the_half_saved_draft(monkeypatch):
 
 
 def test_organiser_can_submit_an_event_request(client, monkeypatch):
+    monkeypatch.setattr(notification_service, "notify_role", lambda *args: None)
     authenticate_as(monkeypatch, ORGANISER_PROFILE)
     monkeypatch.setattr(
         event_service,
@@ -395,6 +398,7 @@ def test_submitting_event_notifies_coordinator_lead(client, monkeypatch):
 def test_submit_passes_the_signed_in_organiser_to_the_service(
     client, monkeypatch
 ):
+    monkeypatch.setattr(notification_service, "notify_role", lambda *args: None)
     authenticate_as(monkeypatch, ORGANISER_PROFILE)
     captured = {}
 
@@ -1076,6 +1080,7 @@ def test_non_coordinators_cannot_list_review_requests(client, monkeypatch):
 def test_coordinator_detail_route_passes_current_coordinator_id(
     client, monkeypatch
 ):
+    monkeypatch.setattr(safety_review_service, "get_latest_safety_decision", lambda *args: None)
     authenticate_as(monkeypatch, COORDINATOR_PROFILE)
     captured = {}
 
@@ -1191,6 +1196,7 @@ def test_unreadable_organiser_profile_returns_none(monkeypatch):
 
 
 def test_coordinator_can_approve_an_assigned_request(client, monkeypatch):
+    monkeypatch.setattr(notification_service, "notify", lambda *args, **kwargs: None)
     authenticate_as(monkeypatch, COORDINATOR_PROFILE)
     approved = EVENT_RESPONSE.model_copy(
         update={

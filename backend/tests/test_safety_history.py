@@ -157,11 +157,14 @@ def test_a_decision_passes_on_what_the_officer_entered(client, monkeypatch):
 
 def test_coordinators_can_request_a_safety_check(client, monkeypatch):
     authenticate_as(monkeypatch, COORDINATOR)
-    monkeypatch.setattr(safety_review_service, "request_safety_check", Mock(return_value={"id": EVENT_ID}))
+    submit = Mock(return_value={"message": "Safety review requested successfully", "data": [{"id": EVENT_ID, "status": "awaiting_safety_check"}]})
+    monkeypatch.setattr(safety_review_service, "request_safety_check", submit)
 
     response = client.post(f"/events/{EVENT_ID}/request-safety-check", headers=HEADERS)
 
     assert response.status_code == 200
+    assert response.get_json() == submit.return_value
+    submit.assert_called_once_with(EVENT_ID, "token")
 
 
 def test_only_coordinators_can_request_a_safety_check(client, monkeypatch):
