@@ -8,7 +8,7 @@ Event Planning & Venue Booking System — IS212 scrum project.
 
 You need:
 
-- **Python 3.13** (3.11+ works; CI uses 3.13)
+- **Python 3.13** (CI uses 3.13; 3.14 can't install the pinned `psycopg-binary`)
 - **Node.js 22** (18+ works; CI uses 22)
 - **Git**
 - The team's `backend/.env` file — ask a teammate by private message
@@ -140,21 +140,22 @@ Rerun the install commands — `venv/bin/pip install -r requirements.txt`
 
 | Variable | What it's for |
 |---|---|
-| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Connecting to Supabase. Required — the backend won't start without them. |
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Connecting to Supabase. Required — the backend starts without them, but every Supabase request fails. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Backend-only admin key for elevated operations, including coordinator event queues and notifications. Bypasses row-level security — treat it like a password. |
 | `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL` | Sending notification emails. |
 | `FRONTEND_ORIGIN` | Where the frontend runs, for CORS (`http://localhost:5173`). |
 
 Without the service-role key, backend operations that require elevated access
-(such as coordinator event queues) are unavailable. Without the SendGrid key,
-notification emails aren't sent; other app functionality can still run.
+(such as coordinator event queues) are unavailable, and in-app notifications
+aren't saved. Without the SendGrid key, notification emails aren't sent; other
+app functionality can still run.
 
 > [!IMPORTANT]
 > **The SendGrid free trial ends on 30 November 2026.** After that, the account
 > must be upgraded or replaced, or notification emails will stop sending. The
 > app keeps working and in-app inbox notifications are unaffected — failed
 > emails are only logged in the backend terminal. **Never commit `.env`** or paste its
-keys into chats, Jira or PRs.
+> keys into chats, Jira or PRs.
 
 The frontend needs no `.env` locally — it defaults to
 `http://localhost:5000`. Copy `frontend/.env.example` to
@@ -167,21 +168,22 @@ cd backend
 venv/bin/python -m pytest
 ```
 
-Windows: `venv\Scripts\python -m pytest`. The suite uses fakes for Supabase
-and SendGrid, so it needs no credentials or network. The same tests run in
-GitHub Actions on every push and pull request to `main`.
+Windows: `venv\Scripts\python -m pytest`. Most tests use fakes for Supabase and
+SendGrid, so this needs no credentials or network.
 
-```bat
-cd backend
-venv\Scripts\python -m pip install -r requirements.txt
-venv\Scripts\python -m pytest -v
-```
+Tests that need a real database show as skipped in this run:
+
+- The `*_database.py` tests need `CANCELLATION_TEST_DATABASE_URL`, pointing at a
+  throwaway local PostgreSQL. They create and drop databases and roles, so never
+  point it at a database you care about.
+- The tests in `tests/integration/` need a local Supabase. See
+  [Integration tests](#integration-tests).
+
+GitHub Actions runs all of these on every push and pull request to `main`.
 
 `backend/pytest.ini` discovers tests under `backend/tests/`. New test files
 named `test_*.py` or `*_test.py`, with test functions named `test_*`, are
-included automatically without changing the workflow. Tests use fakes for
-Supabase and SendGrid; no real database connection or service credentials
-are needed to run the suite.
+included automatically without changing the workflow.
 
 ### Run tests with coverage locally
 
@@ -206,7 +208,7 @@ percentage. The command also generates these files inside `backend`:
 | `.reports/test-results.xml` | Machine-readable test results: counts, failures, errors, and skipped tests |
 | `.reports/coverage.xml` | Machine-readable coverage data used by the CI job summary |
 | `.reports/htmlcov/index.html` | Open in a browser to explore coverage and highlighted untested lines |
-| `.coverage` | Raw coverage data produced by Coverage.py |
+| `.reports/.coverage` | Raw coverage data produced by Coverage.py |
 
 These generated files and the `.reports/` directory are ignored by git.
 **No coverage threshold is currently enforced.** Coverage is used to identify
@@ -221,20 +223,27 @@ on:
 - Pull requests targeting `main`.
 - Pushes to `main`.
 
-It uses Ubuntu and Python 3.13, installs `backend/requirements.txt`, and runs
-the complete pytest suite from `backend`. Any failing test fails the CI job.
-Artifact uploads and the summary run afterward with `if: always()`, so
-available reports can still be inspected after a test failure.
+It has three jobs, all on Ubuntu with Python 3.13:
+
+| Job | What it runs |
+|---|---|
+| **Backend Tests** | The pytest suite from `backend`, with a throwaway PostgreSQL. The integration tests show as skipped here. |
+| **Integration Tests** | `tests/integration`, against a private local Supabase. |
+| **End-to-End Tests** | The browser tests in `e2e/`, against the Supabase project in the repository secrets. |
+
+The last two only start if **Backend Tests** passes. Any failing test fails its
+job. In **Backend Tests**, artifact uploads and the summary run afterward with
+`if: always()`, so available reports can still be inspected after a test failure.
 
 ### Read results in GitHub Actions
 
 Open **Actions → Backend Test CI → a workflow run → Summary**, or follow
 the **Backend Tests** check from a pull request to its workflow run.
 
-The job summary shows:
+The **Backend Tests** job summary shows:
 
 - Test status and passed, failed, error, and skipped counts.
-- Total coverage percentage and covered / total executable lines.
+- Python line coverage percentage and covered / total executable lines.
 - `Coverage threshold: Not enforced yet`.
 - Download links for uploaded artifacts.
 
@@ -253,8 +262,8 @@ In the workflow run's **Artifacts** section, download:
 
 | Artifact | Contents |
 |---|---|
-| `backend-test-results` | `.reports/test-results.xml` |
-| `backend-coverage-report` | `.reports/coverage.xml` and the complete `.reports/htmlcov/` directory |
+| `backend-test-results` | `test-results.xml` |
+| `backend-coverage-report` | `coverage.xml` and the complete `htmlcov/` directory |
 
 Extract `backend-coverage-report` and open `htmlcov/index.html` in a browser.
 Keep the extracted directory together so the HTML pages, scripts, and styles
@@ -329,11 +338,36 @@ full CRUD or database-persistence tests.
 
 #### Run the tests
 
-Start the backend and frontend as described in [Setup and run](#setup-and-run),
-then, from the repository root, run:
+Start the backend and frontend as described in [Setup and run](#setup-and-run).
+The tests then log in to whichever Supabase project your `backend/.env` points
+to. Run these commands from the repository root.
+
+Install the browser once per machine:
+
+**macOS / Linux**
 
 ```bash
-python -m unittest discover -s e2e -p "test_login_as_*.py" -v
+backend/venv/bin/python -m playwright install chromium
+```
+
+**Windows Command Prompt**
+
+```bat
+backend\venv\Scripts\python -m playwright install chromium
+```
+
+Then run the tests:
+
+**macOS / Linux**
+
+```bash
+backend/venv/bin/python -m unittest discover -s e2e -p "test_login_as_*.py" -v
+```
+
+**Windows Command Prompt**
+
+```bat
+backend\venv\Scripts\python -m unittest discover -s e2e -p "test_login_as_*.py" -v
 ```
 
 The tests default to `http://localhost:5173/`. To test a different frontend
@@ -342,14 +376,14 @@ address, set `BASE_URL` before running them:
 **macOS / Linux**
 
 ```bash
-BASE_URL=http://localhost:5173/ python -m unittest discover -s e2e -p "test_login_as_*.py" -v
+BASE_URL=http://localhost:5173/ backend/venv/bin/python -m unittest discover -s e2e -p "test_login_as_*.py" -v
 ```
 
 **Windows Command Prompt**
 
 ```bat
 set BASE_URL=http://localhost:5173/
-python -m unittest discover -s e2e -p "test_login_as_*.py" -v
+backend\venv\Scripts\python -m unittest discover -s e2e -p "test_login_as_*.py" -v
 ```
 
 #### What the tests cover
@@ -400,7 +434,7 @@ the workflow uses a separately approved test setup.
 To record browser interactions while exploring the UI, start the app and run:
 
 ```bash
-python -m playwright codegen --target python http://localhost:5173/
+backend/venv/bin/python -m playwright codegen --target python http://localhost:5173/
 ```
 
 Treat generated code as a starting point: keep stable role-based selectors,
@@ -413,14 +447,15 @@ write to the database when the test is meant to be read-only.
 
 ConnectSphere takes an event from request to completion. An **organiser**
 submits an event request; it's assigned to an **event coordinator**, who
-reviews it, books venues and equipment, and sends it for a safety check.
-Once confirmed, the event opens for **attendees** to register.
+reviews it, books venues and equipment, and sends it for a safety check. Once
+the **safety officer** approves it, the event is confirmed and the organiser can
+publish it for **attendees** to register.
 
 | Role | What they do |
 |---|---|
-| Organiser | Drafts and submits event requests, answers clarifications, requests changes or cancellation |
+| Organiser | Drafts and submits event requests, answers clarifications, requests changes or cancellation, publishes confirmed events for registration |
 | Attendee | Browses published events, registers and withdraws |
-| Event Coordinator | Reviews assigned requests, books venues and equipment per session, confirms events |
+| Event Coordinator | Reviews assigned requests, books venues and equipment per session, sends events for a safety check |
 | Event Coordinator Lead | Sees all coordinators' workload, assigns unassigned events and reassigns coordinators |
 | Venue Staff | Maintains the venue catalogue, blocks venues, approves or rejects booking requests |
 | Technical Support | Maintains equipment, reviews equipment requests and allocates units |
@@ -438,7 +473,7 @@ email.
 | Backend | Python, Flask 3, Pydantic (request validation) |
 | Database & Auth | Supabase — PostgreSQL and Supabase Auth (JWT) |
 | Email | SendGrid |
-| Testing & CI | pytest, pytest-cov, GitHub Actions |
+| Testing & CI | pytest, pytest-cov, Playwright, Supabase CLI with Docker (integration tests), GitHub Actions |
 | Project tracking | Jira |
 
 ## Project structure
@@ -452,6 +487,8 @@ ConnectSphere/
 │   ├── models/         # Pydantic data shapes and validation
 │   ├── scripts/        # one-off and scheduled jobs
 │   └── tests/
+│       └── integration/   # real services against a local Supabase
+├── e2e/                # browser tests for the whole app
 ├── frontend/src/
 │   ├── api/            # every backend call, in one place
 │   ├── pages/          # one file per screen
@@ -461,9 +498,10 @@ ConnectSphere/
 └── docs/               # ER diagram and C4 architecture diagrams
 ```
 
-Authorisation is enforced on the backend: every protected route checks the
-user's token and role before it runs. The frontend's `AuthGuard` only decides
-what to show.
+Authorisation is enforced on the backend and in the database: protected routes
+check the user's token, role-restricted routes also check their role, and
+row-level security limits what each user can read and change. The frontend's
+`AuthGuard` only decides what to show.
 
 ## Documentation
 

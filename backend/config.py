@@ -54,9 +54,9 @@ def get_admin_client() -> Client:
     """A Supabase client using the service-role key.
 
     This client skips row-level security and can use the Auth admin API, so
-    it must only be used where the system acts on its own behalf -- today
-    that is just services/notification_service.py. Never use it for a
-    request a user makes about their own data.
+    it must only be used for elevated backend operations, such as
+    notifications and the Lead's event queues. Never use it for a request a
+    user makes about their own data.
     """
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         raise RuntimeError(
