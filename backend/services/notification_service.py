@@ -6,8 +6,7 @@ failure here must not undo or break the action that triggered it (for
 example, approving an event). Failures are logged instead.
 
 Notifications are sent by the system, not by a user, so notify() uses the
-service-role Supabase client (config.get_admin_client). It is the only
-place in the backend that does.
+service-role Supabase client (config.get_admin_client).
 
 The inbox functions (list_notifications, count_unread, mark_read) run for a logged-in
 user, so they use that user's client instead. Row-level security then
