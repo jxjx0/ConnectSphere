@@ -1,4 +1,5 @@
 import os
+import re
 import unittest
 
 from playwright.sync_api import expect, sync_playwright
@@ -47,13 +48,14 @@ class TestCoordinator(unittest.TestCase):
         expect(self.page.get_by_role("heading", name="My Events")).to_be_visible()
         expect(self.page.get_by_text("See what needs you next, and")).to_be_visible()
 
-        self.page.get_by_role("tab", name="In progress (8)").click()
-        self.page.get_by_role("tab", name="Closed (6)").click()
+        # The counts change as events move on, so match any number.
+        self.page.get_by_role("tab", name=re.compile(r"In progress \(\d+\)")).click()
+        self.page.get_by_role("tab", name=re.compile(r"Closed \(\d+\)")).click()
         self.page.get_by_role("link", name="Equipment requests").click()
         expect(
             self.page.get_by_role("heading", name="Equipment requests")
         ).to_be_visible()
-        self.page.get_by_role("button", name="Past (4)").click()
+        self.page.get_by_role("button", name=re.compile(r"Past \(\d+\)")).click()
 
         self.page.get_by_role("link", name="Venue requests").click()
         expect(

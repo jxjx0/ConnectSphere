@@ -108,7 +108,12 @@ insert into public.venues (id, name, location, capacity, facilities, accessibili
     ('00000000-0000-4000-b000-000000000004', 'Campus Green Lounge', '90 Stamford Road, Singapore 178903', 150,
         '["Wi-Fi"]', '["Wheelchair access"]',
         '[{"name": "Networking", "capacity": 150}, {"name": "Banquet", "capacity": 100}]',
-        '{"open": "10:00", "close": "22:00"}', 30, 45);
+        '{"open": "10:00", "close": "22:00"}', 30, 45),
+    -- Needed by the venue staff browser test (e2e/test_login_as_venue_staff.py).
+    ('00000000-0000-4000-b000-000000000005', 'ACS Hall E2E', '123 Main Street', 250,
+        '["Parking"]', '["Wheelchair access", "Hearing loop"]',
+        '[{"name": "Theatre", "capacity": 150}, {"name": "Banquet", "capacity": 80}]',
+        '{"open": "08:00", "close": "22:00"}', 30, 30);
 
 -- The type is the kind of item Coordinators ask for, so an Old Projector
 -- still counts as a Projector.
