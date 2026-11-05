@@ -114,6 +114,8 @@ export default function NotificationDropdown() {
       navigate(`/event-reviews/${notification.event_id}`)
     } else if (notification.event_id && user?.role === 'organiser') {
       navigate(`/my-events/${notification.event_id}`)
+    } else if (notification.type === 'venue_booking_requested' && user?.role === 'venue_staff') {
+      navigate('/venues/reviewRequests')
     } else if (user?.role === 'attendee') {
       openAttendeeNotification(notification)
     }
