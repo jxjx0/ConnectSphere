@@ -212,7 +212,7 @@ These generated files and the `.reports/` directory are ignored by git.
 **No coverage threshold is currently enforced.** Coverage is used to identify
 untested code; a future 100% backend line-coverage gate is planned but is not
 active.
-ml
+
 ### Automatic CI runs
 
 The [Backend Test CI workflow](.github/workflows/tests.yml) runs automatically
@@ -272,6 +272,54 @@ configure a branch protection rule or ruleset for `main` that requires pull
 requests and the **Backend Tests** status check to pass before merging.
 This is a GitHub repository setting, separate from the workflow file.
 
+### Integration tests
+
+The tests in `backend/tests/integration/` run the real Python services against
+a real local copy of Supabase, with only SendGrid faked. They check what the
+fake-based tests can't: that queries, permission rules and database functions
+work together with the services. They run automatically in CI, so you only need
+this setup to run them yourself.
+
+You need [Docker Desktop](https://www.docker.com/products/docker-desktop/) open
+and the [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started)
+installed. Run Supabase commands from `backend/tests/integration`, where its
+`supabase` folder is. From the repository root, start local Supabase:
+
+```bash
+cd backend/tests/integration && supabase start
+```
+
+Then, on macOS / Linux, run the tests from that same folder:
+
+```bash
+eval "$(supabase status -o env | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=')"
+```
+
+```bash
+cd ../.. && SUPABASE_TEST_URL="$API_URL" SUPABASE_TEST_ANON_KEY="$ANON_KEY" SUPABASE_TEST_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" venv/bin/python -m pytest tests/integration -v
+```
+
+On Windows Command Prompt, run `supabase status -o env`, then set the values it
+prints before running the tests from `backend`:
+
+```bat
+set SUPABASE_TEST_URL=<API_URL value>
+set SUPABASE_TEST_ANON_KEY=<ANON_KEY value>
+set SUPABASE_TEST_SERVICE_ROLE_KEY=<SERVICE_ROLE_KEY value>
+venv\Scripts\python -m pytest tests\integration -v
+```
+
+Without `SUPABASE_TEST_URL` these tests are skipped, and they refuse to run
+against anything except this computer. Run `supabase db reset --local` to clear
+the local data and `supabase stop` when you're done.
+
+The local schema comes from `backend/tests/integration/supabase/migrations/`, a copy of the live database
+structure. **When the live schema changes, update it too**, or these tests will
+drift from the real database. If you regenerate it with `supabase db dump`, add
+back the sections marked `ADDED BY HAND`, or it won't load. Avoid `supabase db push` and commands
+using `--linked`, other than dumping the schema, because they can change the
+shared project.
+
 ### End-to-end testing
 
 The browser tests in `e2e/` use Python Playwright to check that role-specific
@@ -297,10 +345,10 @@ address, set `BASE_URL` before running them:
 BASE_URL=http://localhost:5173/ python -m unittest discover -s e2e -p "test_login_as_*.py" -v
 ```
 
-**Windows PowerShell**
+**Windows Command Prompt**
 
-```powershell
-$env:BASE_URL = "http://localhost:5173/"
+```bat
+set BASE_URL=http://localhost:5173/
 python -m unittest discover -s e2e -p "test_login_as_*.py" -v
 ```
 
@@ -358,6 +406,7 @@ python -m playwright codegen --target python http://localhost:5173/
 Treat generated code as a starting point: keep stable role-based selectors,
 add assertions for the intended page state, and avoid submitting actions that
 write to the database when the test is meant to be read-only.
+
 ---
 
 ## About the app
