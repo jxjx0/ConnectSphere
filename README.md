@@ -8,7 +8,7 @@ Event Planning & Venue Booking System — IS212 scrum project.
 
 You need:
 
-- **Python 3.13** (CI uses 3.13; 3.14 can't install the pinned `psycopg-binary`)
+- **Python 3.13** (CI uses 3.13; 3.14 also works)
 - **Node.js 22** (18+ works; CI uses 22)
 - **Git**
 - The team's `backend/.env` file — ask a teammate by private message
